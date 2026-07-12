@@ -136,6 +136,15 @@ The current admin is designed so those integrations can be added later without r
 
 The current local JSON and upload storage remains suitable for development only. A free host such as Render uses an ephemeral filesystem, so production deployment must move editable content, messages, votes, and uploaded media to persistent external storage before the admin panel is used publicly. The planned setup is Supabase for structured data and Supabase Storage or Cloudinary for uploaded media.
 
+### Supabase Setup
+
+1. Create a Supabase project.
+2. Open SQL Editor and run `supabase/schema.sql` once.
+3. Copy the Project URL and service-role key into the hosting environment variables shown in `.env.example`.
+4. Never expose `SUPABASE_SERVICE_ROLE_KEY` in frontend code or commit it to Git.
+
+When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
+
 ## Architecture Recommendation
 
 The current plain HTML/CSS/JS frontend plus small Node.js backend is still a good fit. A framework like Vue or React becomes useful only if the site grows into a larger dashboard, multi-user CMS, automated feeds, or richer campaign reporting.

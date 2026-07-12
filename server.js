@@ -26,6 +26,10 @@ const port = Number(process.env.PORT || 4177);
 const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const isProduction = process.env.NODE_ENV === "production";
+const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "dis-media";
+const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey);
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
 const messageRateLimits = new Map();
@@ -36,6 +40,10 @@ if (isProduction && adminPassword === "change-this-password") {
 
 if (isProduction && !process.env.SESSION_SECRET) {
   throw new Error("SESSION_SECRET must be configured in production.");
+}
+
+if (isProduction && !cloudStorageEnabled) {
+  throw new Error("Supabase persistence must be configured in production.");
 }
 
 const mimeTypes = {
@@ -68,15 +76,34 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(votesFile)) fs.writeFileSync(votesFile, '{"polls":{}}\n');
 if (!fs.existsSync(messagesFile)) fs.writeFileSync(messagesFile, "[]\n");
 
-function readContent() {
-  return JSON.parse(fs.readFileSync(dataFile, "utf8"));
+function supabaseHeaders(extra = {}) {
+  return { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, ...extra };
 }
 
-function writeContent(content) {
-  fs.writeFileSync(dataFile, `${JSON.stringify(content, null, 2)}\n`);
+async function readContent() {
+  return readJsonFile(dataFile, {}, "content");
 }
 
-function readJsonFile(file, fallback) {
+async function writeContent(content) {
+  return writeJsonFile(dataFile, content, "content");
+}
+
+async function readJsonFile(file, fallback, storageKey = path.basename(file, ".json")) {
+  if (cloudStorageEnabled) {
+    const response = await fetch(`${supabaseUrl}/rest/v1/app_state?key=eq.${encodeURIComponent(storageKey)}&select=value`, {
+      headers: supabaseHeaders({ Accept: "application/json" })
+    });
+    if (!response.ok) throw new Error(`Cloud read failed (${response.status})`);
+    const rows = await response.json();
+    if (rows[0]?.value !== undefined) return rows[0].value;
+    const initialValue = readLocalJson(file, fallback);
+    await writeJsonFile(file, initialValue, storageKey);
+    return initialValue;
+  }
+  return readLocalJson(file, fallback);
+}
+
+function readLocalJson(file, fallback) {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"));
   } catch {
@@ -84,7 +111,16 @@ function readJsonFile(file, fallback) {
   }
 }
 
-function writeJsonFile(file, value) {
+async function writeJsonFile(file, value, storageKey = path.basename(file, ".json")) {
+  if (cloudStorageEnabled) {
+    const response = await fetch(`${supabaseUrl}/rest/v1/app_state?on_conflict=key`, {
+      method: "POST",
+      headers: supabaseHeaders({ "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" }),
+      body: JSON.stringify([{ key: storageKey, value }])
+    });
+    if (!response.ok) throw new Error(`Cloud write failed (${response.status})`);
+    return;
+  }
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
@@ -163,7 +199,7 @@ function parseMultipartFile(request, buffer) {
   throw new Error("No file in upload");
 }
 
-function saveUpload(file) {
+async function saveUpload(file) {
   const uploadType = uploadTypes[file.mime];
   if (!uploadType) throw new Error("Unsupported file type");
 
@@ -175,19 +211,40 @@ function saveUpload(file) {
     .slice(0, 48);
   const id = crypto.randomBytes(8).toString("hex");
   const filename = `${Date.now()}-${id}-${safeName || "upload"}${uploadType.extension}`;
-  const filePath = path.join(uploadsDir, filename);
-  fs.writeFileSync(filePath, file.content);
+  let url = `/uploads/${filename}`;
+  if (cloudStorageEnabled) {
+    const response = await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(supabaseBucket)}/${encodeURIComponent(filename)}`, {
+      method: "POST",
+      headers: supabaseHeaders({ "Content-Type": file.mime, "x-upsert": "false" }),
+      body: file.content
+    });
+    if (!response.ok) throw new Error(`Cloud upload failed (${response.status})`);
+    url = `${supabaseUrl}/storage/v1/object/public/${encodeURIComponent(supabaseBucket)}/${encodeURIComponent(filename)}`;
+  } else {
+    fs.writeFileSync(path.join(uploadsDir, filename), file.content);
+  }
 
   return {
     filename,
     name: file.filename,
     type: uploadType.type,
-    url: `/uploads/${filename}`,
+    url,
     createdAt: new Date().toISOString()
   };
 }
 
-function deleteUpload(filename) {
+async function deleteUpload(filename) {
+  if (cloudStorageEnabled) {
+    const publicPrefix = `${supabaseUrl}/storage/v1/object/public/${encodeURIComponent(supabaseBucket)}/`;
+    const safeName = path.basename(String(filename || "").startsWith(publicPrefix) ? decodeURIComponent(String(filename).slice(publicPrefix.length)) : String(filename || ""));
+    if (!safeName) throw new Error("Invalid upload filename");
+    const response = await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(supabaseBucket)}/${encodeURIComponent(safeName)}`, {
+      method: "DELETE",
+      headers: supabaseHeaders()
+    });
+    if (!response.ok && response.status !== 404) throw new Error(`Cloud delete failed (${response.status})`);
+    return { ok: true };
+  }
   const safeName = path.basename(filename || "");
   if (!safeName) throw new Error("Missing filename");
   const filePath = path.join(uploadsDir, safeName);
@@ -247,9 +304,9 @@ function clientIp(request) {
   return String(request.headers["x-forwarded-for"] || request.socket.remoteAddress || "unknown").split(",")[0].trim();
 }
 
-function voteState(request, token) {
-  const content = readContent();
-  const stored = readJsonFile(votesFile, { polls: {} });
+async function voteState(request, token) {
+  const content = await readContent();
+  const stored = await readJsonFile(votesFile, { polls: {} });
   return (content.polls || []).map((poll) => {
     const pollStore = stored.polls?.[poll.id] || { counts: {}, voters: {} };
     const hash = voterHash(token, poll.id);
@@ -329,20 +386,20 @@ async function handleRequest(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
 
   if (url.pathname === "/api/content" && request.method === "GET") {
-    return sendJson(response, 200, readContent());
+    return sendJson(response, 200, await readContent());
   }
 
   if (url.pathname === "/api/content" && request.method === "PUT") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const nextContent = JSON.parse(await readBody(request));
-    writeContent(nextContent);
+    await writeContent(nextContent);
     return sendJson(response, 200, nextContent);
   }
 
   if (url.pathname === "/api/votes" && request.method === "GET") {
     const existingToken = getVoterToken(request);
     const token = existingToken || makeVoterToken();
-    return sendJson(response, 200, { polls: voteState(request, token) }, existingToken ? {} : {
+    return sendJson(response, 200, { polls: await voteState(request, token) }, existingToken ? {} : {
       "Set-Cookie": `dis_voter=${token}; HttpOnly; SameSite=Lax; Max-Age=${oneYear}; Path=/`
     });
   }
@@ -353,30 +410,30 @@ async function handleRequest(request, response) {
     const token = existingToken || makeVoterToken();
     const pollId = decodeURIComponent(voteMatch[1]);
     const payload = JSON.parse(await readBody(request));
-    const content = readContent();
+    const content = await readContent();
     const poll = (content.polls || []).find((item) => item.id === pollId);
     if (!poll || poll.status !== "active") return sendJson(response, 404, { error: "Това гласуване не е активно." });
     if (poll.closesAt && new Date(poll.closesAt).getTime() < Date.now()) return sendJson(response, 409, { error: "Гласуването е приключило." });
     const option = (poll.options || []).find((item) => item.id === payload.optionId);
     if (!option) return sendJson(response, 400, { error: "Невалиден избор." });
 
-    const stored = readJsonFile(votesFile, { polls: {} });
+    const stored = await readJsonFile(votesFile, { polls: {} });
     stored.polls ||= {};
     stored.polls[pollId] ||= { counts: {}, voters: {} };
     const hash = voterHash(token, pollId);
     if (stored.polls[pollId].voters[hash]) {
-      return sendJson(response, 409, { error: "Вече си гласувал в тази анкета.", polls: voteState(request, token) });
+      return sendJson(response, 409, { error: "Вече си гласувал в тази анкета.", polls: await voteState(request, token) });
     }
     stored.polls[pollId].voters[hash] = option.id;
     stored.polls[pollId].counts[option.id] = (Number(stored.polls[pollId].counts[option.id]) || 0) + 1;
-    writeJsonFile(votesFile, stored);
-    return sendJson(response, 200, { polls: voteState(request, token) }, existingToken ? {} : {
+    await writeJsonFile(votesFile, stored);
+    return sendJson(response, 200, { polls: await voteState(request, token) }, existingToken ? {} : {
       "Set-Cookie": `dis_voter=${token}; HttpOnly; SameSite=Lax; Max-Age=${oneYear}; Path=/`
     });
   }
 
   if (url.pathname === "/health" && request.method === "GET") {
-    return sendJson(response, 200, { ok: true });
+    return sendJson(response, 200, { ok: true, storage: cloudStorageEnabled ? "supabase" : "local" });
   }
 
   if (url.pathname === "/api/messages" && request.method === "POST") {
@@ -393,33 +450,33 @@ async function handleRequest(request, response) {
       status: "new",
       createdAt: new Date().toISOString()
     };
-    const messages = readJsonFile(messagesFile, []);
+    const messages = await readJsonFile(messagesFile, []);
     messages.unshift(message);
-    writeJsonFile(messagesFile, messages);
+    await writeJsonFile(messagesFile, messages);
     return sendJson(response, 201, { ok: true, id: message.id });
   }
 
   if (url.pathname === "/api/messages" && request.method === "GET") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
-    return sendJson(response, 200, readJsonFile(messagesFile, []));
+    return sendJson(response, 200, await readJsonFile(messagesFile, []));
   }
 
   const messageMatch = url.pathname.match(/^\/api\/messages\/([^/]+)$/);
   if (messageMatch && request.method === "PATCH") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const payload = JSON.parse(await readBody(request));
-    const messages = readJsonFile(messagesFile, []);
+    const messages = await readJsonFile(messagesFile, []);
     const message = messages.find((item) => item.id === messageMatch[1]);
     if (!message) return sendJson(response, 404, { error: "Not found" });
     if (["new", "read", "in-progress", "done", "archived"].includes(payload.status)) message.status = payload.status;
-    writeJsonFile(messagesFile, messages);
+    await writeJsonFile(messagesFile, messages);
     return sendJson(response, 200, message);
   }
 
   if (messageMatch && request.method === "DELETE") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
-    const messages = readJsonFile(messagesFile, []);
-    writeJsonFile(messagesFile, messages.filter((item) => item.id !== messageMatch[1]));
+    const messages = await readJsonFile(messagesFile, []);
+    await writeJsonFile(messagesFile, messages.filter((item) => item.id !== messageMatch[1]));
     return send(response, 204, "");
   }
 
@@ -427,12 +484,12 @@ async function handleRequest(request, response) {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const buffer = await readBuffer(request);
     const file = parseMultipartFile(request, buffer);
-    return sendJson(response, 200, saveUpload(file));
+    return sendJson(response, 200, await saveUpload(file));
   }
 
   if (url.pathname === "/api/upload" && request.method === "DELETE") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
-    return sendJson(response, 200, deleteUpload(url.searchParams.get("file")));
+    return sendJson(response, 200, await deleteUpload(url.searchParams.get("file")));
   }
 
   if (url.pathname === "/api/logout" && request.method === "POST") {
