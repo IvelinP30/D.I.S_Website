@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="bg">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="description" content="Свържи се с D.I.S Подкаст." /><title>D.I.S Подкаст - Контакт</title><link rel="icon" type="image/png" href="./assets/dis-logo.png" /><link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" /><link rel="stylesheet" href="./styles.css" /></head>
+  <body><div class="site-shell"><header class="topbar"><a class="brand" href="/" aria-label="D.I.S Подкаст начало"><span class="brand-mark"><img id="header-logo" src="./assets/dis-logo.png" alt="" /></span><span id="header-brand-name">D.I.S Подкаст</span></a><nav class="nav" id="main-nav" aria-label="Основна навигация"></nav></header>
+    <main><section class="subpage-hero" data-page-hero="contact"><img class="subpage-hero-image" src="./assets/contact-hero.png" alt="hero background image" /><div class="subpage-hero-overlay"></div><div class="subpage-hero-copy"><p class="section-kicker" data-page-kicker>Контакт</p><h1 data-page-title>Подай топката към D.I.S Подкаст.</h1><p data-page-description></p></div></section>
+      <section class="ad-marquee-section" aria-label="Активни реклами"><div class="ad-marquee-header"><span>Активни партньори</span></div><div class="ad-marquee" data-active-ad-marquee></div></section>
+      <section class="section contact-page-layout"><div class="contact-page-copy"><p class="section-kicker" data-contact-copy="formKicker">Пиши ни</p><h2 data-contact-copy="formTitle">Избери посока на разговора.</h2><p data-contact-copy="formDescription">Формата се адаптира според темата. Всички съобщения се пазят в защитения admin inbox.</p><div class="contact-direct" id="contact-actions"></div></div>
+        <form class="message-form" data-message-form>
+          <div class="wide custom-select-field">
+            <span>Тип запитване</span>
+            <div class="custom-select" data-custom-select>
+              <input name="type" type="hidden" value="general" data-message-type-select />
+              <button class="custom-select-trigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span data-custom-select-label>Общ въпрос</span><i aria-hidden="true"></i>
+              </button>
+              <div class="custom-select-menu" role="listbox" hidden>
+                <button class="is-selected" type="button" role="option" aria-selected="true" data-select-value="general">Общ въпрос</button>
+                <button type="button" role="option" aria-selected="false" data-select-value="idea">Идея или тема</button>
+                <button type="button" role="option" aria-selected="false" data-select-value="partner">Партньорство и реклама</button>
+              </div>
+            </div>
+          </div>
+          <label><span>Име</span><input name="name" required maxlength="100" /></label><label><span>Имейл</span><input name="email" type="email" maxlength="180" /></label>
+          <label class="partner-only" hidden><span>Компания</span><input name="company" maxlength="180" /></label><label class="partner-only" hidden><span>Ориентировъчен бюджет</span><input name="budget" maxlength="120" /></label>
+          <label class="wide"><span>Тема</span><input name="subject" maxlength="180" /></label><label class="wide"><span>Съобщение</span><textarea name="message" required maxlength="5000" rows="7"></textarea></label>
+          <label class="form-honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label><button class="button primary" type="submit">Изпрати съобщението</button><p class="form-feedback" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+    <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><span class="brand-mark"><img class="footer-logo" src="./assets/dis-logo.png" alt="" /></span><div><strong class="footer-brand-name">D.I.S Подкаст</strong><p>Футболни реакции, подкасти, live моменти и кратки видеа.</p></div></div><nav class="footer-nav" data-footer-nav aria-label="Footer навигация"></nav><div class="footer-actions"><a class="footer-email" data-footer-email href="mailto:hello@dispodcast.bg"></a><div class="footer-socials" data-footer-socials></div></div></div></footer>
+  </div><aside class="football-scroll-progress" aria-hidden="true"><span class="scroll-ball"></span></aside><script src="./config.js"></script><script src="./script.js"></script></body></html>

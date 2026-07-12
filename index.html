@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="bg">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="D.I.S Подкаст - футболни ревюта, подкасти, лайвове и кратки видеа за фенове."
+    />
+    <title>D.I.S Подкаст</title>
+    <link rel="icon" type="image/png" href="./assets/dis-logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="#hero" aria-label="D.I.S Подкаст начало">
+          <span class="brand-mark">
+            <img id="header-logo" src="./assets/dis-logo.png" alt="" />
+          </span>
+          <span id="header-brand-name">D.I.S Подкаст</span>
+        </a>
+        <nav class="nav" id="main-nav" aria-label="Основна навигация"></nav>
+      </header>
+
+      <main>
+        <section class="hero" id="hero" aria-labelledby="hero-title">
+          <img
+            class="hero-image"
+            src="./assets/dis-universe-hero.png"
+            alt="Футболно подкаст студио с микрофони и тактическа графика"
+          />
+          <div class="hero-overlay"></div>
+          <div class="hero-content">
+            <p class="eyebrow" id="hero-eyebrow">Футбол. Реакции. Подкаст.</p>
+            <h1 id="hero-title"><span class="brand-name">D.I.S Подкаст</span></h1>
+            <p class="hero-copy" id="hero-copy">
+              Млад футболен медиен проект с ревюта, подкасти, лайвове и кратки видеа за
+              Instagram, TikTok, YouTube и Facebook.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary magnetic" id="hero-primary" href="https://www.youtube.com/@dispodcastt" target="_blank" rel="noreferrer">
+                Гледай в YouTube
+              </a>
+              <a class="button secondary magnetic" id="hero-secondary" href="/partners">Виж партньорства</a>
+            </div>
+          </div>
+          <div class="hero-stack" id="hero-stack" aria-hidden="true"></div>
+        </section>
+
+        <section class="ad-marquee-section" aria-label="Активни реклами">
+          <div class="ad-marquee-header">
+            <span>Активни партньори</span>
+          </div>
+          <div class="ad-marquee" data-active-ad-marquee></div>
+        </section>
+
+        <section class="section socials priority-section" id="socials">
+          <div class="section-heading">
+            <p class="section-kicker" id="socials-kicker">Канали</p>
+            <h2 id="socials-title">Последвай <span class="brand-name">D.I.S Подкаст</span> там, където гледаш футбол.</h2>
+            <p id="socials-description"></p>
+          </div>
+          <div class="social-grid" id="social-grid"></div>
+        </section>
+
+        <div class="supporters-break" aria-hidden="true">
+          <span class="supporters-break-line"></span>
+          <img
+            class="football-sticker supporters-break-image"
+            src="./assets/football-sticker-fans.png"
+            alt=""
+          />
+        </div>
+
+        <section class="section latest" id="latest">
+          <div class="section-heading">
+            <p class="section-kicker" id="latest-kicker">YouTube</p>
+            <h2 id="latest-title">Последното видео в центъра на вниманието.</h2>
+            <p id="latest-description">
+              Най-актуалният YouTube акцент от канала, поставен директно в страницата за
+              бързо гледане и лесно споделяне.
+            </p>
+          </div>
+          <div class="youtube-player" id="youtube-player"></div>
+        </section>
+
+        <section class="ticker" id="ticker" aria-label="Съдържание"></section>
+
+        <section class="section formats" id="format">
+          <div class="section-heading">
+            <p class="section-kicker" id="formats-kicker">Формати</p>
+            <h2 id="formats-title"></h2>
+            <p id="formats-description"></p>
+          </div>
+          <img
+            class="football-sticker formats-football-sticker"
+            src="./assets/football-sticker-broadcast.png"
+            alt=""
+            aria-hidden="true"
+          />
+          <div class="format-grid" id="format-grid"></div>
+        </section>
+
+        <section class="section home-discovery">
+          <div class="section-heading">
+            <p class="section-kicker" id="discovery-kicker">Още от D.I.S</p>
+            <h2 id="discovery-title">Влез по-дълбоко в играта.</h2>
+            <p id="discovery-description">Гласувай, запознай се с водещите, следи новините или разгледай възможностите за партньорство.</p>
+          </div>
+          <div class="home-discovery-grid" id="home-discovery-grid"></div>
+        </section>
+
+        <section class="section contact home-contact-cta" id="contact">
+          <p class="section-kicker" id="home-contact-kicker">Контакт</p>
+          <h2 id="home-contact-title">Имаш въпрос, идея или предложение?</h2>
+          <p id="home-contact-description">Изпрати го чрез контактната форма и екипът ще го види директно в админ панела.</p>
+          <a class="button primary" href="/contact">Свържи се с D.I.S</a>
+        </section>
+      </main>
+
+      <footer class="site-footer">
+        <div class="footer-inner">
+          <div class="footer-brand">
+            <span class="brand-mark">
+              <img class="footer-logo" src="./assets/dis-logo.png" alt="" />
+            </span>
+            <div>
+              <strong class="footer-brand-name">D.I.S Подкаст</strong>
+              <p>Футболни реакции, подкасти, live моменти и кратки видеа.</p>
+            </div>
+          </div>
+          <nav class="footer-nav" data-footer-nav aria-label="Footer навигация"></nav>
+          <div class="footer-actions">
+            <a class="footer-email" data-footer-email href="mailto:hello@dispodcast.bg"></a>
+            <div class="footer-socials" data-footer-socials></div>
+          </div>
+        </div>
+      </footer>
+    </div>
+
+    <aside class="football-scroll-progress" aria-hidden="true">
+      <span class="scroll-ball"></span>
+    </aside>
+
+    <script src="./config.js"></script>
+    <script src="./script.js"></script>
+  </body>
+</html>
