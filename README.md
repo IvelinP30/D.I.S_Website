@@ -2,6 +2,8 @@
 
 Modern public website and admin panel for D.I.S Подкаст, a football-focused podcast and social media brand.
 
+Live site: https://dis-podcast.onrender.com
+
 ## What It Is
 
 - Public brand website for Instagram/TikTok/YouTube/Facebook
