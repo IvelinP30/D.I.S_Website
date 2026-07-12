@@ -145,6 +145,10 @@ The current local JSON and upload storage remains suitable for development only.
 
 When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
 
+### Render Deployment
+
+The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.
+
 ## Architecture Recommendation
 
 The current plain HTML/CSS/JS frontend plus small Node.js backend is still a good fit. A framework like Vue or React becomes useful only if the site grows into a larger dashboard, multi-user CMS, automated feeds, or richer campaign reporting.
