@@ -141,7 +141,7 @@ The current local JSON and upload storage remains suitable for development only.
 1. Create a Supabase project.
 2. Open SQL Editor and run `supabase/schema.sql` once.
 3. Copy the Project URL and service-role key into the hosting environment variables shown in `.env.example`.
-4. Never expose `SUPABASE_SERVICE_ROLE_KEY` in frontend code or commit it to Git.
+4. Never expose `SUPABASE_SECRET_KEY` in frontend code or commit it to Git.
 
 When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
 

@@ -27,7 +27,7 @@ const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
 const sessionSecret = process.env.SESSION_SECRET || crypto.randomBytes(32).toString("hex");
 const isProduction = process.env.NODE_ENV === "production";
 const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "dis-media";
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey);
 const oneDay = 60 * 60 * 24;
@@ -77,7 +77,9 @@ if (!fs.existsSync(votesFile)) fs.writeFileSync(votesFile, '{"polls":{}}\n');
 if (!fs.existsSync(messagesFile)) fs.writeFileSync(messagesFile, "[]\n");
 
 function supabaseHeaders(extra = {}) {
-  return { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, ...extra };
+  const headers = { apikey: supabaseKey, ...extra };
+  if (!supabaseKey.startsWith("sb_secret_")) headers.Authorization = `Bearer ${supabaseKey}`;
+  return headers;
 }
 
 async function readContent() {
