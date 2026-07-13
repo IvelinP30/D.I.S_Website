@@ -11,10 +11,6 @@ values ('dis-media', 'dis-media', true)
 on conflict (id) do update set public = true;
 
 drop policy if exists "Public read D.I.S media" on storage.objects;
-create policy "Public read D.I.S media"
-on storage.objects for select
-to public
-using (bucket_id = 'dis-media');
 
 revoke all on table public.app_state from anon, authenticated;
 grant select, insert, update, delete on table public.app_state to service_role;

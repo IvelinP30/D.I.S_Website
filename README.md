@@ -153,7 +153,7 @@ When all Supabase variables are present, the Node backend automatically stores c
 
 The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.
 
-Large visual assets are delivered as WebP and static assets include browser cache headers to reduce Render outbound bandwidth. The original PNG files remain source assets and are not used by normal public page loads.
+Large visual assets are delivered as WebP and image assets include browser cache headers to reduce Render outbound bandwidth. CSS and JavaScript always revalidate so a deployment cannot mix incompatible cached frontend versions. The original PNG files remain source assets and are not used by normal public page loads.
 
 ## Architecture Recommendation
 

@@ -367,7 +367,7 @@ function loginPage(error = "") {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>D.I.S Admin Login</title>
-        <link rel="stylesheet" href="/styles.css" />
+        <link rel="stylesheet" href="/styles.css?v=20260713-1" />
       </head>
       <body class="admin-body">
         <main class="login-shell">
@@ -561,7 +561,7 @@ async function handleRequest(request, response) {
     "Cache-Control": filePath.startsWith(path.join(root, "assets"))
       ? "public, max-age=86400"
       : extension === ".css" || extension === ".js"
-        ? "public, max-age=3600"
+        ? "no-cache"
         : "no-cache"
   });
 }
