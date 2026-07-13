@@ -87,7 +87,13 @@ async function readContent() {
 }
 
 async function writeContent(content) {
-  return writeJsonFile(dataFile, content, "content");
+  await writeJsonFile(dataFile, content, "content");
+  const storedVotes = await readJsonFile(votesFile, { polls: {} });
+  const validPollIds = new Set((content.polls || []).map((poll) => poll.id));
+  const nextPolls = Object.fromEntries(Object.entries(storedVotes.polls || {}).filter(([pollId]) => validPollIds.has(pollId)));
+  if (Object.keys(nextPolls).length !== Object.keys(storedVotes.polls || {}).length) {
+    await writeJsonFile(votesFile, { ...storedVotes, polls: nextPolls });
+  }
 }
 
 async function readJsonFile(file, fallback, storageKey = path.basename(file, ".json")) {
@@ -217,7 +223,7 @@ async function saveUpload(file) {
   if (cloudStorageEnabled) {
     const response = await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(supabaseBucket)}/${encodeURIComponent(filename)}`, {
       method: "POST",
-      headers: supabaseHeaders({ "Content-Type": file.mime, "x-upsert": "false" }),
+      headers: supabaseHeaders({ "Content-Type": file.mime, "cache-control": "3600", "x-upsert": "false" }),
       body: file.content
     });
     if (!response.ok) throw new Error(`Cloud upload failed (${response.status})`);
@@ -551,7 +557,12 @@ async function handleRequest(request, response) {
 
   const extension = path.extname(filePath);
   send(response, 200, fs.readFileSync(filePath), {
-    "Content-Type": mimeTypes[extension] || "application/octet-stream"
+    "Content-Type": mimeTypes[extension] || "application/octet-stream",
+    "Cache-Control": filePath.startsWith(path.join(root, "assets"))
+      ? "public, max-age=86400"
+      : extension === ".css" || extension === ".js"
+        ? "public, max-age=3600"
+        : "no-cache"
   });
 }
 

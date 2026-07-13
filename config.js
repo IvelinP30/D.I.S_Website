@@ -2,7 +2,7 @@ window.DIS_SITE_CONFIG = {
   brand: {
     name: "D.I.S Подкаст",
     logo: "./assets/dis-logo.png",
-    heroImage: "./assets/hero-football-podcast.png",
+    heroImage: "./assets/hero-football-podcast.webp",
     heroImageAlt: "hero background image"
   },
   nav: [
@@ -37,7 +37,7 @@ window.DIS_SITE_CONFIG = {
       kicker: "Новини",
       title: "Последни новини и обновления от D.I.S Подкаст.",
       description: "Ръчно добавени публикации от екипа: съобщения, теми, реакции, важни моменти и нови идеи около канала.",
-      image: "./assets/news-football-hero.png"
+      image: "./assets/news-football-hero.webp"
     },
     formats: {
       kicker: "Формати",
@@ -98,7 +98,7 @@ window.DIS_SITE_CONFIG = {
     label: "Partner placement",
     title: "Вашият бранд x D.I.S Подкаст",
     description: "Визуална зона за бранд партньорство: кампания, промо код, продуктово присъствие или партньор на live реакция.",
-    image: "./assets/partner-placement-football-media.png"
+    image: "./assets/partner-placement-football-media.webp"
   },
   ticker: [
     "Реакции след мач",
@@ -232,7 +232,7 @@ window.DIS_SITE_CONFIG = {
       kicker: "Фен зона",
       title: "Твоята прогноза влиза в играта.",
       description: "Виж прогнозите на водещите, гласувай веднъж в активните футболни анкети и изпрати тема за следващ разговор.",
-      image: "./assets/fan-zone-hero.png",
+      image: "./assets/fan-zone-hero.webp",
       predictionsKicker: "Прогнозите на D.I.S", predictionsTitle: "Преди първия съдийски сигнал.", predictionsDescription: "Най-важните прогнози на водещите, записани на едно място.",
       voteKicker: "Фенски вот", voteTitle: "Ти как виждаш мача?", voteDescription: "Всеки посетител може да даде един глас във всяка активна анкета.",
       ideaKicker: "Твоята тема", ideaTitle: "Какво да обсъдим следващо?", ideaDescription: "Изпрати въпрос, футболна тема или идея за следващ епизод."
@@ -241,14 +241,14 @@ window.DIS_SITE_CONFIG = {
       kicker: "Водещи",
       title: "Гласовете зад D.I.S Подкаст.",
       description: "Запознай се с хората зад микрофоните, техните футболни пристрастия и начина, по който гледат играта.",
-      image: "./assets/hosts-hero.png",
+      image: "./assets/hosts-hero.webp",
       sectionKicker: "Зад микрофоните", sectionTitle: "Две гледни точки. Една игра.", sectionDescription: "Истории, футболни пристрастия и характерът зад разговорите."
     },
     partners: {
       kicker: "Партньорства",
       title: "Бранд присъствие с футболен характер.",
       description: "Рекламни формати, активни кампании и проверими данни за компании, които искат да говорят с футболна аудитория.",
-      image: "./assets/partners-hero.png",
+      image: "./assets/partners-hero.webp",
       adsKicker: "Реклама", adsTitle: "Рекламни формати", adsDescription: "Основните начини за присъствие в съдържанието на D.I.S Подкаст.",
       ctaKicker: "Следващ ход", ctaTitle: "Имаш идея за кампания?", ctaDescription: "Изпрати целта, формата и ориентировъчния бюджет. Екипът ще прегледа запитването в админ панела."
     },
@@ -256,7 +256,7 @@ window.DIS_SITE_CONFIG = {
       kicker: "Контакт",
       title: "Подай топката към D.I.S Подкаст.",
       description: "Изпрати въпрос, идея, предложение за участие или запитване за партньорство.",
-      image: "./assets/contact-hero.png",
+      image: "./assets/contact-hero.webp",
       formKicker: "Пиши ни", formTitle: "Избери посока на разговора.", formDescription: "Формата се адаптира според темата. Всички съобщения се пазят в защитения admin inbox."
     }
   },

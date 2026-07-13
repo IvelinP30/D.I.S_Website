@@ -602,7 +602,7 @@ function renderEditors() {
       ${field("Малък етикет", "label", sponsorPanel.label)}
       ${field("Заглавие", "title", sponsorPanel.title)}
       ${textarea("Описание", "description", sponsorPanel.description)}
-      ${hiddenField("image", sponsorPanel.image || "./assets/partner-placement-football-media.png")}
+      ${hiddenField("image", sponsorPanel.image || "./assets/partner-placement-football-media.webp")}
     </article>
   `;
 
@@ -962,7 +962,7 @@ function collectConfig() {
       label: value(sponsorPanelCard, "label"),
       title: value(sponsorPanelCard, "title"),
       description: value(sponsorPanelCard, "description"),
-      image: value(sponsorPanelCard, "image") || "./assets/partner-placement-football-media.png"
+      image: value(sponsorPanelCard, "image") || "./assets/partner-placement-football-media.webp"
     },
     mediaLibrary: adminConfig.mediaLibrary || [],
     adSlots: collectCards(adsEditor, (card) => ({

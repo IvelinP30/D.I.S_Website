@@ -68,6 +68,8 @@ The admin saves content with `PUT /api/content`, protected by a signed session c
 
 Voting uses a long-lived signed `dis_voter` cookie. It prevents normal repeat voting per poll without requiring accounts. Clearing cookies or deliberately changing identity can bypass this, which is acceptable for the intended entertainment use.
 
+Each visitor can vote once in every separate poll. Deleting a poll from admin also removes its stored vote records on the next content save.
+
 Public forms write validated messages through `POST /api/messages`. The backend includes a honeypot and an in-memory per-IP rate limit. Reading, changing status, and deleting messages require an authenticated admin session.
 
 ## Admin Editing
@@ -150,6 +152,8 @@ When all Supabase variables are present, the Node backend automatically stores c
 ### Render Deployment
 
 The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.
+
+Large visual assets are delivered as WebP and static assets include browser cache headers to reduce Render outbound bandwidth. The original PNG files remain source assets and are not used by normal public page loads.
 
 ## Architecture Recommendation
 

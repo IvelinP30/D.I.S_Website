@@ -1,17 +1,29 @@
 let config = window.DIS_SITE_CONFIG || {};
 
+function optimizeStaticAssetUrls(value) {
+  if (Array.isArray(value)) return value.map(optimizeStaticAssetUrls);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, optimizeStaticAssetUrls(item)]));
+  }
+  if (typeof value !== "string" || !value.includes("assets/") || value.endsWith("dis-logo.png")) return value;
+  return value.replace(/\.png$/, ".webp");
+}
+
 async function loadContent() {
   try {
     const response = await fetch("/api/content", { headers: { Accept: "application/json" } });
     if (response.ok) {
-      config = await response.json();
+      config = optimizeStaticAssetUrls(await response.json());
     }
   } catch {
     const savedConfig = localStorage.getItem("dis-site-config");
-    if (savedConfig) config = JSON.parse(savedConfig);
+    if (savedConfig) config = optimizeStaticAssetUrls(JSON.parse(savedConfig));
   }
 
+  config = optimizeStaticAssetUrls(config);
+
   renderPage();
+  document.documentElement.classList.add("content-ready");
   await renderFanVoting();
   bindMessageForms();
   bindMotion();
@@ -25,7 +37,7 @@ function renderPage() {
   const footer = config.footer || {};
   const brandName = brand.name || "D.I.S Подкаст";
   const logo = brand.logo || "./assets/dis-logo.png";
-  const heroImage = brand.heroImage || "./assets/hero-football-podcast.png";
+  const heroImage = brand.heroImage || "./assets/hero-football-podcast.webp";
   const contactEmail = footer.email || sections.contact?.email || "hello@dispodcast.bg";
 
   const titleSuffix = {
@@ -100,7 +112,7 @@ function renderPage() {
   setSection("socials", sections.socials);
   setSection("latest", sections.latest);
   setSection("news", sections.news);
-  setAttribute("#news-hero-image", "src", sections.news?.image || "./assets/news-football-hero.png");
+  setAttribute("#news-hero-image", "src", sections.news?.image || "./assets/news-football-hero.webp");
   setAttribute("#news-hero-image", "alt", "hero background image");
   setSection("formats", sections.formats);
   setSection("discovery", sections.discovery);
@@ -112,7 +124,7 @@ function renderPage() {
   setHTML("#sponsor-panel-label", brandText(sponsorPanel.label || "Partner placement"));
   setHTML("#sponsor-panel-title", brandText(sponsorPanel.title || `Вашият бранд x ${brandName}`));
   setHTML("#sponsor-panel-description", brandText(sponsorPanel.description || ""));
-  setAttribute("#sponsor-panel-image", "src", sponsorPanel.image || "./assets/partner-placement-football-media.png");
+  setAttribute("#sponsor-panel-image", "src", sponsorPanel.image || "./assets/partner-placement-football-media.webp");
 
   const pageHero = document.querySelector("[data-page-hero]");
   if (pageHero) {
@@ -120,7 +132,7 @@ function renderPage() {
     setHTML("[data-page-kicker]", brandText(page.kicker || ""));
     setHTML("[data-page-title]", brandText(page.title || ""));
     setHTML("[data-page-description]", brandText(page.description || ""));
-    setAttribute(".subpage-hero-image", "src", page.image || "./assets/hero-football-podcast.png");
+    setAttribute(".subpage-hero-image", "src", page.image || "./assets/hero-football-podcast.webp");
     setAttribute(".subpage-hero-image", "alt", "hero background image");
     document.querySelectorAll("[data-fan-copy]").forEach((element) => { element.innerHTML = brandText(page[element.dataset.fanCopy] || ""); });
     document.querySelectorAll("[data-hosts-copy]").forEach((element) => { element.innerHTML = brandText(page[element.dataset.hostsCopy] || ""); });
@@ -197,7 +209,7 @@ function renderPage() {
       const page = card.section || config.pages?.[card.key] || {};
       return `
         <a class="discovery-card tilt-card" href="${card.href}">
-          <img src="${escapeAttribute(page.image || "./assets/news-football-hero.png")}" alt="" />
+          <img src="${escapeAttribute(page.image || "./assets/news-football-hero.webp")}" alt="" />
           <span class="discovery-card-overlay"></span>
           <span class="discovery-card-copy"><small>${escapeHTML(page.kicker || card.fallback)}</small><strong>${brandText(page.title || card.fallback)}</strong><em>${card.label}</em></span>
         </a>`;
