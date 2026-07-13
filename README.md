@@ -158,6 +158,10 @@ The repository includes `render.yaml` for a free Node web service in Frankfurt. 
 
 Large visual assets are delivered as WebP and image assets include browser cache headers to reduce Render outbound bandwidth. CSS and JavaScript always revalidate so a deployment cannot mix incompatible cached frontend versions. The original PNG files remain source assets and are not used by normal public page loads.
 
+### Browser Support
+
+The interface targets current Chrome, Edge, Firefox, and Safari releases on Windows, macOS, iOS, and Android. CSS includes viewport, WebKit blur/mask, scrollbar, and color fallbacks where appropriate. Public pages, admin, and login use the same Inter font to keep layout metrics consistent across operating systems. Internet Explorer is not supported.
+
 ## Architecture Recommendation
 
 The current plain HTML/CSS/JS frontend plus small Node.js backend is still a good fit. A framework like Vue or React becomes useful only if the site grows into a larger dashboard, multi-user CMS, automated feeds, or richer campaign reporting.
@@ -181,6 +185,7 @@ The site has a small Node.js backend, a protected admin panel, editable content 
 - contact buttons
 - shared footer with email/social links
 - football-themed scroll progress indicator on desktop and mobile
+- subtle clipped hero parallax and a themed native scrollbar
 - playful football ornament layer across buttons, cards, hero, YouTube, and section labels
 
 Run locally with:
@@ -215,8 +220,6 @@ The best professional direction is to keep this as a fast official brand page an
 Recommended next steps:
 
 1. Add YouTube Data API integration for real subscriber/video statistics.
-2. Decide production hosting and persistent storage for content, votes, messages, and uploaded media.
-3. Replace local JSON/upload storage with a database and object storage when deploying to an ephemeral filesystem platform.
-4. Add basic analytics.
-5. Add real sponsor contact email or form.
-6. Keep Instagram/TikTok/Facebook stats manual until official API access is available.
+2. Add privacy-conscious traffic analytics.
+3. Add a real sponsor contact email when the brand is ready.
+4. Keep Instagram/TikTok/Facebook stats manual until official API access is available.

@@ -895,7 +895,13 @@ window.addEventListener(
   "scroll",
   () => {
     const y = window.scrollY;
-    if (heroImage) heroImage.style.transform = `scale(1.04) translateY(${y * 0.08}px)`;
+    if (heroImage) {
+      const hero = heroImage.closest(".hero");
+      const heroHeight = hero?.offsetHeight || window.innerHeight;
+      const heroProgress = Math.min(Math.max(y / heroHeight, 0), 1);
+      const heroOffset = heroProgress * 48;
+      heroImage.style.transform = `scale(1.04) translateY(${heroOffset}px)`;
+    }
     if (heroStack) heroStack.style.transform = `translateY(${y * -0.12}px)`;
     if (scrollBall) {
       const max = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
