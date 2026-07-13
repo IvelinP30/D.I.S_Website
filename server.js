@@ -367,7 +367,7 @@ function loginPage(error = "") {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>D.I.S Admin Login</title>
-        <link rel="stylesheet" href="/styles.css?v=20260713-1" />
+        <link rel="stylesheet" href="/styles.css?v=20260713-2" />
       </head>
       <body class="admin-body">
         <main class="login-shell">
