@@ -2,7 +2,7 @@
   "brand": {
     "name": "D.I.S Подкаст",
     "logo": "./assets/dis-logo.png",
-    "heroImage": "./assets/hero-football-podcast.png",
+    "heroImage": "./assets/hero-football-podcast.webp",
     "heroImageAlt": "hero background image"
   },
   "nav": [
@@ -63,7 +63,7 @@
       "kicker": "Новини",
       "title": "Последни новини и обновления от D.I.S Подкаст.",
       "description": "Ръчно добавени публикации от екипа: съобщения, теми, реакции, важни моменти и нови идеи около канала.",
-      "image": "./assets/news-football-hero.png"
+      "image": "./assets/news-football-hero.webp"
     },
     "formats": {
       "kicker": "Формати",
@@ -155,7 +155,7 @@
     "label": "Partner placement",
     "title": "Вашият бранд x D.I.S Подкаст",
     "description": "Визуална зона за бранд партньорство: кампания, промо код, продуктово присъствие или партньор на live реакция.",
-    "image": "./assets/partner-placement-football-media.png"
+    "image": "./assets/partner-placement-football-media.webp"
   },
   "ticker": [
     "Реакции след мач",
@@ -345,7 +345,7 @@
       "kicker": "Фен зона",
       "title": "Твоята прогноза влиза в играта.",
       "description": "Виж прогнозите на водещите, гласувай веднъж в активните футболни анкети и изпрати тема за следващ разговор.",
-      "image": "./assets/fan-zone-hero.png",
+      "image": "./assets/fan-zone-hero.webp",
       "predictionsKicker": "Прогнозите на D.I.S",
       "predictionsTitle": "Преди първия съдийски сигнал.",
       "predictionsDescription": "Най-важните прогнози на водещите, записани на едно място.",
@@ -360,7 +360,7 @@
       "kicker": "Водещи",
       "title": "Гласовете зад D.I.S Подкаст.",
       "description": "Запознай се с хората зад микрофоните, техните футболни пристрастия и начина, по който гледат играта.",
-      "image": "./assets/hosts-hero.png",
+      "image": "./assets/hosts-hero.webp",
       "sectionKicker": "Зад микрофоните",
       "sectionTitle": "Две гледни точки. Една игра.",
       "sectionDescription": "Истории, футболни пристрастия и характерът зад разговорите."
@@ -369,7 +369,7 @@
       "kicker": "Партньорства",
       "title": "Бранд присъствие с футболен характер.",
       "description": "Рекламни формати, активни кампании и проверими данни за компании, които искат да говорят с футболна аудитория.",
-      "image": "./assets/partners-hero.png",
+      "image": "./assets/partners-hero.webp",
       "adsKicker": "Реклама",
       "adsTitle": "Рекламни формати",
       "adsDescription": "Основните начини за присъствие в съдържанието на D.I.S Подкаст.",
@@ -381,7 +381,7 @@
       "kicker": "Контакт",
       "title": "Подай топката към D.I.S Подкаст.",
       "description": "Изпрати въпрос, идея, предложение за участие или запитване за партньорство.",
-      "image": "./assets/contact-hero.png",
+      "image": "./assets/contact-hero.webp",
       "formKicker": "Пиши ни",
       "formTitle": "Избери посока на разговора.",
       "formDescription": "Формата се адаптира според темата. Всички съобщения се пазят в защитения admin inbox."
@@ -411,12 +411,12 @@
   ],
   "predictions": [
     {
-      "id": "prediction-1783891210643",
+      "id": "prediction-1783896270616",
       "host": "Водещ",
       "match": "Предстоящ мач",
       "prediction": "Прогноза",
       "analysis": "Коментар към прогнозата",
-      "createdAt": "2026-07-12T21:20:10.643Z"
+      "createdAt": "2026-07-12T22:44:30.616Z"
     }
   ],
   "polls": [
@@ -426,8 +426,8 @@
       "match": "Отбор A срещу Отбор B",
       "question": "Кой ще спечели?",
       "status": "active",
-      "resultsVisible": false,
-      "closesAt": "",
+      "resultsVisible": true,
+      "closesAt": "2026-07-12T20:12:00.000Z",
       "options": [
         {
           "id": "option-home",
@@ -454,10 +454,10 @@
   ],
   "mediaLibrary": [
     {
-      "filename": "hero-football-podcast.png",
+      "filename": "hero-football-podcast.webp",
       "name": "Текущ hero background",
       "type": "image",
-      "url": "./assets/hero-football-podcast.png",
+      "url": "./assets/hero-football-podcast.webp",
       "createdAt": "2026-07-09T13:14:17.174Z"
     },
     {
