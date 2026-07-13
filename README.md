@@ -99,6 +99,7 @@ Most public content is editable from the admin panel, including:
 The admin is organized into page tabs. Each editable page has its own Save and Previous Version controls, so editing one page does not publish unfinished drafts from another page.
 
 Uploaded images that are deleted from admin are also removed from the local `uploads/` folder when they are no longer used by other content.
+In production, the same cleanup removes unreferenced admin uploads from the Supabase `dis-media` bucket.
 
 ## Pages And Routes
 

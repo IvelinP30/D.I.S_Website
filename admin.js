@@ -728,8 +728,16 @@ async function deleteUploadFile(filename) {
 }
 
 function filenameFromUploadUrl(url = "") {
-  if (!url.startsWith("/uploads/")) return "";
-  return url.split("/").filter(Boolean).pop() || "";
+  if (!url) return "";
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const isLocalUpload = parsed.pathname.startsWith("/uploads/");
+    const isSupabaseUpload = parsed.pathname.includes("/storage/v1/object/public/");
+    if (!isLocalUpload && !isSupabaseUpload) return "";
+    return decodeURIComponent(parsed.pathname.split("/").filter(Boolean).pop() || "");
+  } catch {
+    return "";
+  }
 }
 
 function countMediaUsages(url = "") {
@@ -1255,7 +1263,7 @@ document.addEventListener("click", async (event) => {
       try {
         await deleteLocalUploadByUrl(removedMediaUrl);
       } catch (error) {
-        setStatus(`Рекламата е премахната, но файлът не беше изтрит от папката uploads: ${error.message}`, true);
+        setStatus(`Рекламата е премахната, но файлът не беше изтрит от storage: ${error.message}`, true);
       }
     }
   }
