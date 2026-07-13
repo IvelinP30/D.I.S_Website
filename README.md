@@ -149,6 +149,8 @@ The current local JSON and upload storage remains suitable for development only.
 
 When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
 
+Local development uses JSON files and the local `uploads/` directory even when Supabase credentials exist in `.env`. Set `USE_SUPABASE_LOCAL=true` only when intentionally testing against the production Supabase project. Render uses Supabase automatically because `NODE_ENV=production`.
+
 ### Render Deployment
 
 The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.

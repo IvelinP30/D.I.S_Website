@@ -29,7 +29,7 @@ const isProduction = process.env.NODE_ENV === "production";
 const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "dis-media";
-const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey);
+const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
 const messageRateLimits = new Map();
