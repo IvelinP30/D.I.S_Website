@@ -1,8 +1,5 @@
 let adminConfig = structuredClone(window.DIS_SITE_CONFIG);
 let savedConfig = structuredClone(window.DIS_SITE_CONFIG);
-const storedConfig = localStorage.getItem("dis-site-config");
-if (storedConfig) adminConfig = JSON.parse(storedConfig);
-let previousPages = {};
 
 const status = document.querySelector("#admin-status");
 const brandEditor = document.querySelector("#brand-editor");
@@ -37,6 +34,11 @@ const confirmOk = document.querySelector("[data-confirm-ok]");
 const confirmAlt = document.querySelector("[data-confirm-alt]");
 const confirmCancelControls = document.querySelectorAll("[data-confirm-cancel]");
 let pendingConfirmation = null;
+const imageUploadProfiles = {
+  hero: { maxDimension: 1920, targetBytes: 1_200_000, label: "1920 px и 1.2 MB" },
+  content: { maxDimension: 1600, targetBytes: 800_000, label: "1600 px и 800 KB" }
+};
+const maxUploadImageBytes = 1_200_000;
 
 const sectionFields = [
   ["socials", "Канали"],
@@ -109,14 +111,14 @@ function removalLabel(type) {
 async function loadAdminContent() {
   try {
     const response = await fetch("/api/content", { headers: { Accept: "application/json" } });
-    if (response.ok) adminConfig = await response.json();
+    if (!response.ok) throw new Error("Content API unavailable");
+    adminConfig = await response.json();
   } catch {
-    setStatus("Static preview mode: changes will save only in this browser.");
+    setStatus("Съдържанието не може да бъде заредено от сървъра.", true);
   }
 
   adminConfig = withDefaults(adminConfig);
   savedConfig = structuredClone(adminConfig);
-  previousPages = JSON.parse(localStorage.getItem("dis-previous-pages") || "{}");
   renderEditors();
   loadMessages();
 }
@@ -195,12 +197,42 @@ function readonlyInfo(label, value = "") {
 }
 
 function fileField(label, accept, target = "") {
+  const profile = imageUploadProfile(target);
+  const imageHint = accept.includes("image/") ? `<small>Снимките се оптимизират автоматично до ${profile.label}.</small>` : "";
   return `
-    <label class="mini-field">
+    <label class="mini-field upload-field">
       <span>${label}</span>
       <input data-upload ${target ? `data-upload-target="${escapeValue(target)}"` : ""} type="file" accept="${accept}" />
+      ${imageHint}
+      <small class="upload-feedback" data-upload-feedback role="status" aria-live="polite"></small>
     </label>
   `;
+}
+
+function imageUploadProfile(target = "") {
+  const isHeroOrBrand = !target || target === "sections.news.image" || /^pages\.[^.]+\.image$/.test(target);
+  return isHeroOrBrand ? imageUploadProfiles.hero : imageUploadProfiles.content;
+}
+
+function setUploadState(input, state, message) {
+  const field = input?.closest(".upload-field");
+  if (!field) return;
+  field.classList.toggle("is-uploading", state === "loading");
+  field.classList.toggle("has-upload-error", state === "error");
+  field.classList.toggle("has-upload-success", state === "success");
+  field.toggleAttribute("aria-busy", state === "loading");
+  input.disabled = state === "loading";
+  const feedback = field.querySelector("[data-upload-feedback]");
+  if (feedback) feedback.textContent = message || "";
+}
+
+function findUploadInput(target) {
+  return [...document.querySelectorAll("[data-upload]")]
+    .find((input) => (input.dataset.uploadTarget || "") === target);
+}
+
+function nextPaint() {
+  return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 
 function checkboxField(label, name, checked = false) {
@@ -701,9 +733,103 @@ function formatAdminDate(value = "") {
   }).format(new Date(value));
 }
 
-async function uploadFile(file) {
+function formatFileSize(bytes = 0) {
+  if (bytes < 1000) return `${bytes} B`;
+  if (bytes < 1_000_000) return `${Math.round(bytes / 1000)} KB`;
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => resolve({ image, objectUrl });
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Снимката не може да бъде прочетена."));
+    };
+    image.src = objectUrl;
+  });
+}
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Снимката не може да бъде оптимизирана."));
+    }, "image/webp", quality);
+  });
+}
+
+async function optimizeImageForUpload(file, profile = imageUploadProfiles.content) {
+  const supportedImage = ["image/jpeg", "image/png", "image/webp"].includes(file.type);
+  if (!supportedImage) {
+    if (file.type.startsWith("image/") && file.size > maxUploadImageBytes) {
+      throw new Error(`Този формат не може да бъде автоматично оптимизиран. Максималният размер е ${formatFileSize(maxUploadImageBytes)}.`);
+    }
+    return { file, optimized: false, originalSize: file.size, finalSize: file.size };
+  }
+
+  const loaded = await loadImage(file);
+  const sourceWidth = loaded.image.naturalWidth;
+  const sourceHeight = loaded.image.naturalHeight;
+
+  try {
+    if (!sourceWidth || !sourceHeight) throw new Error("Снимката няма валидни размери.");
+    if (Math.max(sourceWidth, sourceHeight) <= profile.maxDimension && file.size <= profile.targetBytes) {
+      return { file, optimized: false, originalSize: file.size, finalSize: file.size };
+    }
+
+    let dimensionLimit = Math.min(profile.maxDimension, Math.max(sourceWidth, sourceHeight));
+    let quality = 0.82;
+    let blob;
+    let outputWidth = sourceWidth;
+    let outputHeight = sourceHeight;
+
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      const scale = Math.min(1, dimensionLimit / Math.max(sourceWidth, sourceHeight));
+      outputWidth = Math.max(1, Math.round(sourceWidth * scale));
+      outputHeight = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
+      const context = canvas.getContext("2d", { alpha: true });
+      if (!context) throw new Error("Браузърът не поддържа оптимизиране на снимки.");
+      context.drawImage(loaded.image, 0, 0, outputWidth, outputHeight);
+      blob = await canvasToBlob(canvas, quality);
+      if (blob.size <= profile.targetBytes) break;
+
+      const proportionalScale = Math.sqrt(profile.targetBytes / blob.size) * 0.94;
+      dimensionLimit = Math.max(640, Math.round(dimensionLimit * Math.min(0.9, proportionalScale)));
+      quality = Math.max(0.46, quality - 0.06);
+    }
+
+    if (!blob) throw new Error("Снимката не може да бъде оптимизирана.");
+    if (blob.size > profile.targetBytes) {
+      throw new Error(`Снимката остава над целевите ${formatFileSize(profile.targetBytes)} след оптимизация.`);
+    }
+    const baseName = file.name.replace(/\.[^.]+$/, "") || "image";
+    const optimizedFile = new File([blob], `${baseName}.webp`, {
+      type: "image/webp",
+      lastModified: Date.now()
+    });
+    return {
+      file: optimizedFile,
+      optimized: true,
+      originalSize: file.size,
+      finalSize: optimizedFile.size,
+      width: outputWidth,
+      height: outputHeight
+    };
+  } finally {
+    URL.revokeObjectURL(loaded.objectUrl);
+  }
+}
+
+async function uploadFile(file, target = "") {
+  const optimization = await optimizeImageForUpload(file, imageUploadProfile(target));
   const formData = new FormData();
-  formData.append("file", file);
+  formData.append("file", optimization.file);
   const response = await fetch("/api/upload", {
     method: "POST",
     body: formData
@@ -714,7 +840,10 @@ async function uploadFile(file) {
     throw new Error(payload.error || "Upload failed");
   }
 
-  return response.json();
+  return {
+    upload: await response.json(),
+    optimization
+  };
 }
 
 async function deleteUploadFile(filename) {
@@ -740,25 +869,36 @@ function filenameFromUploadUrl(url = "") {
   }
 }
 
-function countMediaUsages(url = "") {
-  if (!url) return 0;
-  let count = 0;
-  if (adminConfig.brand?.logo === url) count += 1;
-  if (adminConfig.brand?.heroImage === url) count += 1;
-  (adminConfig.activeAds || []).forEach((ad) => {
-    if (ad.mediaUrl === url) count += 1;
-  });
-  (adminConfig.news || []).forEach((item) => {
-    if (item.imageUrl === url) count += 1;
-  });
-  Object.values(adminConfig.pages || {}).forEach((page) => {
-    if (page.image === url) count += 1;
-  });
-  (adminConfig.hosts || []).forEach((host) => {
-    if (host.imageUrl === url) count += 1;
-  });
-  if (adminConfig.sections?.news?.image === url) count += 1;
-  return count;
+function collectManagedUploadUrls(value, urls = new Set()) {
+  if (typeof value === "string") {
+    if (filenameFromUploadUrl(value)) urls.add(value);
+    return urls;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectManagedUploadUrls(item, urls));
+    return urls;
+  }
+  if (value && typeof value === "object") {
+    Object.values(value).forEach((item) => collectManagedUploadUrls(item, urls));
+  }
+  return urls;
+}
+
+async function cleanupRemovedUploads(beforeConfig, afterConfig) {
+  const beforeUrls = collectManagedUploadUrls(beforeConfig);
+  const afterUrls = collectManagedUploadUrls(afterConfig);
+  const failures = [];
+
+  for (const url of beforeUrls) {
+    if (afterUrls.has(url)) continue;
+    try {
+      await deleteLocalUploadByUrl(url);
+    } catch (error) {
+      failures.push(error.message);
+    }
+  }
+
+  return failures;
 }
 
 async function deleteLocalUploadByUrl(url = "") {
@@ -1019,10 +1159,11 @@ function applyPage(target, page, snapshot) {
     target.brand = source.brand;
     target.nav = source.nav;
     target.socials = source.socials;
+    target.mediaLibrary = source.mediaLibrary;
   }
   if (page === "home") {
     target.hero = source.hero;
-    ["socials", "latest", "formats"].forEach((key) => { target.sections[key] = source.sections[key]; });
+    ["socials", "latest", "formats", "discovery", "homeContact"].forEach((key) => { target.sections[key] = source.sections[key]; });
     target.ticker = source.ticker;
     target.youtubePlayer = source.youtubePlayer;
     target.formats = source.formats;
@@ -1056,35 +1197,31 @@ function applyPage(target, page, snapshot) {
   }
 }
 
-function restorePage(page, snapshot) {
-  applyPage(adminConfig, page, snapshot);
-}
-
 document.querySelectorAll("[data-save-page]").forEach((button) => {
   button.addEventListener("click", async () => {
     const page = button.dataset.savePage;
     if (!(await askConfirmation(`Сигурен ли си, че искаш да запазиш „${button.textContent.replace("Запази", "").trim()}“?`))) return;
     const draftConfig = collectConfig();
+    const lastSavedConfig = structuredClone(savedConfig);
     const nextConfig = withDefaults(structuredClone(savedConfig));
     applyPage(nextConfig, page, draftConfig);
-    previousPages[page] = structuredClone(savedConfig);
-    localStorage.setItem("dis-previous-pages", JSON.stringify(previousPages));
     try {
       const response = await fetch("/api/content", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(nextConfig)
       });
-      if (!response.ok) throw new Error("Backend save failed");
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload.error || "Сървърът не успя да запази промените.");
+      }
       savedConfig = withDefaults(await response.json());
       applyPage(adminConfig, page, savedConfig);
-      localStorage.removeItem("dis-site-config");
-      setStatus("Промените са запазени.");
-    } catch {
-      savedConfig = structuredClone(nextConfig);
-      applyPage(adminConfig, page, nextConfig);
-      localStorage.setItem("dis-site-config", JSON.stringify(nextConfig));
-      setStatus("Запазено е само в този браузър. Стартирай server.js за server save.", true);
+      const cleanupFailures = await cleanupRemovedUploads(lastSavedConfig, savedConfig);
+      setStatus(cleanupFailures.length ? "Промените са запазени, но някои стари файлове не бяха изтрити." : "Промените са запазени.", cleanupFailures.length > 0);
+    } catch (error) {
+      adminConfig = withDefaults(structuredClone(draftConfig));
+      setStatus(`Промените не са запазени: ${error.message}`, true);
     }
   });
 });
@@ -1092,12 +1229,13 @@ document.querySelectorAll("[data-save-page]").forEach((button) => {
 document.querySelectorAll("[data-revert-page]").forEach((button) => {
   button.addEventListener("click", async () => {
     const page = button.dataset.revertPage;
-    if (!previousPages[page]) return showInfo("За този раздел все още няма предишна запазена версия.");
-    if (!(await askConfirmation("Да върна ли предишната версия на този раздел в редактора? След това натисни Запази, за да я публикуваш."))) return;
-    adminConfig = collectConfig();
-    restorePage(page, previousPages[page]);
+    if (!(await askConfirmation("Да върна ли последно запазената версия на този раздел? Всички незапазени промени тук ще бъдат отменени."))) return;
+    const draftConfig = collectConfig();
+    adminConfig = withDefaults(structuredClone(draftConfig));
+    applyPage(adminConfig, page, savedConfig);
     renderEditors();
-    setStatus("Предишната версия е върната в редактора.");
+    const cleanupFailures = await cleanupRemovedUploads(draftConfig, adminConfig);
+    setStatus(cleanupFailures.length ? "Последно запазената версия е върната, но някои незапазени файлове не бяха изтрити." : "Последно запазената версия е върната.", cleanupFailures.length > 0);
   });
 });
 
@@ -1166,16 +1304,7 @@ document.addEventListener("click", async (event) => {
     if (!(await askConfirmation("Сигурен ли си, че искаш да изтриеш снимката на този водещ?"))) return;
     syncBeforeMutating();
     const index = Number(removeHostImageButton.dataset.removeHostImage);
-    const imageUrl = adminConfig.hosts?.[index]?.imageUrl || "";
-    const shouldDeleteUpload = filenameFromUploadUrl(imageUrl) && countMediaUsages(imageUrl) <= 1;
     if (adminConfig.hosts?.[index]) adminConfig.hosts[index].imageUrl = "";
-    if (shouldDeleteUpload) {
-      try {
-        await deleteLocalUploadByUrl(imageUrl);
-      } catch (error) {
-        setStatus(`Снимката е премахната от профила, но файлът не беше изтрит: ${error.message}`, true);
-      }
-    }
     renderEditors();
     return;
   }
@@ -1193,14 +1322,6 @@ document.addEventListener("click", async (event) => {
     if (!(await askConfirmation("Сигурен ли си, че искаш да изтриеш тази медия?"))) return;
 
     syncBeforeMutating();
-    if (media?.url?.startsWith("/uploads/")) {
-      try {
-        await deleteUploadFile(filename);
-      } catch (error) {
-        setStatus(`Файлът не беше изтрит от диска: ${error.message}`, true);
-      }
-    }
-
     adminConfig.mediaLibrary = (adminConfig.mediaLibrary || []).filter((item) => item.filename !== filename);
     renderEditors();
     setStatus("Медията е изтрита. Натисни Запази промените, за да публикуваш промяната.");
@@ -1241,31 +1362,11 @@ document.addEventListener("click", async (event) => {
   if (type === "social") adminConfig.socials.splice(index, 1);
   if (type === "format") adminConfig.formats.splice(index, 1);
   if (type === "news") {
-    const removedNews = adminConfig.news[index];
-    const removedImageUrl = removedNews?.imageUrl || "";
-    const shouldDeleteUpload = filenameFromUploadUrl(removedImageUrl) && countMediaUsages(removedImageUrl) <= 1;
     adminConfig.news.splice(index, 1);
-    if (shouldDeleteUpload) {
-      try {
-        await deleteLocalUploadByUrl(removedImageUrl);
-      } catch (error) {
-        setStatus(`Новината е премахната, но снимката не беше изтрита от uploads: ${error.message}`, true);
-      }
-    }
   }
   if (type === "ad") adminConfig.adSlots.splice(index, 1);
   if (type === "active-ad") {
-    const removedAd = adminConfig.activeAds[index];
-    const removedMediaUrl = removedAd?.mediaUrl || "";
-    const shouldDeleteUpload = filenameFromUploadUrl(removedMediaUrl) && countMediaUsages(removedMediaUrl) <= 1;
     adminConfig.activeAds.splice(index, 1);
-    if (shouldDeleteUpload) {
-      try {
-        await deleteLocalUploadByUrl(removedMediaUrl);
-      } catch (error) {
-        setStatus(`Рекламата е премахната, но файлът не беше изтрит от storage: ${error.message}`, true);
-      }
-    }
   }
   if (type === "stat") adminConfig.stats.splice(index, 1);
   if (type === "package") adminConfig.sponsorPackages.splice(index, 1);
@@ -1274,17 +1375,7 @@ document.addEventListener("click", async (event) => {
   if (type === "footer-link") adminConfig.footer.links.splice(index, 1);
   if (type === "footer-social") adminConfig.footer.socials.splice(index, 1);
   if (type === "host") {
-    const removedHost = adminConfig.hosts[index];
-    const removedImageUrl = removedHost?.imageUrl || "";
-    const shouldDeleteUpload = filenameFromUploadUrl(removedImageUrl) && countMediaUsages(removedImageUrl) <= 1;
     adminConfig.hosts.splice(index, 1);
-    if (shouldDeleteUpload) {
-      try {
-        await deleteLocalUploadByUrl(removedImageUrl);
-      } catch (error) {
-        setStatus(`Водещият е премахнат, но снимката не беше изтрита: ${error.message}`, true);
-      }
-    }
   }
   renderEditors();
 });
@@ -1321,34 +1412,33 @@ document.addEventListener("change", async (event) => {
 
   const file = input.files[0];
   const target = input.dataset.uploadTarget || "";
-  setStatus(`Качване на ${file.name}...`);
+  const loadingMessage = file.type.startsWith("image/")
+    ? `Оптимизиране и качване на ${file.name}...`
+    : `Качване на ${file.name}...`;
+  setUploadState(input, "loading", loadingMessage);
+  setStatus(`Оптимизиране и качване на ${file.name}...`);
 
   try {
+    await nextPaint();
     syncBeforeMutating();
-    const adMatch = target.match(/^activeAds\.(\d+)\.media$/);
-    const oldActiveAdMediaUrl = adMatch ? adminConfig.activeAds[Number(adMatch[1])]?.mediaUrl || "" : "";
-    const newsMatch = target.match(/^news\.(\d+)\.image$/);
-    const oldNewsImageUrl = newsMatch ? adminConfig.news[Number(newsMatch[1])]?.imageUrl || "" : "";
-    const pageMatch = target.match(/^pages\.([a-zA-Z]+)\.image$/);
-    const oldPageImageUrl = pageMatch ? adminConfig.pages?.[pageMatch[1]]?.image || "" : "";
-    const hostMatch = target.match(/^hosts\.(\d+)\.image$/);
-    const oldHostImageUrl = hostMatch ? adminConfig.hosts?.[Number(hostMatch[1])]?.imageUrl || "" : "";
-    const oldNewsHeroUrl = target === "sections.news.image" ? adminConfig.sections?.news?.image || "" : "";
-    const oldUploadUrl = oldActiveAdMediaUrl || oldNewsImageUrl || oldPageImageUrl || oldHostImageUrl || oldNewsHeroUrl;
-    const canDeleteOldUpload = oldUploadUrl && filenameFromUploadUrl(oldUploadUrl) && countMediaUsages(oldUploadUrl) <= 1;
-    const result = await uploadFile(file);
+    const { upload: result, optimization } = await uploadFile(file, target);
     if (target) {
       selectMedia(target, result.url, result.type);
-      if (canDeleteOldUpload) {
-        await deleteLocalUploadByUrl(oldUploadUrl);
-      }
     } else {
       addUploadResult(result);
     }
     renderEditors();
-    setStatus(target ? "Файлът е качен и избран. Натисни Запази промените." : "Файлът е добавен в историята за лого/background.");
+    const optimizationText = optimization.optimized
+      ? ` Оптимизирана: ${formatFileSize(optimization.originalSize)} → ${formatFileSize(optimization.finalSize)} (${optimization.width}×${optimization.height}).`
+      : "";
+    const successMessage = `${target ? "Файлът е качен и избран. Натисни Запази промените." : "Файлът е добавен в историята за лого/background."}${optimizationText}`;
+    setUploadState(findUploadInput(target), "success", successMessage);
+    setStatus(successMessage);
   } catch (error) {
-    setStatus(`Качването не успя: ${error.message}`, true);
+    const errorMessage = `Качването не успя: ${error.message}`;
+    input.value = "";
+    setUploadState(input, "error", errorMessage);
+    setStatus(errorMessage, true);
   }
 });
 

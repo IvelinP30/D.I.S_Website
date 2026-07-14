@@ -241,8 +241,10 @@ function renderPage() {
     predictionGrid.innerHTML = (config.predictions || []).length
       ? config.predictions.map((item) => `
           <article class="prediction-card tilt-card">
-            <span class="prediction-live"><i></i> Прогноза</span>
-            <small>${escapeHTML(item.host || "D.I.S Подкаст")}</small>
+            <div class="prediction-meta">
+              <span class="prediction-live"><i></i> Прогноза</span>
+              <span class="prediction-host"><b>Водещ</b>${escapeHTML(item.host || "D.I.S Подкаст")}</span>
+            </div>
             <h3>${escapeHTML(item.match || "Предстоящ мач")}</h3>
             <strong>${escapeHTML(item.prediction || "")}</strong>
             <p>${brandText(item.analysis || "")}</p>

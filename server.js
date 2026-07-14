@@ -32,6 +32,8 @@ const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "dis-media";
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
+const maxUploadBytes = 25_000_000;
+const maxStoredImageBytes = 1_200_000;
 const messageRateLimits = new Map();
 
 if (isProduction && adminPassword === "change-this-password") {
@@ -147,7 +149,7 @@ function readBody(request) {
   });
 }
 
-function readBuffer(request, limit = 25_000_000) {
+function readBuffer(request, limit = maxUploadBytes) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
@@ -210,6 +212,9 @@ function parseMultipartFile(request, buffer) {
 async function saveUpload(file) {
   const uploadType = uploadTypes[file.mime];
   if (!uploadType) throw new Error("Unsupported file type");
+  if (uploadType.type === "image" && file.content.length > maxStoredImageBytes) {
+    throw new Error("Image is larger than the allowed 1.2 MB after optimization");
+  }
 
   const safeName = path
     .basename(file.filename, path.extname(file.filename))

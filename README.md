@@ -96,10 +96,12 @@ Most public content is editable from the admin panel, including:
 - fan polls, options, status, deadline, and result visibility
 - inbox message statuses and deletion
 
-The admin is organized into page tabs. Each editable page has its own Save and Previous Version controls, so editing one page does not publish unfinished drafts from another page.
+The admin is organized into page tabs. Each editable page has its own Save control and an `Отмени промените` control. Restore discards only the unsaved draft for the current page and reloads that page from the last successful local-server or Supabase save; it does not publish or modify other page drafts.
 
 Uploaded images that are deleted from admin are also removed from the local `uploads/` folder when they are no longer used by other content.
 In production, the same cleanup removes unreferenced admin uploads from the Supabase `dis-media` bucket.
+JPEG, PNG, and WebP uploads are automatically converted to optimized WebP when needed. Hero/background and brand-library images target a maximum 1920-pixel side and 1.2 MB; news, ad, and host images target 1600 pixels and 800 KB. The backend enforces a 1.2 MB stored-image limit, while video uploads retain the existing 25 MB request limit.
+Each upload field displays its own loading spinner and progress message while optimization/upload is running, followed by a visible success summary or actionable error.
 
 ## Pages And Routes
 
@@ -151,6 +153,8 @@ The current local JSON and upload storage remains suitable for development only.
 When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
 
 Local development uses JSON files and the local `uploads/` directory even when Supabase credentials exist in `.env`. Set `USE_SUPABASE_LOCAL=true` only when intentionally testing against the production Supabase project. Render uses Supabase automatically because `NODE_ENV=production`.
+
+Admin saves never silently fall back to browser-only persistence. If the local backend or Supabase save fails, the draft remains visible in the editor and the admin reports an error; the last saved version remains unchanged and can still be restored.
 
 ### Render Deployment
 

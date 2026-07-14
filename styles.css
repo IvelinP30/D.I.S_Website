@@ -2697,18 +2697,46 @@ h3 {
   content: "";
 }
 
-.prediction-live {
+.prediction-meta {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 34px;
+}
+
+.prediction-live,
+.prediction-host {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(56, 242, 127, 0.28);
   border-radius: 999px;
-  margin-bottom: 34px;
-  padding: 7px 10px;
-  color: var(--accent);
+  min-height: 34px;
+  padding: 7px 12px;
   font-size: 0.72rem;
   font-weight: 900;
+  line-height: 1;
   text-transform: uppercase;
+}
+
+.prediction-live {
+  border: 1px solid rgba(56, 242, 127, 0.38);
+  background: rgba(56, 242, 127, 0.06);
+  color: var(--accent);
+}
+
+.prediction-host {
+  border: 1px solid rgba(244, 212, 77, 0.34);
+  background: rgba(244, 212, 77, 0.07);
+  color: var(--accent-2);
+}
+
+.prediction-host b {
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
 }
 
 .prediction-live i {
@@ -3136,6 +3164,7 @@ h3 {
   .prediction-card,
   .poll-card,
   .message-form { padding: 18px; }
+  .prediction-meta { margin-bottom: 26px; }
   .message-form { grid-template-columns: 1fr; }
   .message-form label,
   .message-form .wide,
@@ -3383,6 +3412,57 @@ h3 {
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+}
+
+.mini-field > small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.upload-feedback {
+  display: none;
+  min-height: 1.2rem;
+}
+
+.upload-field.is-uploading .upload-feedback,
+.upload-field.has-upload-error .upload-feedback,
+.upload-field.has-upload-success .upload-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-field.is-uploading .upload-feedback {
+  color: var(--accent-2);
+}
+
+.upload-field.is-uploading .upload-feedback::before {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid rgba(244, 212, 77, 0.25);
+  border-top-color: var(--accent-2);
+  border-radius: 50%;
+  content: "";
+  animation: upload-spin 0.7s linear infinite;
+}
+
+.upload-field.has-upload-error .upload-feedback {
+  color: #ff8ea0;
+}
+
+.upload-field.has-upload-success .upload-feedback {
+  color: var(--accent);
+}
+
+.upload-field.is-uploading input {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+@keyframes upload-spin {
+  to { transform: rotate(360deg); }
 }
 
 .readonly-field p {
