@@ -5396,4 +5396,51 @@ h3 {
   .legal-document section {
     padding: 24px 20px;
   }
+
+  .legal-table-wrap {
+    overflow: visible;
+  }
+
+  .legal-table {
+    min-width: 0;
+  }
+
+  .legal-table thead {
+    display: none;
+  }
+
+  .legal-table,
+  .legal-table tbody,
+  .legal-table tr,
+  .legal-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .legal-table tr {
+    border-bottom: 1px solid var(--line);
+    padding: 8px 0;
+  }
+
+  .legal-table tr:last-child {
+    border-bottom: 0;
+  }
+
+  .legal-table td {
+    display: grid;
+    grid-template-columns: minmax(86px, 0.36fr) minmax(0, 1fr);
+    gap: 12px;
+    border: 0;
+    padding: 9px 14px;
+    overflow-wrap: anywhere;
+  }
+
+  .legal-table td::before {
+    color: var(--accent-2);
+    content: attr(data-label);
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
 }
