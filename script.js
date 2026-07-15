@@ -27,6 +27,7 @@ async function loadContent() {
   document.documentElement.classList.add("content-ready");
   await renderFanVoting();
   bindGiveawayForm();
+  bindGiveawayRulesLinks();
   bindMessageForms();
   bindMotion();
 }
@@ -47,7 +48,9 @@ function renderPage() {
     "/fan-zone": "Фен зона",
     "/hosts": "Водещи",
     "/partners": "Партньорства",
-    "/contact": "Контакт"
+    "/contact": "Контакт",
+    "/privacy": "Политика за поверителност",
+    "/cookies": "Политика за бисквитките"
   }[window.location.pathname];
   document.title = titleSuffix ? `${brandName} - ${titleSuffix}` : brandName;
   document.querySelectorAll(".brand-mark img").forEach((image) => {
@@ -380,6 +383,8 @@ function renderPage() {
       )
       .join("");
   }
+
+  renderLegalFooter(brandName);
 }
 
 async function renderFanVoting() {
@@ -987,6 +992,37 @@ function getPlatformIcon(name = "") {
     `;
   }
   return `<span>${name.slice(0, 2).toUpperCase()}</span>`;
+}
+
+function renderLegalFooter(brandName) {
+  document.querySelectorAll(".site-footer").forEach((footer) => {
+    let legal = footer.querySelector(".footer-legal");
+    if (!legal) {
+      legal = document.createElement("div");
+      legal.className = "footer-legal";
+      footer.append(legal);
+    }
+    legal.innerHTML = `
+      <span>&copy; ${new Date().getFullYear()} ${escapeHTML(brandName)}. Всички права запазени.</span>
+      <nav aria-label="Правна информация">
+        <a href="/privacy">Поверителност</a>
+        <a href="/cookies">Бисквитки</a>
+      </nav>`;
+  });
+}
+
+function bindGiveawayRulesLinks() {
+  const rules = document.querySelector("#giveaway-rules");
+  if (!rules) return;
+  document.querySelectorAll('a[href="#giveaway-rules"]').forEach((link) => {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      rules.open = true;
+      history.replaceState(null, "", "#giveaway-rules");
+      rules.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+  });
 }
 
 function getYouTubeEmbedUrl(url) {

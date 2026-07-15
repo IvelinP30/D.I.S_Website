@@ -21,6 +21,8 @@ Live site: https://dis-podcast.onrender.com
 - Uses a restrained set of generated transparent football stickers between channels and YouTube, beside formats, and around the advertising menu
 - Adds brighter CTA motion and matching interactive effects across header and footer controls
 - Includes a shared footer on public pages with brand links, social links, and email contact
+- Includes copyright, controller identity, privacy, and cookie links in every public footer
+- Includes dedicated Privacy and Cookie Policy pages for the live data flow
 - Includes a YouTube player block controlled from admin
 - Includes a password-protected admin panel
 - Stores editable content in `data/content.json`, votes in `data/votes.json`, inbox messages in `data/messages.json`, and local giveaway entries in `data/giveaway-entries.json`
@@ -46,6 +48,8 @@ http://127.0.0.1:4177/fan-zone
 http://127.0.0.1:4177/hosts
 http://127.0.0.1:4177/partners
 http://127.0.0.1:4177/contact
+http://127.0.0.1:4177/privacy
+http://127.0.0.1:4177/cookies
 http://127.0.0.1:4177/login
 ```
 
@@ -67,7 +71,7 @@ npm start
 The public site reads content from `GET /api/content`.
 The admin saves content with `PUT /api/content`, protected by a signed session cookie.
 
-Voting uses a long-lived signed `dis_voter` cookie. It prevents normal repeat voting per poll without requiring accounts. Clearing cookies or deliberately changing identity can bypass this, which is acceptable for the intended entertainment use.
+Voting creates a long-lived signed `dis_voter` cookie only after the visitor submits a vote. Merely opening Fan Zone or reading poll results does not create it. The cookie prevents normal repeat voting per poll without requiring accounts. Clearing cookies or deliberately changing identity can bypass this, which is acceptable for the intended entertainment use.
 
 Each visitor can vote once in every separate poll. Deleting a poll from admin also removes its stored vote records on the next content save.
 
@@ -119,6 +123,8 @@ Each upload field displays its own loading spinner and progress message while op
 - `/hosts` - editable host profiles
 - `/partners` - advertising formats, packages, active campaigns, and statistics
 - `/contact` - adaptive general/idea/partner inquiry form
+- `/privacy` - privacy policy and data-controller information
+- `/cookies` - first-party cookie and external-content information
 - `/login` - admin login
 - `/admin` - admin panel after login
 
@@ -131,6 +137,21 @@ Live stats are possible, but they need platform access:
 - TikTok: public live stats are limited; official API access depends on app approval and available scopes.
 
 The current admin is designed so those integrations can be added later without redesigning the website. For now, the public stats should show only verified facts from the known official links, not guessed follower/view numbers.
+
+## Privacy And Legal Operations
+
+- Ivan Stefanov and Danail Danev are identified publicly as the people responsible for D.I.S Podcast data processing.
+- The footer copyright notice and legal links are rendered on every public page.
+- Contact, fan-idea, and giveaway forms show a short privacy notice beside the submit flow.
+- Every giveaway has its own admin-editable official rules, privacy notice, platform disclaimer, dates, eligibility, and prizes. The public form links directly to the rules for the active campaign.
+- `dis_session` is created only after admin login, `dis_voter` only after voting, and `dis_giveaway` only after successful giveaway registration.
+- The site currently has no Google Analytics, Meta Pixel, or advertising-profile tracker.
+- The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
+- Google Fonts is also loaded from Google and is disclosed as an external service.
+
+Operational responsibility remains with the administrators: resolve and remove inbox messages when no longer needed, normally within 12 months, and remove giveaway participant data after the campaign, prize delivery, and any short complaint period, normally within 90 days. Before using uploaded media publicly, confirm that D.I.S has permission to use the image, logo, person, music, video, or sponsor material. AI generation alone does not guarantee rights over real people, club marks, or third-party brands.
+
+The policy text is a practical transparency baseline and not a substitute for advice from a Bulgarian lawyer when running paid campaigns, larger giveaways, or processing more sensitive data.
 
 ## Recommended Next Steps
 

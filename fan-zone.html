@@ -63,7 +63,7 @@
               </div>
               <ul class="giveaway-requirements" data-giveaway-requirements></ul>
               <p class="giveaway-deadline" data-giveaway-deadline></p>
-              <details class="giveaway-rules">
+              <details class="giveaway-rules" id="giveaway-rules">
                 <summary>Условия и лични данни</summary>
                 <div data-giveaway-rules></div>
                 <p data-giveaway-privacy></p>
@@ -77,8 +77,9 @@
               <label class="wide"><span>Профил в социална мрежа <small data-social-field-note>(по желание)</small></span><input name="socialHandle" maxlength="180" placeholder="@потребителско_име" /></label>
               <label class="giveaway-check wide" data-requirements-confirm><input name="requirementsConfirmed" type="checkbox" /><span>Потвърждавам, че съм изпълнил/а посочените условия.</span></label>
               <label class="giveaway-check wide" data-eligibility-confirm><input name="ageConfirmed" type="checkbox" /><span data-age-confirmation>Потвърждавам, че отговарям на условията за участие.</span></label>
-              <label class="giveaway-check wide"><input name="rulesAccepted" type="checkbox" required /><span>Приемам официалните условия и съм съгласен/на данните ми да бъдат използвани само за тази игра.</span></label>
+              <label class="giveaway-check wide"><input name="rulesAccepted" type="checkbox" required /><span>Приемам <a href="#giveaway-rules">официалните условия на тази игра</a> и съм съгласен/на данните ми да бъдат използвани само за провеждането й.</span></label>
               <label class="form-honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
+              <p class="form-privacy-note wide">Информация за съхранението, изтриването и правата ти има в <a href="/privacy">Политиката за поверителност</a>.</p>
               <button class="button primary" type="submit">Запиши ме за участие</button>
               <p class="form-feedback" role="status" aria-live="polite"></p>
             </form>
@@ -92,6 +93,7 @@
             <label><span>Тема</span><input name="subject" maxlength="180" /></label>
             <label class="wide"><span>Твоята идея</span><textarea name="message" required maxlength="5000" rows="5"></textarea></label>
             <label class="form-honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
+            <p class="form-privacy-note wide">Използваме данните само за да разгледаме изпратената идея. Виж <a href="/privacy">Политиката за поверителност</a>.</p>
             <button class="button primary" type="submit">Изпрати към D.I.S</button>
             <p class="form-feedback" role="status" aria-live="polite"></p>
           </form>

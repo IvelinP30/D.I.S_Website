@@ -331,13 +331,13 @@ async function voteState(request, token) {
   const stored = await readJsonFile(votesFile, { polls: {} });
   return (content.polls || []).map((poll) => {
     const pollStore = stored.polls?.[poll.id] || { counts: {}, voters: {} };
-    const hash = voterHash(token, poll.id);
+    const hash = token ? voterHash(token, poll.id) : "";
     const counts = Object.fromEntries((poll.options || []).map((option) => [option.id, Number(pollStore.counts?.[option.id]) || 0]));
     return {
       id: poll.id,
       counts,
       total: Object.values(counts).reduce((sum, count) => sum + count, 0),
-      votedOption: pollStore.voters?.[hash] || ""
+      votedOption: hash ? pollStore.voters?.[hash] || "" : ""
     };
   });
 }
@@ -512,11 +512,8 @@ async function handleRequest(request, response) {
   }
 
   if (url.pathname === "/api/votes" && request.method === "GET") {
-    const existingToken = getVoterToken(request);
-    const token = existingToken || makeVoterToken();
-    return sendJson(response, 200, { polls: await voteState(request, token) }, existingToken ? {} : {
-      "Set-Cookie": `dis_voter=${token}; HttpOnly; SameSite=Lax; Max-Age=${oneYear}; Path=/`
-    });
+    const token = getVoterToken(request);
+    return sendJson(response, 200, { polls: await voteState(request, token) });
   }
 
   const voteMatch = url.pathname.match(/^\/api\/votes\/([^/]+)$/);
@@ -784,7 +781,9 @@ async function handleRequest(request, response) {
     "/fan-zone": "fan-zone.html",
     "/hosts": "hosts.html",
     "/partners": "partners.html",
-    "/contact": "contact.html"
+    "/contact": "contact.html",
+    "/privacy": "privacy.html",
+    "/cookies": "cookies.html"
   };
   if (pageRoutes[url.pathname]) {
     return send(response, 200, fs.readFileSync(path.join(root, pageRoutes[url.pathname])), { "Content-Type": "text/html; charset=utf-8" });
