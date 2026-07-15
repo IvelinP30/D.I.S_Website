@@ -6,4 +6,5 @@ node_modules/
 uploads/*
 data/messages.json
 data/votes.json
+data/giveaway-entries.json
 npm-debug.log*

@@ -1,4 +1,5 @@
 let config = window.DIS_SITE_CONFIG || {};
+let giveawayCountdownTimer = null;
 
 function optimizeStaticAssetUrls(value) {
   if (Array.isArray(value)) return value.map(optimizeStaticAssetUrls);
@@ -25,6 +26,7 @@ async function loadContent() {
   renderPage();
   document.documentElement.classList.add("content-ready");
   await renderFanVoting();
+  bindGiveawayForm();
   bindMessageForms();
   bindMotion();
 }
@@ -85,6 +87,8 @@ function renderPage() {
   const hostsGrid = document.querySelector("#hosts-grid");
   const predictionGrid = document.querySelector("#prediction-grid");
   const discoveryGrid = document.querySelector("#home-discovery-grid");
+  const giveawaySection = document.querySelector("#giveaway");
+  const featuredGiveaway = document.querySelector("[data-featured-giveaway]");
 
   if (mainNav) {
     mainNav.innerHTML = (config.nav || [])
@@ -253,6 +257,13 @@ function renderPage() {
       : `<article class="empty-state">Очаквай следващите прогнози на водещите.</article>`;
   }
 
+  if (giveawaySection) renderGiveaway(config.giveaway);
+  if (featuredGiveaway) renderFeaturedGiveaway(config.giveaway);
+  if ((giveawaySection || featuredGiveaway) && giveawayIsActive(config.giveaway)) {
+    loadGiveawayPublicStatus(config.giveaway);
+    startGiveawayCountdown(config.giveaway);
+  }
+
   if (newsGrid) {
     const newsItems = [...(config.news || [])].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     newsGrid.innerHTML = newsItems.length
@@ -413,6 +424,216 @@ async function renderFanVoting() {
         if (feedback) feedback.textContent = error.message;
       }
     });
+  });
+}
+
+function giveawayIsActive(giveaway = {}) {
+  const now = Date.now();
+  const startsAt = giveaway.startsAt ? new Date(giveaway.startsAt).getTime() : 0;
+  const endsAt = giveaway.endsAt ? new Date(giveaway.endsAt).getTime() : Infinity;
+  return Boolean(giveaway.id && giveaway.enabled && startsAt <= now && now < endsAt);
+}
+
+function giveawayRequirementHTML(requirement = "") {
+  const parts = String(requirement).split("|");
+  const possibleUrl = parts.length > 1 ? parts.pop().trim() : "";
+  const label = parts.join("|").trim();
+  if (/^https?:\/\//i.test(possibleUrl)) {
+    return `<a href="${escapeAttribute(possibleUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(label || "Отвори условието")}</a>`;
+  }
+  return escapeHTML(requirement);
+}
+
+function giveawayPrizes(giveaway = {}) {
+  const prizes = Array.isArray(giveaway.prizes)
+    ? giveaway.prizes.filter((prize) => String(prize?.name || "").trim())
+    : [];
+  if (prizes.length) return prizes;
+  return [{
+    name: giveaway.prize || "Футболна награда",
+    quantity: Math.max(1, Number(giveaway.winnerCount) || 1),
+    image: ""
+  }];
+}
+
+function giveawayPrizeSummary(giveaway = {}) {
+  const prizes = giveawayPrizes(giveaway);
+  const first = prizes[0];
+  const extra = prizes.length > 1 ? ` + още ${prizes.length - 1}` : "";
+  return `${Number(first.quantity) > 1 ? `${Number(first.quantity)} x ` : ""}${first.name}${extra}`;
+}
+
+async function loadGiveawayPublicStatus(giveaway = {}) {
+  try {
+    const response = await fetch(`/api/giveaway/status?giveawayId=${encodeURIComponent(giveaway.id)}`, {
+      cache: "no-store",
+      headers: { Accept: "application/json", "Cache-Control": "no-cache" }
+    });
+    if (!response.ok) return;
+    const payload = await response.json();
+    document.querySelectorAll("[data-giveaway-participant-count], [data-featured-giveaway-count]").forEach((element) => {
+      element.textContent = new Intl.NumberFormat("bg-BG").format(Number(payload.participantCount) || 0);
+    });
+  } catch {
+    // The giveaway remains usable even if the public counter is temporarily unavailable.
+  }
+}
+
+function countdownParts(milliseconds) {
+  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
+  return {
+    days: Math.floor(totalSeconds / 86400),
+    hours: Math.floor((totalSeconds % 86400) / 3600),
+    minutes: Math.floor((totalSeconds % 3600) / 60),
+    seconds: totalSeconds % 60
+  };
+}
+
+function startGiveawayCountdown(giveaway = {}) {
+  window.clearInterval(giveawayCountdownTimer);
+  const end = giveaway.endsAt ? new Date(giveaway.endsAt).getTime() : 0;
+  const countdown = document.querySelector("[data-giveaway-countdown]");
+  const featuredCountdown = document.querySelector("[data-featured-giveaway-countdown]");
+  if (!end || !Number.isFinite(end)) {
+    if (countdown) countdown.hidden = true;
+    if (featuredCountdown) featuredCountdown.hidden = true;
+    return;
+  }
+
+  const update = () => {
+    const remaining = end - Date.now();
+    if (remaining <= 0) {
+      window.clearInterval(giveawayCountdownTimer);
+      document.querySelector("#giveaway")?.setAttribute("hidden", "");
+      document.querySelector("[data-featured-giveaway]")?.setAttribute("hidden", "");
+      return;
+    }
+    const parts = countdownParts(remaining);
+    if (countdown) {
+      countdown.hidden = false;
+      const values = countdown.querySelector("[data-giveaway-countdown-values]");
+      if (values) values.innerHTML = [
+        [parts.days, "дни"], [parts.hours, "часа"], [parts.minutes, "минути"], [parts.seconds, "секунди"]
+      ].map(([value, label]) => `<span><b>${String(value).padStart(2, "0")}</b><em>${label}</em></span>`).join("");
+    }
+    if (featuredCountdown) {
+      featuredCountdown.hidden = false;
+      featuredCountdown.innerHTML = `
+        <small><i></i> Оставащо време</small>
+        <strong>
+          <span><b>${String(parts.days).padStart(2, "0")}</b><em>дни</em></span>
+          <span><b>${String(parts.hours).padStart(2, "0")}</b><em>ч.</em></span>
+          <span><b>${String(parts.minutes).padStart(2, "0")}</b><em>мин.</em></span>
+          <span><b>${String(parts.seconds).padStart(2, "0")}</b><em>сек.</em></span>
+        </strong>`;
+    }
+  };
+  update();
+  giveawayCountdownTimer = window.setInterval(update, 1000);
+}
+
+function renderFeaturedGiveaway(giveaway = {}) {
+  const section = document.querySelector("[data-featured-giveaway]");
+  if (!section) return;
+  const active = giveawayIsActive(giveaway);
+  section.hidden = !active;
+  if (!active) return;
+  setAttribute("[data-featured-giveaway-image]", "src", giveaway.image || "./assets/giveaway-football.webp");
+  setHTML("[data-featured-giveaway-title]", brandText(giveaway.title || "D.I.S Giveaway"));
+  setHTML("[data-featured-giveaway-prize]", brandText(giveawayPrizeSummary(giveaway)));
+}
+
+function renderGiveaway(giveaway = {}) {
+  const section = document.querySelector("#giveaway");
+  if (!section) return;
+  const active = giveawayIsActive(giveaway);
+  section.hidden = !active;
+  if (!active) return;
+
+  setAttribute("[data-giveaway-image]", "src", giveaway.image || "./assets/giveaway-football.webp");
+  setHTML("[data-giveaway-title]", brandText(giveaway.title || "D.I.S Giveaway"));
+  setHTML("[data-giveaway-description]", brandText(giveaway.description || ""));
+  const prizes = document.querySelector("[data-giveaway-prizes]");
+  if (prizes) {
+    prizes.innerHTML = giveawayPrizes(giveaway).map((prize) => `
+      <article class="giveaway-prize-card ${prize.image ? "has-image" : ""}">
+        ${prize.image ? `<img src="${escapeAttribute(prize.image)}" alt="${escapeAttribute(prize.name || "Награда")}" />` : ""}
+        <span><small>Награда${Number(prize.quantity) > 1 ? ` · ${Number(prize.quantity)} броя` : ""}</small><strong>${brandText(prize.name || "Футболна награда")}</strong></span>
+      </article>`).join("");
+  }
+  const requirements = document.querySelector("[data-giveaway-requirements]");
+  const requirementsHeading = document.querySelector("[data-giveaway-requirements-heading]");
+  if (requirements) {
+    requirements.innerHTML = (giveaway.requirements || []).map((item) => `<li>${giveawayRequirementHTML(item)}</li>`).join("");
+    requirements.hidden = !giveaway.requirements?.length;
+  }
+  if (requirementsHeading) requirementsHeading.hidden = !giveaway.requirements?.length;
+  const deadline = document.querySelector("[data-giveaway-deadline]");
+  if (deadline) deadline.textContent = giveaway.endsAt ? `Записване до ${formatLocalDate(giveaway.endsAt)}` : "Записването е активно";
+  setHTML("[data-giveaway-rules]", escapeHTML(giveaway.officialRules || "").replaceAll("\n", "<br>"));
+  setHTML("[data-giveaway-privacy]", escapeHTML(giveaway.privacyNotice || "").replaceAll("\n", "<br>"));
+  setHTML("[data-giveaway-platform-notice]", escapeHTML(giveaway.platformNotice || ""));
+
+  const form = document.querySelector("#giveaway-form");
+  form.elements.giveawayId.value = giveaway.id;
+  const requirementConfirmation = form.querySelector("[data-requirements-confirm]");
+  requirementConfirmation.hidden = !giveaway.requirements?.length;
+  requirementConfirmation.querySelector("input").required = Boolean(giveaway.requirements?.length);
+  const eligibilityConfirmation = form.querySelector("[data-eligibility-confirm]");
+  const ageText = form.querySelector("[data-age-confirmation]");
+  const minAge = Number(giveaway.minAge);
+  const hasMinAge = giveaway.minAge !== null && giveaway.minAge !== "" && Number.isFinite(minAge) && minAge > 0;
+  const region = String(giveaway.region || "").trim();
+  const hasRegion = Boolean(region);
+  eligibilityConfirmation.hidden = !hasMinAge && !hasRegion;
+  eligibilityConfirmation.querySelector("input").required = hasMinAge || hasRegion;
+  if (hasMinAge && hasRegion) ageText.textContent = `Потвърждавам, че съм навършил/а ${minAge} години и имам право да участвам от ${region}.`;
+  else if (hasMinAge) ageText.textContent = `Потвърждавам, че съм навършил/а ${minAge} години.`;
+  else if (hasRegion) ageText.textContent = `Потвърждавам, че имам право да участвам от ${region}.`;
+  form.elements.socialHandle.required = Boolean(giveaway.socialHandleRequired);
+  const socialFieldNote = form.querySelector("[data-social-field-note]");
+  if (socialFieldNote) socialFieldNote.textContent = giveaway.socialHandleRequired ? "(задължително)" : "(по желание)";
+
+  if (window.location.hash === "#giveaway") {
+    requestAnimationFrame(() => section.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+}
+
+function bindGiveawayForm() {
+  const form = document.querySelector("#giveaway-form");
+  if (!form || form.dataset.bound === "true") return;
+  form.dataset.bound = "true";
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = form.querySelector('button[type="submit"]');
+    const feedback = form.querySelector(".form-feedback");
+    const data = Object.fromEntries(new FormData(form).entries());
+    data.requirementsConfirmed = form.elements.requirementsConfirmed.checked;
+    data.ageConfirmed = form.elements.ageConfirmed.checked;
+    data.rulesAccepted = form.elements.rulesAccepted.checked;
+    button.disabled = true;
+    feedback.textContent = "Записване...";
+    feedback.classList.remove("is-error", "is-success");
+    try {
+      const response = await fetch("/api/giveaway/entries", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Записването не успя.");
+      form.reset();
+      feedback.textContent = "Готово! Участието ти е записано успешно.";
+      feedback.classList.add("is-success");
+      form.classList.add("giveaway-success");
+      setTimeout(() => form.classList.remove("giveaway-success"), 1200);
+      loadGiveawayPublicStatus(config.giveaway);
+    } catch (error) {
+      feedback.textContent = error.message;
+      feedback.classList.add("is-error");
+    } finally {
+      button.disabled = false;
+    }
   });
 }
 

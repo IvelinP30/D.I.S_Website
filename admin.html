@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=20260714-2" />
+    <link rel="stylesheet" href="./styles.css?v=20260715-4" />
   </head>
   <body class="admin-body">
     <main class="admin-shell">
@@ -65,6 +65,8 @@
           <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Фен зона</p><h2>Hero и представяне</h2></div><div class="editor-list single-editor" id="fan-page-editor"></div></section>
           <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Прогнози</p><h2>Прогнози на водещите</h2><button class="button secondary" data-add="prediction" type="button">Добави прогноза</button></div><div class="editor-list" id="predictions-editor"></div></section>
           <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Voting</p><h2>Фенски гласувания</h2><button class="button secondary" data-add="poll" type="button">Добави гласуване</button></div><div class="editor-list" id="polls-editor"></div></section>
+          <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Giveaway</p><h2>Кампания и условия</h2><button class="button secondary" data-add="giveaway" type="button">Създай giveaway</button></div><div class="editor-list single-editor" id="giveaway-editor"></div></section>
+          <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Giveaway</p><h2>Участници и теглене</h2><button class="button secondary" id="refresh-giveaway-entries" type="button">Обнови</button></div><div class="giveaway-admin-toolbar" id="giveaway-admin-toolbar"></div><div class="editor-list giveaway-entries-list" id="giveaway-entries-editor"></div></section>
           <div class="admin-page-actions"><button class="button primary" data-save-page="fan" type="button">Запази Фен зона</button><button class="button secondary" data-revert-page="fan" type="button">Отмени промените</button></div>
         </div>
 
@@ -114,7 +116,19 @@
       </section>
     </div>
 
+    <div class="winner-modal" id="winner-modal" hidden>
+      <div class="winner-modal-backdrop" data-winner-modal-close></div>
+      <section class="winner-dialog" role="dialog" aria-modal="true" aria-labelledby="winner-modal-title">
+        <div class="winner-confetti" id="winner-confetti" aria-hidden="true"></div>
+        <p class="section-kicker">D.I.S Giveaway</p>
+        <h2 id="winner-modal-title">Поздравления!</h2>
+        <p id="winner-modal-copy">Тегленето приключи успешно. Победителят е:</p>
+        <div class="winner-modal-names" id="winner-modal-names"></div>
+        <button class="button primary" data-winner-modal-close type="button">Виж участника</button>
+      </section>
+    </div>
+
     <script src="./config.js?v=20260713-2"></script>
-    <script src="./admin.js?v=20260714-4"></script>
+    <script src="./admin.js?v=20260715-6"></script>
   </body>
 </html>

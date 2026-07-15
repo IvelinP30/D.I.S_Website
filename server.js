@@ -21,6 +21,7 @@ if (fs.existsSync(envFile)) {
 const dataFile = path.join(root, "data", "content.json");
 const votesFile = path.join(root, "data", "votes.json");
 const messagesFile = path.join(root, "data", "messages.json");
+const giveawayEntriesFile = path.join(root, "data", "giveaway-entries.json");
 const uploadsDir = path.join(root, "uploads");
 const port = Number(process.env.PORT || 4177);
 const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
@@ -34,7 +35,10 @@ const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
 const maxUploadBytes = 25_000_000;
 const maxStoredImageBytes = 1_200_000;
+const giveawayAttemptsPerHour = 30;
+const messageAttemptsPerHour = 15;
 const messageRateLimits = new Map();
+const giveawayRateLimits = new Map();
 
 if (isProduction && adminPassword === "change-this-password") {
   throw new Error("ADMIN_PASSWORD must be configured in production.");
@@ -77,6 +81,7 @@ const uploadTypes = {
 fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(votesFile)) fs.writeFileSync(votesFile, '{"polls":{}}\n');
 if (!fs.existsSync(messagesFile)) fs.writeFileSync(messagesFile, "[]\n");
+if (!fs.existsSync(giveawayEntriesFile)) fs.writeFileSync(giveawayEntriesFile, "[]\n");
 
 function supabaseHeaders(extra = {}) {
   const headers = { apikey: supabaseKey, ...extra };
@@ -96,6 +101,10 @@ async function writeContent(content) {
   if (Object.keys(nextPolls).length !== Object.keys(storedVotes.polls || {}).length) {
     await writeJsonFile(votesFile, { ...storedVotes, polls: nextPolls });
   }
+  const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+  const validGiveawayId = content.giveaway?.id || "";
+  const nextEntries = validGiveawayId ? entries.filter((entry) => entry.giveawayId === validGiveawayId) : [];
+  if (nextEntries.length !== entries.length) await writeJsonFile(giveawayEntriesFile, nextEntries, "giveawayEntries");
 }
 
 async function readJsonFile(file, fallback, storageKey = path.basename(file, ".json")) {
@@ -346,6 +355,96 @@ function normalizeMessage(payload = {}) {
   return { type, name, email, subject, message, company, budget };
 }
 
+function giveawayIsOpen(giveaway = {}) {
+  const now = Date.now();
+  const startsAt = giveaway.startsAt ? new Date(giveaway.startsAt).getTime() : 0;
+  const endsAt = giveaway.endsAt ? new Date(giveaway.endsAt).getTime() : Infinity;
+  return Boolean(giveaway.id && giveaway.enabled && startsAt <= now && now < endsAt);
+}
+
+function getGiveawayToken(request) {
+  const token = parseCookies(request).dis_giveaway || "";
+  const [value, signature] = token.split(".");
+  if (!value || !signature) return "";
+  const expected = sign(value);
+  if (expected.length !== signature.length) return "";
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature)) ? token : "";
+}
+
+function giveawayHash(value, giveawayId, purpose) {
+  return crypto.createHmac("sha256", sessionSecret).update(`${purpose}:${giveawayId}:${value}`).digest("hex");
+}
+
+function normalizeGiveawayEntry(payload = {}, giveaway = {}, token = "") {
+  const name = String(payload.name || "").trim().slice(0, 100);
+  const email = String(payload.email || "").trim().toLowerCase().slice(0, 180);
+  const socialHandle = String(payload.socialHandle || "").trim().slice(0, 180);
+  const minAge = Number(giveaway.minAge);
+  const hasMinAge = giveaway.minAge !== null && giveaway.minAge !== "" && Number.isFinite(minAge) && minAge > 0;
+  const hasRegion = Boolean(String(giveaway.region || "").trim());
+  if (!name || !email) throw new Error("Името и имейлът са задължителни.");
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new Error("Въведи валиден имейл адрес.");
+  if (giveaway.socialHandleRequired && !socialHandle) throw new Error("Добави профила си в социална мрежа.");
+  if ((hasMinAge || hasRegion) && !payload.ageConfirmed) throw new Error("Потвърди условията за възраст и територия.");
+  if (!payload.rulesAccepted) throw new Error("Приеми официалните условия за участие.");
+  if (giveaway.requirements?.length && !payload.requirementsConfirmed) throw new Error("Потвърди, че си изпълнил/а условията за участие.");
+  return {
+    name,
+    email,
+    socialHandle,
+    emailHash: giveawayHash(email, giveaway.id, "email"),
+    browserHash: giveawayHash(token, giveaway.id, "browser"),
+    rulesHash: crypto.createHash("sha256").update(JSON.stringify({
+      requirements: giveaway.requirements || [],
+      officialRules: giveaway.officialRules || "",
+      privacyNotice: giveaway.privacyNotice || "",
+      prizes: giveaway.prizes || [],
+      minAge: giveaway.minAge || 0,
+      region: giveaway.region || "",
+      socialHandleRequired: Boolean(giveaway.socialHandleRequired)
+    })).digest("hex")
+  };
+}
+
+function publicGiveawayEntry(entry) {
+  const { emailHash, browserHash, ...safeEntry } = entry;
+  return safeEntry;
+}
+
+function giveawayPrizeSlots(giveaway = {}) {
+  const configuredPrizes = Array.isArray(giveaway.prizes)
+    ? giveaway.prizes
+        .filter((prize) => String(prize?.name || "").trim())
+        .map((prize, index) => ({
+          id: String(prize.id || `prize-${index + 1}`),
+          name: String(prize.name).trim().slice(0, 180),
+          image: String(prize.image || "").trim(),
+          quantity: Math.max(1, Math.min(20, Number(prize.quantity) || 1))
+        }))
+    : [];
+  const prizes = configuredPrizes.length
+    ? configuredPrizes
+    : [{
+        id: "legacy-prize",
+        name: String(giveaway.prize || "Футболна награда").trim().slice(0, 180),
+        image: "",
+        quantity: Math.max(1, Math.min(20, Number(giveaway.winnerCount) || 1))
+      }];
+
+  return prizes
+    .flatMap((prize) => Array.from({ length: prize.quantity }, () => ({ id: prize.id, name: prize.name, image: prize.image })))
+    .slice(0, 20);
+}
+
+function drawRandomEntries(entries, count) {
+  const pool = [...entries];
+  for (let index = 0; index < Math.min(count, pool.length); index += 1) {
+    const randomIndex = crypto.randomInt(index, pool.length);
+    [pool[index], pool[randomIndex]] = [pool[randomIndex], pool[index]];
+  }
+  return pool.slice(0, Math.min(count, pool.length));
+}
+
 function isAuthenticated(request) {
   const token = parseCookies(request).dis_session;
   if (!token) return false;
@@ -452,12 +551,148 @@ async function handleRequest(request, response) {
     return sendJson(response, 200, { ok: true, storage: cloudStorageEnabled ? "supabase" : "local" });
   }
 
+  if (url.pathname === "/api/giveaway/entries" && request.method === "POST") {
+    const payload = JSON.parse(await readBody(request));
+    if (payload.website) return sendJson(response, 200, { ok: true });
+    const content = await readContent();
+    const giveaway = content.giveaway;
+    if (!giveaway || payload.giveawayId !== giveaway.id || !giveawayIsOpen(giveaway)) {
+      return sendJson(response, 409, { error: "Този giveaway не е активен в момента." });
+    }
+
+    const ipKey = giveawayHash(clientIp(request), giveaway.id, "ip");
+    const recent = (giveawayRateLimits.get(ipKey) || []).filter((time) => Date.now() - time < 60 * 60 * 1000);
+    if (recent.length >= giveawayAttemptsPerHour) return sendJson(response, 429, { error: "Твърде много опити. Опитай отново по-късно." });
+    recent.push(Date.now());
+    giveawayRateLimits.set(ipKey, recent);
+
+    const existingToken = getGiveawayToken(request);
+    const token = existingToken || makeVoterToken();
+    let normalized;
+    try {
+      normalized = normalizeGiveawayEntry(payload, giveaway, token);
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message });
+    }
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    if (entries.some((entry) => entry.giveawayId === giveaway.id && (entry.emailHash === normalized.emailHash || entry.browserHash === normalized.browserHash))) {
+      return sendJson(response, 409, { error: "Вече имаш записано участие в този giveaway." });
+    }
+    const entry = {
+      id: crypto.randomUUID(),
+      giveawayId: giveaway.id,
+      ...normalized,
+      eligible: true,
+      winnerRank: null,
+      drawnAt: "",
+      createdAt: new Date().toISOString()
+    };
+    entries.unshift(entry);
+    await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    return sendJson(response, 201, { ok: true, id: entry.id }, existingToken ? {} : {
+      "Set-Cookie": `dis_giveaway=${token}; HttpOnly; SameSite=Lax; Max-Age=${oneYear}; Path=/`
+    });
+  }
+
+  if (url.pathname === "/api/giveaway/status" && request.method === "GET") {
+    const content = await readContent();
+    const giveaway = content.giveaway;
+    const giveawayId = url.searchParams.get("giveawayId") || "";
+    if (!giveaway || giveaway.id !== giveawayId || !giveawayIsOpen(giveaway)) {
+      return sendJson(response, 404, { error: "Този giveaway не е активен в момента." });
+    }
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    const participantCount = entries.filter((entry) => entry.giveawayId === giveaway.id && entry.eligible !== false).length;
+    return sendJson(response, 200, { participantCount }, { "Cache-Control": "no-store, max-age=0" });
+  }
+
+  if (url.pathname === "/api/giveaway/entries" && request.method === "GET") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const giveawayId = url.searchParams.get("giveawayId") || "";
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    return sendJson(response, 200, { entries: entries.filter((entry) => entry.giveawayId === giveawayId).map(publicGiveawayEntry) });
+  }
+
+  if (url.pathname === "/api/giveaway/entries" && request.method === "DELETE") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const giveawayId = url.searchParams.get("giveawayId") || "";
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    await writeJsonFile(giveawayEntriesFile, entries.filter((entry) => entry.giveawayId !== giveawayId), "giveawayEntries");
+    return send(response, 204, "");
+  }
+
+  const giveawayEntryMatch = url.pathname.match(/^\/api\/giveaway\/entries\/([^/]+)$/);
+  if (giveawayEntryMatch && request.method === "PATCH") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const payload = JSON.parse(await readBody(request));
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    const entry = entries.find((item) => item.id === decodeURIComponent(giveawayEntryMatch[1]));
+    if (!entry) return sendJson(response, 404, { error: "Участникът не е намерен." });
+    if (entry.winnerRank) return sendJson(response, 409, { error: "Първо нулирай резултата от тегленето." });
+    entry.eligible = Boolean(payload.eligible);
+    await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    return sendJson(response, 200, publicGiveawayEntry(entry));
+  }
+
+  if (giveawayEntryMatch && request.method === "DELETE") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    const entryId = decodeURIComponent(giveawayEntryMatch[1]);
+    const entry = entries.find((item) => item.id === entryId);
+    if (entry?.winnerRank) return sendJson(response, 409, { error: "Първо нулирай резултата от тегленето, преди да изтриеш победител." });
+    await writeJsonFile(giveawayEntriesFile, entries.filter((entry) => entry.id !== entryId), "giveawayEntries");
+    return send(response, 204, "");
+  }
+
+  if (url.pathname === "/api/giveaway/draw" && request.method === "POST") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const payload = JSON.parse(await readBody(request));
+    const content = await readContent();
+    const giveaway = content.giveaway;
+    if (!giveaway || giveaway.id !== payload.giveawayId) return sendJson(response, 404, { error: "Първо запази giveaway настройките." });
+    if (giveawayIsOpen(giveaway)) return sendJson(response, 409, { error: "Спри записването или изчакай крайния срок преди тегленето." });
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    const giveawayEntries = entries.filter((entry) => entry.giveawayId === giveaway.id);
+    if (giveawayEntries.some((entry) => entry.winnerRank)) return sendJson(response, 409, { error: "Вече има изтеглен победител. Нулирай резултата само ако наистина трябва да теглиш отново." });
+    const eligible = giveawayEntries.filter((entry) => entry.eligible !== false);
+    const prizeSlots = giveawayPrizeSlots(giveaway);
+    const winnerCount = prizeSlots.length;
+    if (eligible.length < winnerCount) return sendJson(response, 409, { error: "Няма достатъчно допуснати участници за зададения брой победители." });
+    const winners = drawRandomEntries(eligible, winnerCount);
+    const randomizedPrizeSlots = drawRandomEntries(prizeSlots, prizeSlots.length);
+    const drawnAt = new Date().toISOString();
+    winners.forEach((winner, index) => {
+      winner.winnerRank = index + 1;
+      winner.drawnAt = drawnAt;
+      winner.prizeId = randomizedPrizeSlots[index].id;
+      winner.prizeName = randomizedPrizeSlots[index].name;
+      winner.prizeImage = randomizedPrizeSlots[index].image;
+    });
+    await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    return sendJson(response, 200, { winners: winners.map(publicGiveawayEntry), drawnAt });
+  }
+
+  if (url.pathname === "/api/giveaway/reset" && request.method === "POST") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const payload = JSON.parse(await readBody(request));
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    entries.filter((entry) => entry.giveawayId === payload.giveawayId).forEach((entry) => {
+      entry.winnerRank = null;
+      entry.drawnAt = "";
+      entry.prizeId = "";
+      entry.prizeName = "";
+      entry.prizeImage = "";
+    });
+    await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    return sendJson(response, 200, { ok: true });
+  }
+
   if (url.pathname === "/api/messages" && request.method === "POST") {
     const payload = JSON.parse(await readBody(request));
     if (payload.website) return sendJson(response, 200, { ok: true });
     const ipKey = crypto.createHash("sha256").update(`${clientIp(request)}:${sessionSecret}`).digest("hex");
     const recent = (messageRateLimits.get(ipKey) || []).filter((time) => Date.now() - time < 60 * 60 * 1000);
-    if (recent.length >= 5) return sendJson(response, 429, { error: "Твърде много съобщения. Опитай отново по-късно." });
+    if (recent.length >= messageAttemptsPerHour) return sendJson(response, 429, { error: "Твърде много съобщения. Опитай отново по-късно." });
     recent.push(Date.now());
     messageRateLimits.set(ipKey, recent);
     const message = {

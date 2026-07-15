@@ -263,5 +263,6 @@ window.DIS_SITE_CONFIG = {
   hosts: [],
   predictions: [],
   polls: [],
+  giveaway: null,
   mediaLibrary: []
 };

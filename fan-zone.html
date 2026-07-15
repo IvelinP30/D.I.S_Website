@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./styles.css?v=20260714-1" />
+    <link rel="stylesheet" href="./styles.css?v=20260715-6" />
   </head>
   <body>
     <div class="site-shell">
@@ -40,6 +40,51 @@
           <div class="poll-grid" id="poll-grid"></div>
         </section>
 
+        <section class="section giveaway-section" id="giveaway" hidden>
+          <div class="giveaway-stage">
+            <img class="giveaway-image" data-giveaway-image src="./assets/giveaway-football.webp" alt="Футболна награда за giveaway" />
+            <div class="giveaway-shade"></div>
+            <div class="giveaway-copy">
+              <div class="giveaway-live"><i></i><span>Активен giveaway</span></div>
+              <p class="section-kicker">D.I.S Giveaway</p>
+              <h2 data-giveaway-title></h2>
+              <p data-giveaway-description></p>
+              <div class="giveaway-prizes" data-giveaway-prizes></div>
+              <div class="giveaway-live-stats">
+                <div class="giveaway-participant-count"><strong data-giveaway-participant-count>0</strong><span>участници</span></div>
+                <div class="giveaway-countdown" data-giveaway-countdown hidden>
+                  <small>До края</small>
+                  <div data-giveaway-countdown-values></div>
+                </div>
+              </div>
+              <div class="giveaway-requirements-heading" data-giveaway-requirements-heading>
+                <small>Условия за участие</small>
+                <strong>Изпълни тези стъпки преди записване</strong>
+              </div>
+              <ul class="giveaway-requirements" data-giveaway-requirements></ul>
+              <p class="giveaway-deadline" data-giveaway-deadline></p>
+              <details class="giveaway-rules">
+                <summary>Условия и лични данни</summary>
+                <div data-giveaway-rules></div>
+                <p data-giveaway-privacy></p>
+                <small data-giveaway-platform-notice></small>
+              </details>
+            </div>
+            <form class="giveaway-form" id="giveaway-form">
+              <input name="giveawayId" type="hidden" />
+              <label><span>Име</span><input name="name" required maxlength="100" autocomplete="name" /></label>
+              <label><span>Имейл за връзка</span><input name="email" type="email" required maxlength="180" autocomplete="email" /></label>
+              <label class="wide"><span>Профил в социална мрежа <small data-social-field-note>(по желание)</small></span><input name="socialHandle" maxlength="180" placeholder="@потребителско_име" /></label>
+              <label class="giveaway-check wide" data-requirements-confirm><input name="requirementsConfirmed" type="checkbox" /><span>Потвърждавам, че съм изпълнил/а посочените условия.</span></label>
+              <label class="giveaway-check wide" data-eligibility-confirm><input name="ageConfirmed" type="checkbox" /><span data-age-confirmation>Потвърждавам, че отговарям на условията за участие.</span></label>
+              <label class="giveaway-check wide"><input name="rulesAccepted" type="checkbox" required /><span>Приемам официалните условия и съм съгласен/на данните ми да бъдат използвани само за тази игра.</span></label>
+              <label class="form-honeypot" aria-hidden="true"><span>Website</span><input name="website" tabindex="-1" autocomplete="off" /></label>
+              <button class="button primary" type="submit">Запиши ме за участие</button>
+              <p class="form-feedback" role="status" aria-live="polite"></p>
+            </form>
+          </div>
+        </section>
+
         <section class="section fan-idea-section">
           <div class="fan-idea-copy"><p class="section-kicker" data-fan-copy="ideaKicker">Твоята тема</p><h2 data-fan-copy="ideaTitle">Какво да обсъдим следващо?</h2><p data-fan-copy="ideaDescription">Изпрати въпрос, футболна тема или идея за следващ епизод.</p></div>
           <form class="message-form compact-message-form" data-message-form data-message-type="idea">
@@ -55,6 +100,6 @@
       <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><span class="brand-mark"><img class="footer-logo" src="./assets/dis-logo.png" alt="" /></span><div><strong class="footer-brand-name">D.I.S Подкаст</strong><p>Футболни реакции, подкасти, live моменти и кратки видеа.</p></div></div><nav class="footer-nav" data-footer-nav aria-label="Footer навигация"></nav><div class="footer-actions"><a class="footer-email" data-footer-email href="mailto:hello@dispodcast.bg"></a><div class="footer-socials" data-footer-socials></div></div></div></footer>
     </div>
     <aside class="football-scroll-progress" aria-hidden="true"><span class="scroll-ball"></span></aside>
-    <script src="./config.js?v=20260713-2"></script><script src="./script.js?v=20260714-1"></script>
+    <script src="./config.js?v=20260714-1"></script><script src="./script.js?v=20260715-3"></script>
   </body>
 </html>

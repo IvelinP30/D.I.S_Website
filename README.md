@@ -10,6 +10,7 @@ Live site: https://dis-podcast.onrender.com
 - Separate news page with manually managed posts
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
+- Optional Fan Zone giveaway registration with protected participants, CSV export, and random winner drawing
 - Contact and fan-idea forms stored in a protected admin inbox
 - Presents the channel as a football media brand
 - Includes sponsor packages and active ad placements
@@ -22,7 +23,7 @@ Live site: https://dis-podcast.onrender.com
 - Includes a shared footer on public pages with brand links, social links, and email contact
 - Includes a YouTube player block controlled from admin
 - Includes a password-protected admin panel
-- Stores editable content in `data/content.json`, votes in `data/votes.json`, and inbox messages in `data/messages.json`
+- Stores editable content in `data/content.json`, votes in `data/votes.json`, inbox messages in `data/messages.json`, and local giveaway entries in `data/giveaway-entries.json`
 - Supports uploads for logo, hero backgrounds, ad media, and news images
 - Uses a generated football podcast hero image in `assets/hero-football-podcast.png`
 - Uses the D.I.S logo in `assets/dis-logo.png` as the navbar mark and favicon
@@ -72,6 +73,10 @@ Each visitor can vote once in every separate poll. Deleting a poll from admin al
 
 Public forms write validated messages through `POST /api/messages`. The backend includes a honeypot and an in-memory per-IP rate limit. Reading, changing status, and deleting messages require an authenticated admin session.
 
+Giveaway registration uses `POST /api/giveaway/entries`. An active campaign is visible only between its configured dates, appears as a featured live card on the homepage, and can be opened directly with `/fan-zone#giveaway`. The public `GET /api/giveaway/status` endpoint exposes only the number of eligible participants, never participant details. A signed browser cookie and normalized email prevent ordinary duplicate entries per campaign, while a per-IP rate limit slows automated abuse. These controls are appropriate for a community giveaway, but they are not identity verification.
+
+The admin can make age, territory, and a social profile optional or required, copy the direct form link, attach a direct social-post link to each condition with `Condition text | https://...`, configure multiple prizes with quantities and optional images, stop registration, search or filter participants, exclude entries, export a UTF-8 CSV, and draw the resulting number of winners. The public view shows prize cards, a no-cache eligible-participant count, and a live day/hour/minute/second countdown when an end date exists. The public eligibility confirmation adapts to the configured age/territory and disappears when both are empty. Drawing uses Node's cryptographically secure random generator for both winner selection and independent prize assignment, stores each winner's rank, assigned prize, and draw time, and displays a compact rolling-name animation before the persisted result and celebration are revealed. The rolling names are presentation only and never determine the winner. Resetting winners is disabled until a result exists; resetting winners and deleting all entries are immediate actions protected by explicit destructive confirmation dialogs and do not require a separate page save. Existing results must be reset explicitly before another draw. Removing the giveaway deletes its participant data; disabling it only hides the public section and preserves entries.
+
 ## Admin Editing
 
 Most public content is editable from the admin panel, including:
@@ -94,6 +99,8 @@ Most public content is editable from the admin panel, including:
 - host profiles and optional profile photos
 - host predictions
 - fan polls, options, status, deadline, and result visibility
+- giveaway title, multiple prizes, prize quantities/images, dates, eligibility, rules, privacy notice, image, and active state
+- giveaway participant search/review, eligibility control, CSV export, secure winner/prize draw, and result reset
 - inbox message statuses and deletion
 
 The admin is organized into page tabs. Each editable page has its own Save control and an `Отмени промените` control. Restore discards only the unsaved draft for the current page and reloads that page from the last successful local-server or Supabase save; it does not publish or modify other page drafts.
@@ -108,6 +115,7 @@ Each upload field displays its own loading spinner and progress message while op
 - `/` - main website
 - `/news` - news page
 - `/fan-zone` - host predictions, polls, and fan idea form
+- `/fan-zone#giveaway` - direct link to the active giveaway; hidden when no campaign is active
 - `/hosts` - editable host profiles
 - `/partners` - advertising formats, packages, active campaigns, and statistics
 - `/contact` - adaptive general/idea/partner inquiry form
@@ -152,6 +160,8 @@ The current local JSON and upload storage remains suitable for development only.
 
 When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
 
+Production giveaway participants are stored in the protected Supabase `app_state` row whose key is `giveawayEntries`. Local development uses the ignored `data/giveaway-entries.json` file, so local tests do not touch production unless `USE_SUPABASE_LOCAL=true` is set intentionally. No additional Supabase table or migration is required.
+
 Local development uses JSON files and the local `uploads/` directory even when Supabase credentials exist in `.env`. Set `USE_SUPABASE_LOCAL=true` only when intentionally testing against the production Supabase project. Render uses Supabase automatically because `NODE_ENV=production`.
 
 Admin saves never silently fall back to browser-only persistence. If the local backend or Supabase save fails, the draft remains visible in the editor and the admin reports an error; the last saved version remains unchanged and can still be restored.
@@ -184,6 +194,7 @@ The site has a small Node.js backend, a protected admin panel, editable content 
 - manual news posts
 - host profiles and optional photos
 - host predictions and fan voting
+- optional giveaway registration, homepage live feature, countdown, public participant count, and admin winner/prize drawing
 - fan/general/partner forms with protected inbox
 - honest partner-facing statistics
 - contact buttons

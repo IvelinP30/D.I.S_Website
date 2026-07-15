@@ -22,6 +22,9 @@ const partnersPageEditor = document.querySelector("#partners-page-editor");
 const contactPageEditor = document.querySelector("#contact-page-editor");
 const predictionsEditor = document.querySelector("#predictions-editor");
 const pollsEditor = document.querySelector("#polls-editor");
+const giveawayEditor = document.querySelector("#giveaway-editor");
+const giveawayEntriesEditor = document.querySelector("#giveaway-entries-editor");
+const giveawayAdminToolbar = document.querySelector("#giveaway-admin-toolbar");
 const hostsEditor = document.querySelector("#hosts-editor");
 const messagesEditor = document.querySelector("#messages-editor");
 const inboxCount = document.querySelector("#inbox-count");
@@ -29,16 +32,72 @@ const footerEditor = document.querySelector("#footer-editor");
 const footerLinksEditor = document.querySelector("#footer-links-editor");
 const footerSocialsEditor = document.querySelector("#footer-socials-editor");
 const confirmModal = document.querySelector("#confirm-modal");
+const confirmTitle = document.querySelector("#confirm-title");
 const confirmMessage = document.querySelector("#confirm-message");
 const confirmOk = document.querySelector("[data-confirm-ok]");
 const confirmAlt = document.querySelector("[data-confirm-alt]");
 const confirmCancelControls = document.querySelectorAll("[data-confirm-cancel]");
+const winnerModal = document.querySelector("#winner-modal");
+const winnerModalNames = document.querySelector("#winner-modal-names");
+const winnerModalCopy = document.querySelector("#winner-modal-copy");
+const winnerConfetti = document.querySelector("#winner-confetti");
+const winnerModalCloseControls = document.querySelectorAll("[data-winner-modal-close]");
 let pendingConfirmation = null;
+let giveawayEntriesCache = [];
+let giveawayEntrySearchTerm = "";
+let giveawayEntryFilters = { winnersOnly: false, ineligibleOnly: false };
+let winnerAnimationTimer = null;
 const imageUploadProfiles = {
   hero: { maxDimension: 1920, targetBytes: 1_200_000, label: "1920 px и 1.2 MB" },
   content: { maxDimension: 1600, targetBytes: 800_000, label: "1600 px и 800 KB" }
 };
 const maxUploadImageBytes = 1_200_000;
+
+function createGiveawayDraft() {
+  return {
+    id: `giveaway-${Date.now()}`,
+    enabled: false,
+    title: "Големият футболен giveaway",
+    prize: "Опиши наградата",
+    description: "Запиши се безплатно и участвай в тегленето на D.I.S Подкаст.",
+    image: "./assets/giveaway-football.webp",
+    startsAt: "",
+    endsAt: "",
+    winnerCount: 1,
+    prizes: [{ id: `prize-${Date.now()}`, name: "Опиши наградата", quantity: 1, image: "" }],
+    minAge: 18,
+    region: "България",
+    socialHandleRequired: false,
+    requirements: ["Изпълни условията, описани в официалната giveaway публикация"],
+    officialRules: "Участието е безплатно и е позволено по веднъж на човек. Победителят се избира на случаен принцип сред валидните участници и ще бъде потърсен по имейл.",
+    privacyNotice: "D.I.S Подкаст обработва името, имейла и посочения социален профил само за провеждането на giveaway и връзка с победителя. Данните се изтриват след приключване на кампанията и предаването на наградата. За оттегляне на участието или изтриване на данните използвай страницата Контакт.",
+    platformNotice: "Тази промоция не е спонсорирана, администрирана, одобрена или свързана с Instagram, Facebook, YouTube или TikTok. Тези платформи не носят отговорност за провеждането й."
+  };
+}
+
+function normalizeGiveawayPrizes(giveaway = {}) {
+  const configured = Array.isArray(giveaway.prizes)
+    ? giveaway.prizes.filter((prize) => String(prize?.name || "").trim())
+    : [];
+  if (configured.length) {
+    return configured.map((prize, index) => ({
+      id: prize.id || `prize-${Date.now()}-${index}`,
+      name: String(prize.name || "Награда"),
+      quantity: Math.max(1, Math.min(20, Number(prize.quantity) || 1)),
+      image: String(prize.image || "")
+    }));
+  }
+  return [{
+    id: "legacy-prize",
+    name: giveaway.prize || "Футболна награда",
+    quantity: Math.max(1, Math.min(20, Number(giveaway.winnerCount) || 1)),
+    image: ""
+  }];
+}
+
+function giveawayWinnerCount(giveaway = {}) {
+  return Math.min(20, normalizeGiveawayPrizes(giveaway).reduce((sum, prize) => sum + prize.quantity, 0));
+}
 
 const sectionFields = [
   ["socials", "Канали"],
@@ -60,8 +119,10 @@ function setStatus(message, isError = false) {
 }
 
 function askConfirmation(message, options = {}) {
+  confirmTitle.textContent = options.title || "Сигурен ли си?";
   confirmMessage.textContent = message;
   confirmOk.textContent = options.okLabel || "Потвърди";
+  confirmOk.classList.toggle("is-danger", Boolean(options.danger));
   confirmAlt.textContent = options.altLabel || "";
   confirmAlt.hidden = !options.altLabel;
   confirmAlt.style.display = options.altLabel ? "" : "none";
@@ -76,7 +137,9 @@ function askConfirmation(message, options = {}) {
 function closeConfirmation(answer) {
   if (!pendingConfirmation) return;
   confirmModal.hidden = true;
+  confirmTitle.textContent = "Сигурен ли си?";
   confirmOk.textContent = "Потвърди";
+  confirmOk.classList.remove("is-danger");
   confirmAlt.hidden = true;
   confirmAlt.style.display = "none";
   pendingConfirmation(answer);
@@ -85,6 +148,58 @@ function closeConfirmation(answer) {
 
 async function showInfo(message) {
   await askConfirmation(message, { okLabel: "Разбрах" });
+}
+
+async function showWinnerCelebration(winners = [], participantNames = []) {
+  if (!winnerModal || !winnerModalNames || !winnerConfetti) return;
+  const orderedWinners = [...winners].sort((first, second) => first.winnerRank - second.winnerRank);
+  const reelNames = participantNames.length ? participantNames : orderedWinners.map((winner) => winner.name);
+  const closeButton = winnerModal.querySelector(".button[data-winner-modal-close]");
+  winnerModal.classList.toggle("has-many-winners", orderedWinners.length > 3);
+  winnerModal.dataset.drawing = "true";
+  if (closeButton) {
+    closeButton.disabled = true;
+    closeButton.textContent = orderedWinners.length === 1 ? "Виж участника" : "Виж победителите";
+  }
+  winnerModalCopy.textContent = "Имената се разбъркват. Победителят се избира със сигурното сървърно теглене...";
+  winnerModalNames.innerHTML = orderedWinners
+    .map((_, index) => `<div class="winner-reel"><small>Теглене #${index + 1}</small><strong>${escapeValue(reelNames[index % reelNames.length] || "...")}</strong></div>`)
+    .join("");
+  winnerConfetti.innerHTML = "";
+  winnerModal.hidden = false;
+
+  let tick = 0;
+  winnerAnimationTimer = window.setInterval(() => {
+    winnerModalNames.querySelectorAll("strong").forEach((name, index) => {
+      name.textContent = reelNames[(tick * 3 + index * 5) % reelNames.length] || "...";
+    });
+    tick += 1;
+  }, 85);
+  await new Promise((resolve) => window.setTimeout(resolve, 1900));
+  window.clearInterval(winnerAnimationTimer);
+  winnerAnimationTimer = null;
+
+  winnerModalCopy.textContent = winners.length === 1
+    ? "Тегленето приключи успешно. Победителят е:"
+    : "Тегленето приключи успешно. Победителите са:";
+  winnerModalNames.innerHTML = orderedWinners
+    .map((winner) => `<div><small>Победител #${Number(winner.winnerRank) || 1}</small><strong>${escapeValue(winner.name)}</strong>${winner.prizeName ? `<span class="winner-prize">${winner.prizeImage ? `<img src="${escapeValue(winner.prizeImage)}" alt="" />` : ""}<span><em>Спечелена награда</em><b>${escapeValue(winner.prizeName)}</b></span></span>` : ""}</div>`)
+    .join("");
+  winnerConfetti.innerHTML = Array.from({ length: 28 }, (_, index) =>
+    `<i style="--confetti-x:${(index * 37) % 100}%;--confetti-delay:${(index % 7) * 70}ms;--confetti-rotate:${(index * 53) % 360}deg;--confetti-color:${["#38f27f", "#f4d44d", "#ffffff", "#ff465e"][index % 4]}"></i>`
+  ).join("");
+  winnerModal.dataset.drawing = "false";
+  if (closeButton) {
+    closeButton.disabled = false;
+    closeButton.focus();
+  }
+}
+
+function closeWinnerCelebration() {
+  if (!winnerModal || winnerModal.dataset.drawing === "true") return;
+  winnerModal.hidden = true;
+  winnerConfetti.innerHTML = "";
+  document.querySelector("[data-giveaway-entry-id].is-winner")?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function removalLabel(type) {
@@ -101,6 +216,7 @@ function removalLabel(type) {
       package: "този рекламен пакет",
       prediction: "тази прогноза",
       poll: "това гласуване",
+      giveaway: "този giveaway и всички записани участници",
       host: "този водещ",
       "footer-link": "този footer линк",
       "footer-social": "тази footer социална мрежа"
@@ -130,6 +246,8 @@ function withDefaults(config) {
   sectionKeys.forEach((key) => {
     sections[key] = { ...(fallback.sections?.[key] || {}), ...(config.sections?.[key] || {}) };
   });
+  const rawGiveaway = config.giveaway === undefined ? (fallback.giveaway || null) : config.giveaway;
+  const giveaway = rawGiveaway ? { ...rawGiveaway, prizes: normalizeGiveawayPrizes(rawGiveaway) } : null;
   return {
     ...fallback,
     ...config,
@@ -162,6 +280,7 @@ function withDefaults(config) {
     hosts: config.hosts || fallback.hosts || [],
     predictions: config.predictions || fallback.predictions || [],
     polls: config.polls || fallback.polls || [],
+    giveaway,
     mediaLibrary: config.mediaLibrary || fallback.mediaLibrary || []
   };
 }
@@ -196,6 +315,18 @@ function readonlyInfo(label, value = "") {
   `;
 }
 
+function readonlyLinkInfo(label, href = "") {
+  return `
+    <div class="mini-field readonly-field">
+      <span>${label}</span>
+      <div class="readonly-link-row">
+        <a href="${escapeValue(href)}" target="_blank" rel="noopener noreferrer">${escapeValue(href)}</a>
+        <button class="button secondary" data-copy-link="${escapeValue(href)}" type="button">Копирай</button>
+      </div>
+    </div>
+  `;
+}
+
 function fileField(label, accept, target = "") {
   const profile = imageUploadProfile(target);
   const imageHint = accept.includes("image/") ? `<small>Снимките се оптимизират автоматично до ${profile.label}.</small>` : "";
@@ -210,7 +341,7 @@ function fileField(label, accept, target = "") {
 }
 
 function imageUploadProfile(target = "") {
-  const isHeroOrBrand = !target || target === "sections.news.image" || /^pages\.[^.]+\.image$/.test(target);
+  const isHeroOrBrand = !target || target === "sections.news.image" || target === "giveaway.image" || /^pages\.[^.]+\.image$/.test(target);
   return isHeroOrBrand ? imageUploadProfiles.hero : imageUploadProfiles.content;
 }
 
@@ -605,6 +736,53 @@ function renderEditors() {
       </article>`)
     .join("");
 
+  const giveaway = adminConfig.giveaway;
+  const giveawayPrizes = giveaway ? normalizeGiveawayPrizes(giveaway) : [];
+  giveawayEditor.innerHTML = giveaway ? `
+    <article class="editor-card giveaway-editor-card">
+      <button class="remove-card" data-remove="giveaway" type="button" aria-label="Премахни giveaway">x</button>
+      <h3>${escapeValue(giveaway.title || "Giveaway")}</h3>
+      ${hiddenField("id", giveaway.id || `giveaway-${Date.now()}`)}
+      ${checkboxField("Покажи giveaway в сайта", "enabled", Boolean(giveaway.enabled))}
+      ${field("Заглавие", "title", giveaway.title || "")}
+      ${textarea("Кратко описание", "description", giveaway.description || "", 4)}
+      ${field("Начало (по желание)", "startsAt", dateTimeLocalValue(giveaway.startsAt), "datetime-local")}
+      ${field("Край", "endsAt", dateTimeLocalValue(giveaway.endsAt), "datetime-local")}
+      <div class="giveaway-prize-admin wide">
+        <div class="giveaway-prize-admin-heading">
+          <div><span class="upload-title">Награди</span><small>Количеството определя колко победители ще бъдат изтеглени.</small></div>
+          <button class="button secondary" data-add-giveaway-prize type="button">Добави награда</button>
+        </div>
+        <div class="giveaway-prize-editor-list">
+          ${giveawayPrizes.map((prize, index) => `
+            <article class="giveaway-prize-editor" data-prize-index="${index}">
+              <button class="remove-card" data-remove-giveaway-prize type="button" aria-label="Премахни награда">x</button>
+              <h4>Награда ${index + 1}</h4>
+              ${hiddenField("prizeId", prize.id)}
+              ${field("Име на наградата", "prizeName", prize.name)}
+              ${field("Брой", "prizeQuantity", prize.quantity, "number")}
+              ${hiddenField("prizeImage", prize.image || "")}
+              ${fileField("Снимка (по желание)", "image/*", `giveaway.prizes.${index}.image`)}
+              <div class="mini-field giveaway-prize-preview"><span>Текуща снимка</span>${mediaPreview(prize.image || "", "image")}${prize.image ? `<button class="button secondary" data-remove-giveaway-prize-image type="button">Изтрий снимката</button>` : ""}</div>
+            </article>`).join("")}
+        </div>
+      </div>
+      ${field("Минимална възраст (по желание)", "minAge", giveaway.minAge ?? "", "number")}
+      ${field("Допустима територия (по желание)", "region", giveaway.region || "")}
+      ${checkboxField("Изисквай профил в социална мрежа", "socialHandleRequired", Boolean(giveaway.socialHandleRequired))}
+      ${readonlyLinkInfo("Директен линк към формата", "https://dis-podcast.onrender.com/fan-zone#giveaway")}
+      ${readonlyInfo("Проверка на условията", "Следване, харесване и други действия в социалните мрежи се проверяват ръчно преди тегленето.")}
+      ${textarea("Условия - едно на ред; линк: Текст | https://...", "requirements", (giveaway.requirements || []).join("\n"), 5)}
+      ${textarea("Официални правила", "officialRules", giveaway.officialRules || "", 7)}
+      ${textarea("Информация за личните данни", "privacyNotice", giveaway.privacyNotice || "", 6)}
+      ${textarea("Уточнение за социалните платформи", "platformNotice", giveaway.platformNotice || "", 4)}
+      ${hiddenField("image", giveaway.image || "")}
+      ${fileField("Качи giveaway снимка", "image/*", "giveaway.image")}
+      <div class="wide"><span class="upload-title">Текуща giveaway снимка</span>${mediaPreview(giveaway.image || "./assets/giveaway-football.webp", "image")}</div>
+    </article>` : `<article class="empty-state">Няма създаден giveaway. Натисни „Създай giveaway“, попълни условията и го активирай, когато е готов.</article>`;
+
+  loadGiveawayEntries();
+
   hostsEditor.innerHTML = (adminConfig.hosts || [])
     .map((host, index) => `
       <article class="editor-card" data-index="${index}">
@@ -942,7 +1120,13 @@ function selectMedia(target, url, type) {
   const hostMatch = target.match(/^hosts\.(\d+)\.image$/);
   if (hostMatch) adminConfig.hosts[Number(hostMatch[1])].imageUrl = url;
 
+  const giveawayPrizeMatch = target.match(/^giveaway\.prizes\.(\d+)\.image$/);
+  if (giveawayPrizeMatch && adminConfig.giveaway?.prizes?.[Number(giveawayPrizeMatch[1])]) {
+    adminConfig.giveaway.prizes[Number(giveawayPrizeMatch[1])].image = url;
+  }
+
   if (target === "sections.news.image") adminConfig.sections.news.image = url;
+  if (target === "giveaway.image" && adminConfig.giveaway) adminConfig.giveaway.image = url;
 }
 
 function selectedMediaUsages(url = "") {
@@ -963,6 +1147,10 @@ function selectedMediaUsages(url = "") {
     if (host.imageUrl === url) usages.push(`водещ ${index + 1}`);
   });
   if (adminConfig.sections?.news?.image === url) usages.push("hero на Новини");
+  if (adminConfig.giveaway?.image === url) usages.push("giveaway");
+  (adminConfig.giveaway?.prizes || []).forEach((prize, index) => {
+    if (prize.image === url) usages.push(`giveaway награда ${index + 1}`);
+  });
   return usages;
 }
 
@@ -976,6 +1164,17 @@ function collectConfig() {
   const youtubeCard = singleCard(youtubeEditor);
   const sponsorPanelCard = singleCard(sponsorPanelEditor);
   const footerCard = singleCard(footerEditor);
+  const giveawayCard = singleCard(giveawayEditor);
+  const giveawayMinAge = giveawayCard ? value(giveawayCard, "minAge").trim() : "";
+  const giveawayPrizes = giveawayCard
+    ? [...giveawayCard.querySelectorAll(".giveaway-prize-editor")].map((card, index) => ({
+        id: value(card, "prizeId") || `prize-${Date.now()}-${index}`,
+        name: value(card, "prizeName") || `Награда ${index + 1}`,
+        quantity: Math.max(1, Math.min(20, Number(value(card, "prizeQuantity")) || 1)),
+        image: value(card, "prizeImage")
+      }))
+    : [];
+  const giveawayWinnerTotal = Math.max(1, Math.min(20, giveawayPrizes.reduce((sum, prize) => sum + prize.quantity, 0) || 1));
 
   const sections = { ...(adminConfig.sections || {}) };
   sectionEditors.flatMap((editor) => [...editor.querySelectorAll(".editor-card")]).forEach((card) => {
@@ -1106,6 +1305,25 @@ function collectConfig() {
         }))
       };
     }),
+    giveaway: giveawayCard ? {
+      id: value(giveawayCard, "id") || `giveaway-${Date.now()}`,
+      enabled: Boolean(giveawayCard.querySelector('[name="enabled"]')?.checked),
+      title: value(giveawayCard, "title"),
+      prize: giveawayPrizes.map((prize) => prize.name).join(", ") || "Футболна награда",
+      prizes: giveawayPrizes.length ? giveawayPrizes : normalizeGiveawayPrizes(adminConfig.giveaway),
+      description: value(giveawayCard, "description"),
+      image: value(giveawayCard, "image") || "./assets/giveaway-football.webp",
+      startsAt: value(giveawayCard, "startsAt") ? new Date(value(giveawayCard, "startsAt")).toISOString() : "",
+      endsAt: value(giveawayCard, "endsAt") ? new Date(value(giveawayCard, "endsAt")).toISOString() : "",
+      winnerCount: giveawayWinnerTotal,
+      minAge: giveawayMinAge === "" ? null : Math.max(0, Math.min(99, Number(giveawayMinAge) || 0)),
+      region: value(giveawayCard, "region"),
+      socialHandleRequired: Boolean(giveawayCard.querySelector('[name="socialHandleRequired"]')?.checked),
+      requirements: lines(value(giveawayCard, "requirements")),
+      officialRules: value(giveawayCard, "officialRules"),
+      privacyNotice: value(giveawayCard, "privacyNotice"),
+      platformNotice: value(giveawayCard, "platformNotice")
+    } : null,
     sponsorPanel: {
       label: value(sponsorPanelCard, "label"),
       title: value(sponsorPanelCard, "title"),
@@ -1176,6 +1394,7 @@ function applyPage(target, page, snapshot) {
     target.pages.fanZone = source.pages.fanZone;
     target.predictions = source.predictions;
     target.polls = source.polls;
+    target.giveaway = source.giveaway;
   }
   if (page === "hosts") {
     target.pages.hosts = source.pages.hosts;
@@ -1200,8 +1419,13 @@ function applyPage(target, page, snapshot) {
 document.querySelectorAll("[data-save-page]").forEach((button) => {
   button.addEventListener("click", async () => {
     const page = button.dataset.savePage;
-    if (!(await askConfirmation(`Сигурен ли си, че искаш да запазиш „${button.textContent.replace("Запази", "").trim()}“?`))) return;
     const draftConfig = collectConfig();
+    const configuredWinnerCount = (draftConfig.giveaway?.prizes || []).reduce((sum, prize) => sum + (Number(prize.quantity) || 0), 0);
+    if (page === "fan" && draftConfig.giveaway && configuredWinnerCount > 20) {
+      await showInfo("Общият брой награди и победители може да бъде най-много 20. Намали количеството на някоя награда.");
+      return;
+    }
+    if (!(await askConfirmation(`Сигурен ли си, че искаш да запазиш „${button.textContent.replace("Запази", "").trim()}“?`))) return;
     const lastSavedConfig = structuredClone(savedConfig);
     const nextConfig = withDefaults(structuredClone(savedConfig));
     applyPage(nextConfig, page, draftConfig);
@@ -1285,6 +1509,9 @@ document.querySelectorAll("[data-add]").forEach((button) => {
     if (type === "poll") {
       adminConfig.polls.unshift({ id: `poll-${Date.now()}`, title: "Фенски вот", match: "Отбор A срещу Отбор B", question: "Кой ще спечели?", status: "active", resultsVisible: true, closesAt: "", options: [{ id: `option-${Date.now()}-0`, label: "Отбор A" }, { id: `option-${Date.now()}-1`, label: "Равенство" }, { id: `option-${Date.now()}-2`, label: "Отбор B" }] });
     }
+    if (type === "giveaway" && !adminConfig.giveaway) {
+      adminConfig.giveaway = createGiveawayDraft();
+    }
     if (type === "host") {
       adminConfig.hosts.push({ name: "Нов водещ", role: "Водещ", bio: "Кратко представяне", imageUrl: "", favoriteTeam: "", favoritePlayer: "", footballMemory: "", matchStyle: "" });
     }
@@ -1299,6 +1526,52 @@ document.querySelectorAll("[data-add]").forEach((button) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const copyLinkButton = event.target.closest("[data-copy-link]");
+  if (copyLinkButton) {
+    try {
+      await navigator.clipboard.writeText(copyLinkButton.dataset.copyLink || "");
+      const originalLabel = copyLinkButton.textContent;
+      copyLinkButton.textContent = "Копирано";
+      window.setTimeout(() => { copyLinkButton.textContent = originalLabel; }, 1600);
+    } catch {
+      await showInfo("Линкът не може да бъде копиран автоматично. Маркирай го и го копирай ръчно.");
+    }
+    return;
+  }
+
+  const addGiveawayPrizeButton = event.target.closest("[data-add-giveaway-prize]");
+  if (addGiveawayPrizeButton) {
+    syncBeforeMutating();
+    adminConfig.giveaway.prizes ||= [];
+    adminConfig.giveaway.prizes.push({ id: `prize-${Date.now()}`, name: "Нова награда", quantity: 1, image: "" });
+    renderEditors();
+    return;
+  }
+
+  const removeGiveawayPrizeButton = event.target.closest("[data-remove-giveaway-prize]");
+  if (removeGiveawayPrizeButton) {
+    syncBeforeMutating();
+    if ((adminConfig.giveaway?.prizes || []).length <= 1) {
+      await showInfo("Giveaway трябва да има поне една награда.");
+      return;
+    }
+    if (!(await askConfirmation("Да премахна ли тази награда? Промяната ще се публикува след Запази Фен зона."))) return;
+    const index = Number(removeGiveawayPrizeButton.closest("[data-prize-index]")?.dataset.prizeIndex);
+    adminConfig.giveaway.prizes.splice(index, 1);
+    renderEditors();
+    return;
+  }
+
+  const removeGiveawayPrizeImageButton = event.target.closest("[data-remove-giveaway-prize-image]");
+  if (removeGiveawayPrizeImageButton) {
+    if (!(await askConfirmation("Да премахна ли снимката на тази награда?"))) return;
+    syncBeforeMutating();
+    const index = Number(removeGiveawayPrizeImageButton.closest("[data-prize-index]")?.dataset.prizeIndex);
+    if (adminConfig.giveaway?.prizes?.[index]) adminConfig.giveaway.prizes[index].image = "";
+    renderEditors();
+    return;
+  }
+
   const removeHostImageButton = event.target.closest("[data-remove-host-image]");
   if (removeHostImageButton) {
     if (!(await askConfirmation("Сигурен ли си, че искаш да изтриеш снимката на този водещ?"))) return;
@@ -1372,6 +1645,7 @@ document.addEventListener("click", async (event) => {
   if (type === "package") adminConfig.sponsorPackages.splice(index, 1);
   if (type === "prediction") adminConfig.predictions.splice(index, 1);
   if (type === "poll") adminConfig.polls.splice(index, 1);
+  if (type === "giveaway") adminConfig.giveaway = null;
   if (type === "footer-link") adminConfig.footer.links.splice(index, 1);
   if (type === "footer-social") adminConfig.footer.socials.splice(index, 1);
   if (type === "host") {
@@ -1396,6 +1670,7 @@ confirmCancelControls.forEach((control) => {
 
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !confirmModal.hidden) closeConfirmation(false);
+  if (event.key === "Escape" && winnerModal && !winnerModal.hidden) closeWinnerCelebration();
   if (
     (event.key === "Enter" || event.key === " ") &&
     event.target.closest(".media-library-card") &&
@@ -1467,11 +1742,226 @@ async function loadMessages() {
   }
 }
 
+function renderGiveawayEntryCards() {
+  if (!giveawayEntriesEditor) return;
+  const query = giveawayEntrySearchTerm.trim().toLocaleLowerCase("bg-BG");
+  let entries = query
+    ? giveawayEntriesCache.filter((entry) => [entry.name, entry.email, entry.socialHandle, entry.prizeName].some((value) => String(value || "").toLocaleLowerCase("bg-BG").includes(query)))
+    : giveawayEntriesCache;
+  if (giveawayEntryFilters.winnersOnly) entries = entries.filter((entry) => Boolean(entry.winnerRank));
+  if (giveawayEntryFilters.ineligibleOnly) entries = entries.filter((entry) => entry.eligible === false);
+  if (!giveawayEntriesCache.length) {
+    giveawayEntriesEditor.innerHTML = `<article class="empty-state">Все още няма записани участници.</article>`;
+    return;
+  }
+  if (!entries.length) {
+    giveawayEntriesEditor.innerHTML = `<article class="empty-state">Няма участник, който отговаря на избраните филтри.</article>`;
+    return;
+  }
+  giveawayEntriesEditor.innerHTML = entries.map((entry) => `
+    <article class="editor-card giveaway-entry-card ${entry.winnerRank ? "is-winner" : ""} ${entry.eligible === false ? "is-ineligible" : ""}" data-giveaway-entry-id="${escapeValue(entry.id)}">
+      ${entry.winnerRank ? "" : `<button class="remove-card" data-delete-giveaway-entry type="button" aria-label="Изтрий участник">x</button>`}
+      <div class="message-card-top"><span>${entry.winnerRank ? `Победител #${entry.winnerRank}` : entry.eligible === false ? "Изключен" : "Допуснат"}</span><time>${escapeValue(formatAdminDate(entry.createdAt))}</time></div>
+      <h3>${escapeValue(entry.name)}</h3>
+      <p><a href="mailto:${escapeValue(entry.email)}">${escapeValue(entry.email)}</a>${entry.socialHandle ? ` · ${escapeValue(entry.socialHandle)}` : ""}</p>
+      ${entry.drawnAt ? `<p>Изтеглен: ${escapeValue(formatAdminDate(entry.drawnAt))}</p>` : ""}
+      ${entry.prizeName ? `<p class="giveaway-entry-prize"><span>Награда</span><strong>${escapeValue(entry.prizeName)}</strong></p>` : ""}
+      ${entry.winnerRank
+        ? `<div class="giveaway-winner-status"><i></i><span>Изтеглен победител</span></div>`
+        : `<button class="button secondary" data-toggle-giveaway-entry type="button">${entry.eligible === false ? "Допусни до теглене" : "Изключи от теглене"}</button>`}
+    </article>`).join("");
+}
+
+async function loadGiveawayEntries() {
+  if (!giveawayEntriesEditor || !giveawayAdminToolbar) return;
+  const giveaway = adminConfig.giveaway;
+  if (!giveaway?.id) {
+    giveawayEntriesCache = [];
+    giveawayAdminToolbar.innerHTML = "";
+    giveawayEntriesEditor.innerHTML = `<article class="empty-state">Създай и запази giveaway, за да започнеш да събираш участници.</article>`;
+    return;
+  }
+
+  giveawayEntriesEditor.innerHTML = `<article class="empty-state">Зареждане на участниците...</article>`;
+  try {
+    const response = await fetch(`/api/giveaway/entries?giveawayId=${encodeURIComponent(giveaway.id)}`, { headers: { Accept: "application/json" } });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "Участниците не могат да бъдат заредени.");
+    const entries = payload.entries || [];
+    giveawayEntriesCache = entries;
+    const winners = entries.filter((entry) => entry.winnerRank);
+    const eligible = entries.filter((entry) => entry.eligible !== false).length;
+    const registrationOpen = giveawayRegistrationIsOpen(giveaway);
+    const winnerCount = giveawayWinnerCount(giveaway);
+    giveawayAdminToolbar.innerHTML = `
+      <div><strong>${entries.length}</strong><span>участници</span></div>
+      <div><strong>${eligible}</strong><span>допуснати</span></div>
+      <p class="giveaway-admin-state ${registrationOpen ? "is-open" : ""}">${registrationOpen ? "Записването е отворено. За теглене го спри и запази Фен зона." : "Записването е спряно. Може да подготвиш тегленето."}</p>
+      <label class="giveaway-entry-search"><span>Търси участник</span><input data-giveaway-entry-search type="search" value="${escapeValue(giveawayEntrySearchTerm)}" placeholder="Име, имейл или профил" /></label>
+      <fieldset class="giveaway-entry-filters">
+        <legend>Филтри</legend>
+        <label><input data-giveaway-entry-filter="winnersOnly" type="checkbox" ${giveawayEntryFilters.winnersOnly ? "checked" : ""} /><span>Само победители</span></label>
+        <label><input data-giveaway-entry-filter="ineligibleOnly" type="checkbox" ${giveawayEntryFilters.ineligibleOnly ? "checked" : ""} /><span>Само недопуснати</span></label>
+      </fieldset>
+      <button class="button primary" data-draw-giveaway type="button" ${eligible < winnerCount || winners.length ? "disabled" : ""}>Изтегли ${winnerCount} победител${winnerCount === 1 ? "" : "и"}</button>
+      <button class="button secondary" data-export-giveaway-entries type="button" ${entries.length ? "" : "disabled"}>Изтегли CSV</button>
+      <button class="button secondary" data-reset-giveaway-winners type="button" ${winners.length ? "" : "disabled"}>Нулирай резултата</button>
+      <button class="button secondary" data-clear-giveaway-entries type="button" ${entries.length ? "" : "disabled"}>Изтрий всички</button>`;
+    renderGiveawayEntryCards();
+  } catch (error) {
+    giveawayEntriesCache = [];
+    giveawayAdminToolbar.innerHTML = "";
+    giveawayEntriesEditor.innerHTML = `<article class="empty-state">${escapeValue(error.message)}</article>`;
+  }
+}
+
+document.querySelector("#refresh-giveaway-entries")?.addEventListener("click", loadGiveawayEntries);
+
+document.addEventListener("input", (event) => {
+  const search = event.target.closest("[data-giveaway-entry-search]");
+  if (!search) return;
+  giveawayEntrySearchTerm = search.value;
+  renderGiveawayEntryCards();
+});
+
+document.addEventListener("change", (event) => {
+  const filter = event.target.closest("[data-giveaway-entry-filter]");
+  if (!filter) return;
+  giveawayEntryFilters[filter.dataset.giveawayEntryFilter] = filter.checked;
+  renderGiveawayEntryCards();
+});
+
+function giveawayRegistrationIsOpen(giveaway = {}) {
+  const now = Date.now();
+  const startsAt = giveaway.startsAt ? new Date(giveaway.startsAt).getTime() : 0;
+  const endsAt = giveaway.endsAt ? new Date(giveaway.endsAt).getTime() : Infinity;
+  return Boolean(giveaway.enabled && startsAt <= now && now < endsAt);
+}
+
+async function giveawayAdminRequest(url, options = {}) {
+  const response = await fetch(url, options);
+  const payload = response.status === 204 ? {} : await response.json().catch(() => ({}));
+  if (!response.ok) {
+    await showInfo(payload.error || "Действието не успя. Опитай отново.");
+    return false;
+  }
+  return payload;
+}
+
+function csvCell(value = "") {
+  const text = String(value);
+  const protectedText = /^[=+\-@]/.test(text) ? `'${text}` : text;
+  return `"${protectedText.replaceAll('"', '""')}"`;
+}
+
+function exportGiveawayEntries() {
+  const header = ["Име", "Имейл", "Социален профил", "Допуснат", "Победител", "Награда", "Записан на"];
+  const rows = giveawayEntriesCache.map((entry) => [
+    entry.name,
+    entry.email,
+    entry.socialHandle || "",
+    entry.eligible === false ? "Не" : "Да",
+    entry.winnerRank ? `#${entry.winnerRank}` : "",
+    entry.prizeName || "",
+    formatAdminDate(entry.createdAt)
+  ]);
+  const csv = `\uFEFF${[header, ...rows].map((row) => row.map(csvCell).join(",")).join("\n")}`;
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  link.download = `dis-giveaway-${adminConfig.giveaway?.id || "participants"}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+document.addEventListener("click", async (event) => {
+  const giveaway = adminConfig.giveaway;
+  if (!giveaway?.id) return;
+
+  if (event.target.closest("[data-export-giveaway-entries]")) {
+    exportGiveawayEntries();
+    return;
+  }
+
+  if (event.target.closest("[data-draw-giveaway]")) {
+    if (giveawayRegistrationIsOpen(giveaway)) {
+      await showInfo("Giveaway все още е активен и приема участници. Премахни отметката „Покажи giveaway в сайта“ и натисни „Запази Фен зона“. След това тегленето ще бъде разрешено.");
+      return;
+    }
+    const winnerCount = giveawayWinnerCount(giveaway);
+    if (!(await askConfirmation(`Ще бъдат изтеглени ${winnerCount} победител(и), а наградите също ще бъдат разпределени на случаен принцип. Резултатът се запазва веднага.`, {
+      title: "Теглене на победител",
+      okLabel: "Изтегли"
+    }))) return;
+    const result = await giveawayAdminRequest("/api/giveaway/draw", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ giveawayId: giveaway.id })
+    });
+    if (result) {
+      const participantNames = giveawayEntriesCache.filter((entry) => entry.eligible !== false).map((entry) => entry.name);
+      await loadGiveawayEntries();
+      showWinnerCelebration(result.winners || [], participantNames);
+    }
+    return;
+  }
+
+  if (event.target.closest("[data-reset-giveaway-winners]")) {
+    const winnerNames = giveawayEntriesCache
+      .filter((entry) => entry.winnerRank)
+      .sort((first, second) => first.winnerRank - second.winnerRank)
+      .map((entry) => `#${entry.winnerRank} ${entry.name}`)
+      .join(", ");
+    if (!(await askConfirmation(`Текущ резултат: ${winnerNames || "има изтеглен победител"}. Нулирането премахва този резултат веднага и позволява ново теглене. Не е необходимо допълнително натискане на „Запази“.`, {
+      title: "Нулиране на победителите",
+      okLabel: "Да, нулирай",
+      danger: true
+    }))) return;
+    const succeeded = await giveawayAdminRequest("/api/giveaway/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ giveawayId: giveaway.id }) });
+    if (succeeded) await loadGiveawayEntries();
+    return;
+  }
+
+  if (event.target.closest("[data-clear-giveaway-entries]")) {
+    if (!(await askConfirmation("Всички участници в този giveaway ще бъдат изтрити веднага и действието не може да бъде отменено. Не е необходимо допълнително натискане на „Запази“.", {
+      title: "Изтриване на всички участници",
+      okLabel: "Изтрий всички",
+      danger: true
+    }))) return;
+    const succeeded = await giveawayAdminRequest(`/api/giveaway/entries?giveawayId=${encodeURIComponent(giveaway.id)}`, { method: "DELETE" });
+    if (succeeded) await loadGiveawayEntries();
+    return;
+  }
+
+  const card = event.target.closest("[data-giveaway-entry-id]");
+  if (!card) return;
+  const entryId = card.dataset.giveawayEntryId;
+
+  if (event.target.closest("[data-delete-giveaway-entry]")) {
+    if (!(await askConfirmation("Да изтрия ли окончателно този участник?"))) return;
+    const succeeded = await giveawayAdminRequest(`/api/giveaway/entries/${encodeURIComponent(entryId)}`, { method: "DELETE" });
+    if (succeeded) await loadGiveawayEntries();
+    return;
+  }
+
+  if (event.target.closest("[data-toggle-giveaway-entry]")) {
+    const excluded = card.classList.contains("is-ineligible");
+    if (!(await askConfirmation(excluded ? "Да допусна ли този участник до тегленето?" : "Да изключа ли този участник от тегленето?"))) return;
+    const succeeded = await giveawayAdminRequest(`/api/giveaway/entries/${encodeURIComponent(entryId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ eligible: excluded })
+    });
+    if (succeeded) await loadGiveawayEntries();
+  }
+});
+
 function messageTypeLabel(type) {
   return { idea: "Идея от фен", partner: "Партньорство", general: "Общ въпрос" }[type] || "Съобщение";
 }
 
 document.querySelector("#refresh-messages")?.addEventListener("click", loadMessages);
+
+winnerModalCloseControls.forEach((control) => control.addEventListener("click", closeWinnerCelebration));
 
 document.addEventListener("click", (event) => {
   const trigger = event.target.closest(".admin-custom-select-trigger");

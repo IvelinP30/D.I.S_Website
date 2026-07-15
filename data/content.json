@@ -452,6 +452,34 @@
       ]
     }
   ],
+  "giveaway": {
+    "id": "giveaway-1784063751960",
+    "enabled": false,
+    "title": "Големият футболен giveaway",
+    "prize": "Тениска на Барселона",
+    "prizes": [
+      {
+        "id": "legacy-prize",
+        "name": "Тениска на Барселона",
+        "quantity": 1,
+        "image": ""
+      }
+    ],
+    "description": "Запиши се безплатно и участвай в тегленето на D.I.S Подкаст.",
+    "image": "./assets/giveaway-football.webp",
+    "startsAt": "",
+    "endsAt": "",
+    "winnerCount": 1,
+    "minAge": null,
+    "region": "",
+    "socialHandleRequired": false,
+    "requirements": [
+      "Последвайте ни в Инстаграм | https://www.instagram.com/d.i.s._podcast_/"
+    ],
+    "officialRules": "Участието е безплатно и е позволено по веднъж на човек. Победителят се избира на случаен принцип сред валидните участници и ще бъде потърсен по имейл.",
+    "privacyNotice": "D.I.S Подкаст обработва името, имейла и посочения социален профил само за провеждането на giveaway и връзка с победителя. Данните се изтриват след приключване на кампанията и предаването на наградата. За оттегляне на участието или изтриване на данните използвай страницата Контакт.",
+    "platformNotice": "Тази промоция не е спонсорирана, администрирана, одобрена или свързана с Instagram, Facebook, YouTube или TikTok. Тези платформи не носят отговорност за провеждането й."
+  },
   "mediaLibrary": [
     {
       "filename": "hero-football-podcast.webp",
