@@ -141,8 +141,8 @@ Every public page has its own search title, description, canonical production UR
 
 1. Deploy the SEO changes and confirm that `https://dis-podcast.onrender.com/sitemap.xml` opens.
 2. Open Google Search Console and add a **URL-prefix** property for `https://dis-podcast.onrender.com/`.
-3. Choose **HTML tag** verification and add the provided `google-site-verification` meta value to the homepage `<head>`.
-4. Deploy the verification tag, complete verification, then submit `https://dis-podcast.onrender.com/sitemap.xml` under **Sitemaps**.
+3. The Search Console **HTML tag** verification token is configured in the homepage `<head>` and must remain there while the property is in use.
+4. Complete verification, then submit `https://dis-podcast.onrender.com/sitemap.xml` under **Sitemaps**.
 5. Use **URL inspection** to request indexing of the homepage and the most important public pages after major content updates.
 
 Search Console access and verification require the owner's Google account, so this final registration step cannot be completed from the codebase alone.
