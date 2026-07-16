@@ -2769,6 +2769,36 @@ h3 {
   line-height: 1.6;
 }
 
+.prediction-card > p {
+  position: relative;
+  z-index: 1;
+  margin: 22px 0 0;
+  border-left: 2px solid rgba(56, 242, 127, 0.48);
+  border-radius: 0 8px 8px 0;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 14px 16px;
+  color: #c7ceda;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.prediction-card > time {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  margin-top: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  padding: 7px 11px;
+  color: #8992a2;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+}
+
 .poll-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
