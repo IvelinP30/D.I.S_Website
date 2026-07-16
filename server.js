@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const { sendMessageEmail } = require("./message-email");
 
 const root = __dirname;
 const envFile = path.join(root, ".env");
@@ -30,6 +31,8 @@ const isProduction = process.env.NODE_ENV === "production";
 const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "dis-media";
+const resendApiKey = String(process.env.RESEND_API_KEY || "").trim();
+const messageEmailFrom = String(process.env.MESSAGE_EMAIL_FROM || "").trim();
 const configuredGaMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim().toUpperCase();
 const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? configuredGaMeasurementId : "";
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
@@ -52,6 +55,10 @@ if (isProduction && !process.env.SESSION_SECRET) {
 
 if (isProduction && !cloudStorageEnabled) {
   throw new Error("Supabase persistence must be configured in production.");
+}
+
+if (isProduction && (!resendApiKey || !messageEmailFrom)) {
+  throw new Error("RESEND_API_KEY and MESSAGE_EMAIL_FROM must be configured in production.");
 }
 
 const mimeTypes = {
@@ -357,6 +364,23 @@ function normalizeMessage(payload = {}) {
   if (!name || !message) throw new Error("Името и съобщението са задължителни.");
   if (email && !/^\S+@\S+\.\S+$/.test(email)) throw new Error("Невалиден имейл адрес.");
   return { type, name, email, subject, message, company, budget };
+}
+
+async function notifyAboutMessage(message) {
+  if (!isProduction) return;
+  try {
+    const content = await readContent();
+    const result = await sendMessageEmail({
+      message,
+      content,
+      apiKey: resendApiKey,
+      from: messageEmailFrom
+    });
+    console.log(`[message-email] Sent notification for ${message.id}${result.id ? ` (${result.id})` : ""}.`);
+  } catch (error) {
+    const reason = error?.name === "AbortError" ? "Email provider timeout." : error.message;
+    console.error(`[message-email] Notification failed for ${message.id}: ${reason}`);
+  }
 }
 
 function giveawayIsOpen(giveaway = {}) {
@@ -715,6 +739,7 @@ async function handleRequest(request, response) {
     const messages = await readJsonFile(messagesFile, []);
     messages.unshift(message);
     await writeJsonFile(messagesFile, messages);
+    void notifyAboutMessage(message);
     return sendJson(response, 201, { ok: true, id: message.id });
   }
 

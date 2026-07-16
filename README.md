@@ -11,7 +11,7 @@ Live site: https://dis-podcast.onrender.com
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
 - Optional Fan Zone giveaway registration with protected participants, CSV export, and random winner drawing
-- Contact and fan-idea forms stored in a protected admin inbox
+- Contact, partnership, and fan-idea forms stored in a protected admin inbox, with production email notifications
 - Presents the channel as a football media brand
 - Includes sponsor packages and active ad placements
 - Shows active ads in a horizontal marquee below page hero sections
@@ -76,6 +76,27 @@ Voting creates a long-lived signed `dis_voter` cookie only after the visitor sub
 Each visitor can vote once in every separate poll. Deleting a poll from admin also removes its stored vote records on the next content save.
 
 Public forms write validated messages through `POST /api/messages`. The backend includes a honeypot and an in-memory per-IP rate limit. Reading, changing status, and deleting messages require an authenticated admin session.
+
+After a message is saved successfully, production also sends a server-side email notification through Resend to the public contact address configured in admin. Local development never calls the email provider. Email delivery is secondary to inbox persistence: a provider error or timeout is logged with the internal message ID, but the visitor still receives a successful response because the message remains available in admin.
+
+### Production Message Email Notifications
+
+1. Create a Resend account for the D.I.S team and create a sending-only API key.
+2. For the quickest single-recipient setup, the Resend account email and the public site contact email must be the same, then `D.I.S Podcast <onboarding@resend.dev>` can be used temporarily as `MESSAGE_EMAIL_FROM`. Resend restricts this testing sender to the account owner's address.
+3. For the recommended long-term setup, add a domain or sending subdomain owned by D.I.S to Resend, publish the provided SPF and DKIM DNS records, wait for the domain to become verified, and use an address on that exact domain for `MESSAGE_EMAIL_FROM`.
+4. In Render, configure `RESEND_API_KEY` and `MESSAGE_EMAIL_FROM`. Production startup intentionally fails if either value is missing, so a deployment cannot silently omit notifications.
+5. Submit one message through each form type after deployment and confirm both the protected inbox record and the received email. Provider errors appear in Render logs under `[message-email]` with the internal message ID and no visitor details.
+
+`MESSAGE_EMAIL_FROM` accepts either an address or a display name plus address, for example:
+
+```env
+RESEND_API_KEY=re_replace_with_real_key
+MESSAGE_EMAIL_FROM="D.I.S Podcast <notifications@updates.your-domain.example>"
+```
+
+The notification recipient is not a separate secret setting. It follows the valid public contact email stored in editable site content, preferring `footer.email` (the address actually rendered by the shared frontend) and falling back to `sections.contact.email`. A missing or invalid address prevents only that notification and is reported in server logs; it never deletes or rejects the already persisted inbox message. When the visitor supplies a valid email, the notification uses it as `Reply-To`. The visitor is not emailed and there is no frontend, consent, or cookie change.
+
+Notifications include the submitted form type, name, optional email/subject/company/budget, message, and submission time. User content is escaped in the HTML version, a plain-text version is also sent, requests time out after eight seconds, and the message ID is used as Resend's 24-hour idempotency key to protect against duplicate provider calls for the same saved record. Open and click tracking should remain disabled because these are internal transactional alerts.
 
 Giveaway registration uses `POST /api/giveaway/entries`. An active campaign is visible only between its configured dates, appears as a featured live card on the homepage, and can be opened directly with `/fan-zone#giveaway`. The public `GET /api/giveaway/status` endpoint exposes only the number of eligible participants, never participant details. A signed browser cookie and normalized email prevent ordinary duplicate entries per campaign, while a per-IP rate limit slows automated abuse. These controls are appropriate for a community giveaway, but they are not identity verification.
 
@@ -177,6 +198,7 @@ Production analytics uses the GA4 web data stream `G-G21K94TW2T` for `https://di
 - Ivan Stefanov and Danail Danev are identified publicly as the people responsible for D.I.S Podcast data processing.
 - The footer copyright notice and legal links are rendered on every public page.
 - Contact, fan-idea, and giveaway forms show a short privacy notice beside the submit flow.
+- Production general questions, fan ideas, and partnership messages are forwarded server-to-server through Resend as an internal notification after they are saved; Resend does not add browser cookies or contact the visitor directly.
 - Every giveaway has its own admin-editable official rules, privacy notice, platform disclaimer, dates, eligibility, and prizes. The public form links directly to the rules for the active campaign.
 - `dis_session` is created only after admin login, `dis_voter` only after voting, and `dis_giveaway` only after successful giveaway registration.
 - Google Analytics 4 is optional and loads only after explicit analytics consent; Meta Pixel and advertising-profile trackers are not used.
@@ -202,6 +224,7 @@ The policy text is a practical transparency baseline and not a substitute for ad
 - `.env` and all environment-specific secret files are ignored by Git.
 - Runtime inbox messages, vote records, and uploaded files are ignored by Git.
 - Production requires explicit `ADMIN_PASSWORD` and `SESSION_SECRET` environment variables.
+- Production requires `RESEND_API_KEY` and `MESSAGE_EMAIL_FROM`; local development does not send message emails even if they exist in `.env`.
 - `GET /health` is available for hosting health checks.
 - Do not commit real inbox messages, voter identifiers, passwords, or API keys.
 
@@ -224,7 +247,7 @@ Admin saves never silently fall back to browser-only persistence. If the local b
 
 ### Render Deployment
 
-The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, and `SUPABASE_SECRET_KEY` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.
+The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `RESEND_API_KEY`, and `MESSAGE_EMAIL_FROM` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.
 
 Large visual assets are delivered as WebP and image assets include browser cache headers to reduce Render outbound bandwidth. CSS and JavaScript always revalidate so a deployment cannot mix incompatible cached frontend versions. The original PNG files remain source assets and are not used by normal public page loads.
 
@@ -251,7 +274,7 @@ The site has a small Node.js backend, a protected admin panel, editable content 
 - host profiles and optional photos
 - host predictions and fan voting
 - optional giveaway registration, homepage live feature, countdown, public participant count, and admin winner/prize drawing
-- fan/general/partner forms with protected inbox
+- fan/general/partner forms with protected inbox and production email notifications
 - honest partner-facing statistics
 - contact buttons
 - shared footer with email/social links
