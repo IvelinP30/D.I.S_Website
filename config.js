@@ -64,7 +64,7 @@ window.DIS_SITE_CONFIG = {
     contact: {
       kicker: "Контакт",
       title: "Свържи се директно с D.I.S Подкаст.",
-      email: "hello@dispodcast.bg"
+      email: "dispodcast10@gmail.com"
     }
   },
   news: [],
@@ -217,7 +217,7 @@ window.DIS_SITE_CONFIG = {
   ],
   footer: {
     description: "Футболни реакции, подкасти, live моменти и кратки видеа.",
-    email: "hello@dispodcast.bg",
+    email: "dispodcast10@gmail.com",
     links: [
       { label: "Начало", href: "/" }, { label: "Новини", href: "/news" }, { label: "Фен зона", href: "/fan-zone" },
       { label: "Водещи", href: "/hosts" }, { label: "Партньорства", href: "/partners" }, { label: "Контакт", href: "/contact" }

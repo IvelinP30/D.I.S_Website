@@ -41,7 +41,7 @@ function renderPage() {
   const brandName = brand.name || "D.I.S Подкаст";
   const logo = brand.logo || "./assets/dis-logo.png";
   const heroImage = brand.heroImage || "./assets/hero-football-podcast.webp";
-  const contactEmail = footer.email || sections.contact?.email || "hello@dispodcast.bg";
+  const contactEmail = footer.email || sections.contact?.email || "dispodcast10@gmail.com";
 
   const titleSuffix = {
     "/news": "Новини",
