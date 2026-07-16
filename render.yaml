@@ -21,3 +21,5 @@ services:
         sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: dis-media
+      - key: GA_MEASUREMENT_ID
+        value: G-G21K94TW2T

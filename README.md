@@ -159,6 +159,19 @@ Live stats are possible, but they need platform access:
 
 The current admin is designed so those integrations can be added later without redesigning the website. For now, the public stats should show only verified facts from the known official links, not guessed follower/view numbers.
 
+## Google Analytics 4
+
+GA4 is integrated through the optional `GA_MEASUREMENT_ID` environment variable. Local development leaves it empty by default, so local visits never pollute production statistics. Production loads Google Analytics only after explicit visitor consent through the custom privacy panel.
+
+- Consent defaults to denied for analytics, advertising storage, advertising user data, and advertising personalization.
+- Choosing **Само необходими** does not load `gtag.js` or send analytics requests.
+- Choosing **Приемам статистика** enables analytics storage and loads the configured GA4 stream; Google Signals and ad personalization remain disabled.
+- The visitor can reopen the panel through **Настройки** in every public footer. Revoking consent removes accessible `_ga` cookies and reloads the page without Analytics.
+- `dis_cookie_consent` stores the choice for up to one year. The public cookie and privacy policies describe GA4 and must be reviewed whenever its configuration or collected events change.
+- In GA4, keep user/event data retention at **2 months** and do not link Google Ads without a new legal and consent review.
+
+Production analytics uses the GA4 web data stream `G-G21K94TW2T` for `https://dis-podcast.onrender.com`. Render receives it through `GA_MEASUREMENT_ID`; local development leaves the variable empty so local visits do not affect production statistics. The Measurement ID is intentionally not stored in editable website content.
+
 ## Privacy And Legal Operations
 
 - Ivan Stefanov and Danail Danev are identified publicly as the people responsible for D.I.S Podcast data processing.
@@ -166,7 +179,7 @@ The current admin is designed so those integrations can be added later without r
 - Contact, fan-idea, and giveaway forms show a short privacy notice beside the submit flow.
 - Every giveaway has its own admin-editable official rules, privacy notice, platform disclaimer, dates, eligibility, and prizes. The public form links directly to the rules for the active campaign.
 - `dis_session` is created only after admin login, `dis_voter` only after voting, and `dis_giveaway` only after successful giveaway registration.
-- The site currently has no Google Analytics, Meta Pixel, or advertising-profile tracker.
+- Google Analytics 4 is optional and loads only after explicit analytics consent; Meta Pixel and advertising-profile trackers are not used.
 - The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
 - Google Fonts is also loaded from Google and is disclosed as an external service.
 - Treat `README.md`, `/privacy`, and `/cookies` as part of every feature change: update the relevant documentation and displayed last-updated date whenever data collection, cookies, retention, external providers, tracking, user forms, or campaign rules change.

@@ -25,7 +25,7 @@
           <p class="section-kicker">Настройки и прозрачност</p>
           <h1>Политика за бисквитките</h1>
           <p>Кратко и ясно обяснение на техническите идентификатори, които използва сайтът.</p>
-          <time datetime="2026-07-15">Последна актуализация: 15 юли 2026 г.</time>
+          <time datetime="2026-07-16">Последна актуализация: 16 юли 2026 г.</time>
         </header>
 
         <article class="legal-document">
@@ -43,6 +43,7 @@
                   <tr><td data-label="Име"><code>dis_session</code></td><td data-label="Предназначение">Защитен вход и сесия в админ панела.</td><td data-label="Срок">До 1 ден</td><td data-label="Създава се">Само след успешен админ вход.</td></tr>
                   <tr><td data-label="Име"><code>dis_voter</code></td><td data-label="Предназначение">Запазва състоянието и коректността на фенското гласуване.</td><td data-label="Срок">До 1 година</td><td data-label="Създава се">При използване на гласуването.</td></tr>
                   <tr><td data-label="Име"><code>dis_giveaway</code></td><td data-label="Предназначение">Запазва състоянието и сигурността на регистрацията за активна кампания.</td><td data-label="Срок">До 1 година</td><td data-label="Създава се">При използване на формата за участие.</td></tr>
+                  <tr><td data-label="Име"><code>dis_cookie_consent</code></td><td data-label="Предназначение">Запомня избора за аналитична статистика.</td><td data-label="Срок">До 1 година</td><td data-label="Създава се">След избор от панела за поверителност.</td></tr>
                 </tbody>
               </table>
             </div>
@@ -50,29 +51,43 @@
           </section>
 
           <section>
-            <h2>3. Външно съдържание</h2>
+            <h2>3. Аналитични бисквитки по избор</h2>
+            <p>Google Analytics 4 се зарежда само след натискане на „Приемам статистика“. При избор „Само необходими“ не изпращаме analytics данни към Google.</p>
+            <div class="legal-table-wrap">
+              <table class="legal-table">
+                <thead><tr><th>Име</th><th>Предназначение</th><th>Срок</th><th>Кога се създава</th></tr></thead>
+                <tbody>
+                  <tr><td data-label="Име"><code>_ga</code></td><td data-label="Предназначение">Различава псевдонимни посетители за обобщена статистика.</td><td data-label="Срок">По подразбиране до 2 години</td><td data-label="Създава се">Само след съгласие за статистика.</td></tr>
+                  <tr><td data-label="Име"><code>_ga_&lt;id&gt;</code></td><td data-label="Предназначение">Запазва състоянието на посещението в GA4.</td><td data-label="Срок">По подразбиране до 2 години</td><td data-label="Създава се">Само след съгласие за статистика.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section>
+            <h2>4. Външно съдържание</h2>
             <p>Началната страница съдържа вграден YouTube player, който се зарежда директно от YouTube/Google. При зареждането Google може да поставя или прочита свои идентификатори и да получава техническа информация според <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">собствената си политика</a>.</p>
             <p>Сайтът зарежда и шрифта Inter от Google Fonts. Браузърът осъществява връзка с Google, за да изтегли необходимите файлове.</p>
           </section>
 
           <section>
-            <h2>4. Какво не използваме</h2>
-            <p>Към датата на тази политика сайтът не използва Google Analytics, Meta Pixel или други инструменти за рекламно проследяване и профилиране на посетителите.</p>
+            <h2>5. Какво не използваме</h2>
+            <p>Не използваме Meta Pixel, Google Signals, рекламна персонализация или други инструменти за рекламно профилиране. GA4 служи само за обобщена статистика след съгласие.</p>
           </section>
 
           <section>
-            <h2>5. Управление през браузъра</h2>
-            <p>Можеш да преглеждаш, блокираш и изтриваш бисквитки от настройките на браузъра си. Управлението им се извършва от настройките за поверителност на съответния браузър.</p>
+            <h2>6. Управление на избора</h2>
+            <p>Изборът за статистика може да бъде променен по всяко време чрез „Настройки“ във footer-а. При оттегляне GA4 се спира и достъпните analytics бисквитки за сайта се изтриват. Бисквитките могат да бъдат управлявани и от настройките на браузъра.</p>
           </section>
 
           <section>
-            <h2>6. Контакт</h2>
+            <h2>7. Контакт</h2>
             <p>За въпроси относно бисквитките или личните данни използвай <a href="/contact">страницата за контакт</a>. Повече информация има в <a href="/privacy">Политиката за поверителност</a>.</p>
           </section>
         </article>
       </main>
       <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><span class="brand-mark"><img class="footer-logo" src="./assets/dis-logo.png" alt="" /></span><div><strong class="footer-brand-name">D.I.S Подкаст</strong><p>Футболни реакции, подкасти, live моменти и кратки видеа.</p></div></div><nav class="footer-nav" data-footer-nav aria-label="Footer навигация"></nav><div class="footer-actions"><a class="footer-email" data-footer-email href="mailto:hello@dispodcast.bg"></a><div class="footer-socials" data-footer-socials></div></div></div></footer>
     </div>
-    <script src="./config.js?v=20260713-2"></script><script src="./script.js?v=20260715-4"></script>
+    <script src="./config.js?v=20260713-2"></script><script src="./script.js?v=20260715-4"></script><script src="/analytics-config.js"></script><script src="./analytics.js?v=20260716-1"></script>
   </body>
 </html>

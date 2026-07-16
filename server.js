@@ -30,6 +30,8 @@ const isProduction = process.env.NODE_ENV === "production";
 const supabaseUrl = String(process.env.SUPABASE_URL || "").replace(/\/$/, "");
 const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET || "dis-media";
+const configuredGaMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim().toUpperCase();
+const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? configuredGaMeasurementId : "";
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
@@ -502,6 +504,15 @@ function loginPage(error = "") {
 
 async function handleRequest(request, response) {
   const url = new URL(request.url, `http://${request.headers.host}`);
+
+  if (url.pathname === "/analytics-config.js" && request.method === "GET") {
+    return send(
+      response,
+      200,
+      `window.DIS_ANALYTICS_CONFIG = ${JSON.stringify({ measurementId: gaMeasurementId })};`,
+      { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "no-store" }
+    );
+  }
 
   if (url.pathname === "/api/content" && request.method === "GET") {
     return sendJson(response, 200, await readContent());

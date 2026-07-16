@@ -1007,6 +1007,7 @@ function renderLegalFooter(brandName) {
       <nav aria-label="Правна информация">
         <a href="/privacy">Поверителност</a>
         <a href="/cookies">Бисквитки</a>
+        <button type="button" data-cookie-settings>Настройки</button>
       </nav>`;
   });
 }
