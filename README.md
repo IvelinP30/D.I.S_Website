@@ -128,6 +128,27 @@ Each upload field displays its own loading spinner and progress message while op
 - `/login` - admin login
 - `/admin` - admin panel after login
 
+## SEO And Link Sharing
+
+Every public page has its own search title, description, canonical production URL, Open Graph metadata, and large-image sharing preview for Facebook, Messenger, Viber, Discord, and other compatible apps. The homepage also includes Schema.org `Organization` and `WebSite` JSON-LD with the official brand name, logo, description, and social profiles.
+
+- `sitemap.xml` lists only the eight public canonical pages.
+- `robots.txt` links to the sitemap and prevents crawling of `/admin`, `/login`, and `/api/`.
+- The canonical SEO origin is `https://dis-podcast.onrender.com`. Update every absolute SEO URL, the sitemap, and `robots.txt` before switching to a custom domain.
+- Admin-edited page content remains dynamic, while the core search titles and social previews are intentionally present in the initial HTML so crawlers can read them immediately.
+
+### Google Search Console
+
+1. Deploy the SEO changes and confirm that `https://dis-podcast.onrender.com/sitemap.xml` opens.
+2. Open Google Search Console and add a **URL-prefix** property for `https://dis-podcast.onrender.com/`.
+3. Choose **HTML tag** verification and add the provided `google-site-verification` meta value to the homepage `<head>`.
+4. Deploy the verification tag, complete verification, then submit `https://dis-podcast.onrender.com/sitemap.xml` under **Sitemaps**.
+5. Use **URL inspection** to request indexing of the homepage and the most important public pages after major content updates.
+
+Search Console access and verification require the owner's Google account, so this final registration step cannot be completed from the codebase alone.
+
+Google Search Console is used for indexing and search-performance reporting. This integration does not add a browser tracking script or a new site cookie, so it does not change the current Privacy or Cookie policy disclosures. Adding Google Analytics, Meta Pixel, advertising trackers, a new external embed, or any new form field requires a fresh review of both legal pages before deployment.
+
 ## Live Stats
 
 Live stats are possible, but they need platform access:
@@ -148,6 +169,7 @@ The current admin is designed so those integrations can be added later without r
 - The site currently has no Google Analytics, Meta Pixel, or advertising-profile tracker.
 - The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
 - Google Fonts is also loaded from Google and is disclosed as an external service.
+- Treat `README.md`, `/privacy`, and `/cookies` as part of every feature change: update the relevant documentation and displayed last-updated date whenever data collection, cookies, retention, external providers, tracking, user forms, or campaign rules change.
 
 Operational responsibility remains with the administrators: resolve and remove inbox messages when no longer needed, normally within 12 months, and remove giveaway participant data after the campaign, prize delivery, and any short complaint period, normally within 90 days. Before using uploaded media publicly, confirm that D.I.S has permission to use the image, logo, person, music, video, or sponsor material. AI generation alone does not guarantee rights over real people, club marks, or third-party brands.
 

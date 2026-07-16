@@ -57,6 +57,8 @@ const mimeTypes = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
+  ".xml": "application/xml; charset=utf-8",
+  ".txt": "text/plain; charset=utf-8",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
@@ -470,6 +472,7 @@ function loginPage(error = "") {
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex, nofollow" />
         <title>D.I.S Admin Login</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -747,13 +750,19 @@ async function handleRequest(request, response) {
   }
 
   if (url.pathname === "/login" && request.method === "GET") {
-    return send(response, 200, loginPage(), { "Content-Type": "text/html; charset=utf-8" });
+    return send(response, 200, loginPage(), {
+      "Content-Type": "text/html; charset=utf-8",
+      "X-Robots-Tag": "noindex, nofollow"
+    });
   }
 
   if (url.pathname === "/login" && request.method === "POST") {
     const body = new URLSearchParams(await readBody(request));
     if (body.get("password") !== adminPassword) {
-      return send(response, 401, loginPage("Грешна парола."), { "Content-Type": "text/html; charset=utf-8" });
+      return send(response, 401, loginPage("Грешна парола."), {
+        "Content-Type": "text/html; charset=utf-8",
+        "X-Robots-Tag": "noindex, nofollow"
+      });
     }
 
     return send(response, 302, "", {
@@ -765,7 +774,10 @@ async function handleRequest(request, response) {
   if (url.pathname === "/admin" || url.pathname === "/admin.html") {
     if (!isAuthenticated(request)) return send(response, 302, "", { Location: "/login" });
     const adminPath = path.join(root, "admin.html");
-    return send(response, 200, fs.readFileSync(adminPath), { "Content-Type": "text/html; charset=utf-8" });
+    return send(response, 200, fs.readFileSync(adminPath), {
+      "Content-Type": "text/html; charset=utf-8",
+      "X-Robots-Tag": "noindex, nofollow"
+    });
   }
 
   if (url.pathname === "/admin.html" && !isAuthenticated(request)) {
