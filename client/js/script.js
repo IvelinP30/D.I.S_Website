@@ -568,7 +568,7 @@ function leagueIdentityMarkup() {
       <details class="league-recovery-form">
         <summary>Вече участваш? Възстанови с код</summary>
         <form class="league-inline-form" data-league-recover>
-          <label><span>Recovery код</span><input name="recoveryCode" required maxlength="16" autocomplete="off" placeholder="DIS-XXXX-XXXX" /></label>
+          <label><span>Код за възстановяване</span><input name="recoveryCode" required maxlength="16" autocomplete="off" placeholder="DIS-XXXX-XXXX" /></label>
           <button class="button secondary" type="submit">Възстанови</button>
           <p class="league-form-feedback" data-league-feedback role="status"></p>
         </form>
@@ -601,6 +601,15 @@ function leagueProfileMarkup(state) {
           <p class="league-form-feedback" data-league-feedback role="status"></p>
         </form>
       </details>
+      <details class="league-recovery-reset">
+        <summary>Изгуби кода за възстановяване?</summary>
+        <div>
+          <p>Докато този браузър те разпознава, можеш да създадеш нов код, без да губиш точки или прогнози.</p>
+          <strong>Старият код ще спре да работи веднага.</strong>
+          <button class="button secondary" type="button" data-league-rotate-recovery>Генерирай нов код</button>
+          <p class="league-form-feedback" data-league-feedback role="status"></p>
+        </div>
+      </details>
     </article>`;
 }
 
@@ -616,8 +625,8 @@ function leagueRecoveryModalMarkup(code) {
         <span class="league-recovery-dialog-icon" aria-hidden="true">🔐</span>
         <h3 id="league-recovery-title">Запази кода си сега</h3>
         <p>Това е единственият начин да възстановиш прякора, точките и трофеите си на друг телефон или браузър.</p>
-        <button class="league-recovery-code" type="button" data-copy-recovery aria-label="Копирай recovery кода">
-          <small>Твоят recovery код</small>
+        <button class="league-recovery-code" type="button" data-copy-recovery aria-label="Копирай кода за възстановяване">
+          <small>Твоят код за възстановяване</small>
           <strong>${escapeHTML(code)}</strong>
           <span data-recovery-copy-label>Натисни, за да копираш</span>
         </button>
@@ -870,6 +879,23 @@ function bindPredictionLeagueActions() {
       renderPredictionLeagueApp();
     } catch (error) {
       leagueFormError(form, error);
+    }
+  });
+  app.querySelector("[data-league-rotate-recovery]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const container = button.closest(".league-recovery-reset");
+    button.disabled = true;
+    button.textContent = "Генериране…";
+    try {
+      const payload = await leagueApi("/api/league/recovery-code", { method: "POST" });
+      predictionLeagueState = payload.league;
+      predictionLeagueRecoveryCode = payload.recoveryCode || "";
+      predictionLeagueNotice = "Новият код за възстановяване е готов. Старият вече не работи.";
+      renderPredictionLeagueApp();
+    } catch (error) {
+      leagueFormError(container, error);
+      button.disabled = false;
+      button.textContent = "Генерирай нов код";
     }
   });
   app.querySelectorAll("[data-league-prediction]").forEach((form) => {

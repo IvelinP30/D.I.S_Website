@@ -10,7 +10,8 @@ const {
   normalizeLeagueConfig,
   normalizeNickname,
   normalizePrediction,
-  normalizeTrophyDefinitions
+  normalizeTrophyDefinitions,
+  rotatePlayerRecoveryCode
 } = require("../server/prediction-league");
 
 const now = Date.parse("2026-07-17T12:00:00.000Z");
@@ -59,6 +60,23 @@ test("recovery hashes are deterministic but do not expose the code", () => {
   assert.equal(first, second);
   assert.equal(first.length, 64);
   assert.doesNotMatch(first, /ABCD/);
+});
+
+test("rotating a recovery code invalidates the old code without changing participation", () => {
+  const store = sampleStore();
+  const secret = "secret";
+  const oldCode = "DIS-OLDC-2345";
+  const newCode = "DIS-NEWC-6789";
+  store.players[0].recoveryHash = hashRecoveryCode(oldCode, secret);
+  const predictionsBefore = structuredClone(store.predictions);
+
+  const result = rotatePlayerRecoveryCode(store, "p1", secret, () => newCode);
+
+  assert.equal(result.recoveryCode, newCode);
+  assert.equal(store.players[0].recoveryHash, hashRecoveryCode(newCode, secret));
+  assert.notEqual(store.players[0].recoveryHash, hashRecoveryCode(oldCode, secret));
+  assert.deepEqual(store.predictions, predictionsBefore);
+  assert.equal(store.players[0].nickname, "IVAN1892");
 });
 
 test("scores exact results as outcome plus exact-score points", () => {

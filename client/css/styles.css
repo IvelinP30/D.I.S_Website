@@ -3390,20 +3390,63 @@ html.pwa-refreshing body {
 }
 
 .league-recovery-form,
-.league-profile-settings {
+.league-profile-settings,
+.league-recovery-reset {
   margin-top: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   padding-top: 16px;
 }
 
 .league-recovery-form summary,
-.league-profile-settings summary {
+.league-profile-settings summary,
+.league-recovery-reset summary {
   width: max-content;
   max-width: 100%;
   color: var(--accent-2);
   cursor: pointer;
   font-size: 0.82rem;
   font-weight: 800;
+}
+
+.league-recovery-reset {
+  margin-top: 13px;
+}
+
+.league-recovery-reset > div {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  border: 1px solid rgba(244, 212, 77, 0.16);
+  border-radius: 9px;
+  background: rgba(244, 212, 77, 0.045);
+  padding: 13px;
+}
+
+.league-recovery-reset p,
+.league-recovery-reset strong {
+  margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.league-recovery-reset p {
+  color: var(--muted);
+}
+
+.league-recovery-reset strong {
+  color: #ffb19a;
+}
+
+.league-recovery-reset .button {
+  width: fit-content;
+  min-height: 40px;
+  margin-top: 3px;
+  padding: 9px 14px;
+  font-size: 0.72rem;
+}
+
+.league-recovery-reset .league-form-feedback {
+  min-height: 0;
 }
 
 .league-profile-heading,

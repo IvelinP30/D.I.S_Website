@@ -165,6 +165,18 @@ test("new prediction league recovery codes use a timed one-time modal", () => {
   assert.match(styles, /\.league-recovery-dismiss/);
 });
 
+test("recognized league players can replace a lost recovery code", () => {
+  const publicScript = read("client/js/script.js");
+  const server = read("server.js");
+
+  assert.match(publicScript, /Изгуби кода за възстановяване\?/);
+  assert.match(publicScript, /data-league-rotate-recovery/);
+  assert.match(publicScript, /\/api\/league\/recovery-code/);
+  assert.match(publicScript, /Новият код за възстановяване е готов\. Старият вече не работи/);
+  assert.match(server, /url\.pathname === "\/api\/league\/recovery-code"/);
+  assert.match(server, /rotatePlayerRecoveryCode\(leagueStore, playerId, sessionSecret\)/);
+});
+
 test("shared PWA script exposes an automatic offline status bar", () => {
   const pwa = read("client/js/pwa.js");
   const styles = read("client/css/styles.css");

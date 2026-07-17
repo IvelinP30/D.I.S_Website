@@ -96,12 +96,29 @@ function createRecoveryCode(randomBytes = crypto.randomBytes) {
 
 function normalizeRecoveryCode(value) {
   const compact = String(value || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "").replace(/^DIS/, "");
-  if (compact.length !== 8) throw new Error("Recovery кодът не е валиден.");
+  if (compact.length !== 8) throw new Error("Кодът за възстановяване не е валиден.");
   return `DIS-${compact.slice(0, 4)}-${compact.slice(4)}`;
 }
 
 function hashRecoveryCode(code, secret) {
   return crypto.createHmac("sha256", secret).update(normalizeRecoveryCode(code)).digest("hex");
+}
+
+function rotatePlayerRecoveryCode(rawStore, playerId, secret, codeFactory = createRecoveryCode) {
+  const store = normalizeLeagueStore(rawStore);
+  const player = store.players.find((item) => item.id === playerId);
+  if (!player) throw new Error("Участието в Лигата на прогнозите не е намерено.");
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const recoveryCode = codeFactory();
+    const recoveryHash = hashRecoveryCode(recoveryCode, secret);
+    const alreadyUsed = store.players.some((item) => String(item.recoveryHash || "") === recoveryHash);
+    if (alreadyUsed) continue;
+    player.recoveryHash = recoveryHash;
+    player.recoveryUpdatedAt = new Date().toISOString();
+    return { recoveryCode, recoveryHash };
+  }
+  throw new Error("Не успяхме да генерираме нов код за възстановяване. Опитай отново.");
 }
 
 function normalizeLeagueStore(value = {}) {
@@ -433,5 +450,6 @@ module.exports = {
   normalizePrediction,
   normalizeRecoveryCode,
   normalizeTrophyDefinitions,
+  rotatePlayerRecoveryCode,
   resultForMatch
 };

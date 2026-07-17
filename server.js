@@ -15,7 +15,8 @@ const {
   normalizeLeagueConfig,
   normalizeLeagueStore,
   normalizeNickname,
-  normalizePrediction
+  normalizePrediction,
+  rotatePlayerRecoveryCode
 } = require("./server/prediction-league");
 
 const root = __dirname;
@@ -651,7 +652,7 @@ async function handleRequest(request, response) {
       const { store, result } = await mutateLeagueStore((leagueStore) => {
         const key = nicknameKey(nickname);
         if (nicknameIsTaken(leagueStore.players, nickname)) {
-          throw new Error("Този прякор или негов вариант вече участва. Избери друг или използвай recovery кода си.");
+          throw new Error("Този прякор или негов вариант вече участва. Избери друг или използвай кода си за възстановяване.");
         }
         let recoveryCode = createRecoveryCode();
         let recoveryHash = hashRecoveryCode(recoveryCode, sessionSecret);
@@ -691,10 +692,27 @@ async function handleRequest(request, response) {
     }
     const store = await readLeagueStore();
     const player = store.players.find((item) => safeRecoveryMatch(item, recoveryHash));
-    if (!player) return sendJson(response, 404, { error: "Не открихме участие с този recovery код." });
+    if (!player) return sendJson(response, 404, { error: "Не открихме участие с този код за възстановяване." });
     return sendJson(response, 200, { league: await leagueState(request, store, player.id) }, {
       "Set-Cookie": leagueCookieHeader(player.id)
     });
+  }
+
+  if (url.pathname === "/api/league/recovery-code" && request.method === "POST") {
+    const playerId = getLeaguePlayerId(request);
+    if (!playerId) return sendJson(response, 401, { error: "Първо създай или възстанови участие в Лигата на прогнозите." });
+    if (leagueIdentityRateLimited(request)) {
+      return sendJson(response, 429, { error: "Твърде много опити. Опитай отново по-късно." });
+    }
+    try {
+      const { store, result } = await mutateLeagueStore((leagueStore) => rotatePlayerRecoveryCode(leagueStore, playerId, sessionSecret));
+      return sendJson(response, 200, {
+        recoveryCode: result.recoveryCode,
+        league: await leagueState(request, store, playerId)
+      }, { "Set-Cookie": leagueCookieHeader(playerId) });
+    } catch (error) {
+      return sendJson(response, 409, { error: error.message });
+    }
   }
 
   if (url.pathname === "/api/league/profile" && request.method === "PATCH") {
