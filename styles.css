@@ -1875,21 +1875,6 @@ html.pwa-standalone.pwa-pull-refresh-enabled body {
   overscroll-behavior-y: none;
 }
 
-.pwa-pull-refresh-content {
-  --pwa-content-pull-distance: 0px;
-  transform: translate3d(0, var(--pwa-content-pull-distance), 0);
-  transition: transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
-  will-change: transform;
-}
-
-.pwa-pull-refresh-content.is-pulling {
-  transition: none;
-}
-
-.pwa-pull-refresh-content.is-refreshing {
-  transition: transform 180ms ease-out;
-}
-
 .pwa-pull-refresh {
   --pull-distance: 0px;
   --pull-opacity: 0;

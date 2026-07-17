@@ -145,10 +145,14 @@ test("installed touch PWAs expose a guarded pull-to-refresh gesture", () => {
   assert.match(pwa, /navigator\.vibrate\(hapticStep === hapticSteps \? 18 : 6\)/);
   assert.match(pwa, /window\.DIS_PWA_REFRESH\(\)/);
   assert.doesNotMatch(pwa, /window\.location\.reload\(\)/);
+  assert.match(pwa, /if \(refreshing\) \{\s*event\.preventDefault\(\)/);
+  assert.match(pwa, /classList\.add\("pwa-refreshing"\)/);
+  assert.match(pwa, /classList\.remove\("pwa-refreshing"\)/);
   assert.match(pwa, /if \(!navigator\.onLine\)/);
   assert.match(pwa, /Пусни за обновяване/);
   assert.match(styles, /\.pwa-pull-refresh/);
-  assert.match(styles, /\.pwa-pull-refresh-content/);
+  assert.doesNotMatch(styles, /\.pwa-pull-refresh-content/);
+  assert.doesNotMatch(pwa, /--pwa-content-pull-distance/);
   assert.match(styles, /\.pwa-pull-refresh\.is-refreshing/);
   assert.match(styles, /clip-path: inset\(50%\)/);
   assert.match(styles, /overscroll-behavior-y: none/);
