@@ -5,6 +5,8 @@ let predictionLeaguePeriod = "week";
 let predictionLeagueRecoveryCode = "";
 let predictionLeagueNotice = "";
 let predictionLeagueFlashMatchId = "";
+let predictionLeagueRecoveryTimer = null;
+const leagueRecoveryCloseDelay = 3;
 
 function bindMainNavigation(mainNav) {
   const topbar = mainNav.closest(".topbar");
@@ -602,6 +604,34 @@ function leagueProfileMarkup(state) {
     </article>`;
 }
 
+function leagueRecoveryModalMarkup(code) {
+  return `
+    <div class="league-recovery-modal" data-league-recovery-modal role="dialog" aria-modal="true" aria-labelledby="league-recovery-title" aria-describedby="league-recovery-warning">
+      <span class="league-recovery-modal-backdrop" data-close-recovery-backdrop aria-hidden="true"></span>
+      <section class="league-recovery-dialog">
+        <button class="league-recovery-dismiss" type="button" data-close-recovery disabled aria-label="Затварянето ще се отключи след ${leagueRecoveryCloseDelay} секунди">
+          <span aria-hidden="true">×</span><small data-recovery-dismiss-count>${leagueRecoveryCloseDelay}</small>
+        </button>
+        <span class="league-recovery-dialog-kicker"><i></i> Показва се само веднъж</span>
+        <span class="league-recovery-dialog-icon" aria-hidden="true">🔐</span>
+        <h3 id="league-recovery-title">Запази кода си сега</h3>
+        <p>Това е единственият начин да възстановиш прякора, точките и трофеите си на друг телефон или браузър.</p>
+        <button class="league-recovery-code" type="button" data-copy-recovery aria-label="Копирай recovery кода">
+          <small>Твоят recovery код</small>
+          <strong>${escapeHTML(code)}</strong>
+          <span data-recovery-copy-label>Натисни, за да копираш</span>
+        </button>
+        <div class="league-recovery-warning" id="league-recovery-warning">
+          <strong>Важно: след затваряне няма да можеш да видиш този код отново.</strong>
+          <span>Копирай го, направи screenshot или го запиши на сигурно място.</span>
+        </div>
+        <button class="button secondary league-recovery-close" type="button" data-close-recovery disabled>
+          <span data-recovery-countdown>Можеш да затвориш след ${leagueRecoveryCloseDelay} сек.</span>
+        </button>
+      </section>
+    </div>`;
+}
+
 function leagueLeaderboardMarkup(state) {
   const period = predictionLeaguePeriod;
   const rows = state.leaderboards?.[period] || [];
@@ -677,11 +707,7 @@ function renderPredictionLeagueApp() {
   setText("[data-league-description]", state.description || "");
   app.innerHTML = `
     ${predictionLeagueNotice ? `<div class="league-notice">${escapeHTML(predictionLeagueNotice)}</div>` : ""}
-    ${predictionLeagueRecoveryCode ? `
-      <div class="league-recovery-banner">
-        <div><span>Запази този код сега</span><strong>${escapeHTML(predictionLeagueRecoveryCode)}</strong><p>Това е единственият начин да възстановиш точките си на друг телефон.</p></div>
-        <button class="button primary" type="button" data-copy-recovery>Копирай кода</button>
-      </div>` : ""}
+    ${predictionLeagueRecoveryCode ? leagueRecoveryModalMarkup(predictionLeagueRecoveryCode) : ""}
     <div class="league-dashboard-grid">
       ${state.me ? leagueProfileMarkup(state) : leagueIdentityMarkup()}
       ${leagueLeaderboardMarkup(state)}
@@ -697,6 +723,7 @@ function renderPredictionLeagueApp() {
       <div class="league-match-grid">${state.matches.length ? state.matches.map((match) => leagueMatchMarkup(match, state)).join("") : `<article class="empty-state">Следващият кръг в Лигата на прогнозите скоро ще бъде добавен.</article>`}</div>
     </div>`;
   bindPredictionLeagueActions();
+  bindLeagueRecoveryModal(app);
   bindLeagueTrophyTooltips(app);
   const flashedMatchId = predictionLeagueFlashMatchId;
   predictionLeagueFlashMatchId = "";
@@ -710,6 +737,84 @@ function renderPredictionLeagueApp() {
       }, 1400);
     }
   }
+}
+
+function bindLeagueRecoveryModal(app) {
+  const modal = app.querySelector("[data-league-recovery-modal]");
+  if (!modal) {
+    if (predictionLeagueRecoveryTimer) window.clearInterval(predictionLeagueRecoveryTimer);
+    predictionLeagueRecoveryTimer = null;
+    return;
+  }
+
+  const copyButton = modal.querySelector("[data-copy-recovery]");
+  const copyLabel = modal.querySelector("[data-recovery-copy-label]");
+  const closeButtons = [...modal.querySelectorAll("[data-close-recovery]")];
+  const closeButton = modal.querySelector(".league-recovery-close");
+  const dismissButton = modal.querySelector(".league-recovery-dismiss");
+  const dismissCount = modal.querySelector("[data-recovery-dismiss-count]");
+  const backdrop = modal.querySelector("[data-close-recovery-backdrop]");
+  const countdown = modal.querySelector("[data-recovery-countdown]");
+  let remaining = leagueRecoveryCloseDelay;
+  let closeLocked = true;
+  if (predictionLeagueRecoveryTimer) window.clearInterval(predictionLeagueRecoveryTimer);
+
+  const closeModal = () => {
+    if (closeLocked) return;
+    window.clearInterval(predictionLeagueRecoveryTimer);
+    predictionLeagueRecoveryTimer = null;
+    predictionLeagueRecoveryCode = "";
+    modal.remove();
+  };
+
+  predictionLeagueRecoveryTimer = window.setInterval(() => {
+    remaining -= 1;
+    if (remaining > 0) {
+      countdown.textContent = `Можеш да затвориш след ${remaining} сек.`;
+      dismissCount.textContent = remaining;
+      return;
+    }
+    window.clearInterval(predictionLeagueRecoveryTimer);
+    predictionLeagueRecoveryTimer = null;
+    closeLocked = false;
+    closeButtons.forEach((button) => { button.disabled = false; });
+    dismissCount.hidden = true;
+    dismissButton.setAttribute("aria-label", "Затвори popup-а");
+    countdown.textContent = "Запазих кода — затвори";
+  }, 1000);
+
+  copyButton.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(predictionLeagueRecoveryCode);
+      copyButton.classList.add("is-copied");
+      copyLabel.textContent = "Кодът е копиран ✓";
+    } catch {
+      copyLabel.textContent = "Копирането не е разрешено — запиши кода ръчно";
+    }
+  });
+  closeButtons.forEach((button) => button.addEventListener("click", closeModal));
+  backdrop.addEventListener("click", closeModal);
+  modal.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeModal();
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = [dismissButton, copyButton, closeButton].filter((element) => !element.disabled);
+    if (focusable.length < 2) {
+      event.preventDefault();
+      copyButton.focus();
+      return;
+    }
+    const currentIndex = focusable.indexOf(document.activeElement);
+    const nextIndex = event.shiftKey
+      ? (currentIndex <= 0 ? focusable.length - 1 : currentIndex - 1)
+      : (currentIndex + 1) % focusable.length;
+    event.preventDefault();
+    focusable[nextIndex].focus();
+  });
+  window.requestAnimationFrame(() => copyButton.focus({ preventScroll: true }));
 }
 
 function leagueFormError(form, error) {
@@ -792,14 +897,6 @@ function bindPredictionLeagueActions() {
       predictionLeaguePeriod = button.dataset.leaguePeriod;
       renderPredictionLeagueApp();
     });
-  });
-  app.querySelector("[data-copy-recovery]")?.addEventListener("click", async (event) => {
-    try {
-      await navigator.clipboard.writeText(predictionLeagueRecoveryCode);
-      event.currentTarget.textContent = "Кодът е копиран";
-    } catch {
-      event.currentTarget.textContent = "Маркирай кода ръчно";
-    }
   });
   app.querySelectorAll("[data-league-share]").forEach((button) => {
     button.addEventListener("click", async () => {

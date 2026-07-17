@@ -3,6 +3,7 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { sendMessageEmail } = require("./server/message-email");
+const { readUtf8Body } = require("./server/request-body");
 const {
   archiveDeletedLeagueMatches,
   buildLeagueState,
@@ -182,18 +183,7 @@ async function writeJsonFile(file, value, storageKey = path.basename(file, ".jso
 }
 
 function readBody(request) {
-  return new Promise((resolve, reject) => {
-    let body = "";
-    request.on("data", (chunk) => {
-      body += chunk;
-      if (body.length > 1_000_000) {
-        request.destroy();
-        reject(new Error("Request body too large"));
-      }
-    });
-    request.on("end", () => resolve(body));
-    request.on("error", reject);
-  });
+  return readUtf8Body(request, 1_000_000);
 }
 
 function readBuffer(request, limit = maxUploadBytes) {
