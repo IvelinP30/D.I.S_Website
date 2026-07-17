@@ -18,6 +18,9 @@ test("public and admin manifests have separate install identities", () => {
   assert.equal(publicManifest.display, "standalone");
   assert.equal(adminManifest.display, "standalone");
 
+  assert.ok(publicManifest.icons.every((icon) => !icon.src.includes("admin-")));
+  assert.ok(adminManifest.icons.every((icon) => icon.src.includes("admin-")));
+
   for (const manifest of [publicManifest, adminManifest]) {
     assert.ok(manifest.icons.some((icon) => icon.sizes === "192x192"));
     assert.ok(manifest.icons.some((icon) => icon.sizes === "512x512"));
@@ -61,6 +64,7 @@ test("admin page loads its own manifest and a capability-gated install button", 
   const html = read("admin.html");
 
   assert.match(html, /rel="manifest" href="\/admin\.webmanifest"/);
+  assert.match(html, /apple-touch-icon[^>]+admin-apple-touch-icon\.png/);
   assert.match(html, /data-pwa-install-button[^>]*hidden/);
   assert.match(html, /admin-hero-topline/);
   assert.match(html, /class="pwa-install-button" data-pwa-install-button/);

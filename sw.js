@@ -1,10 +1,12 @@
-const CACHE_NAME = "dis-pwa-v1";
+const CACHE_NAME = "dis-pwa-v2";
 const CACHE_PREFIX = "dis-pwa-";
 const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
   OFFLINE_URL,
   "/assets/pwa/icon-192.png",
-  "/assets/pwa/icon-512.png"
+  "/assets/pwa/icon-512.png",
+  "/assets/pwa/admin-icon-192.png",
+  "/assets/pwa/admin-icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
