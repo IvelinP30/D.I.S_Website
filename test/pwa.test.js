@@ -2,7 +2,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const { getSafariInstallPlatform } = require("../pwa");
+const { getSafariInstallPlatform, shouldEnablePullToRefresh } = require("../pwa");
 
 const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -113,4 +113,27 @@ test("shared PWA script exposes an automatic offline status bar", () => {
   assert.match(pwa, /!navigator\.onLine/);
   assert.match(styles, /\.pwa-offline-status/);
   assert.match(styles, /\.pwa-offline-status\[hidden\]/);
+});
+
+test("installed touch PWAs expose a guarded pull-to-refresh gesture", () => {
+  const pwa = read("pwa.js");
+  const styles = read("styles.css");
+
+  assert.equal(shouldEnablePullToRefresh(true, 5, false), true);
+  assert.equal(shouldEnablePullToRefresh(true, 0, true), true);
+  assert.equal(shouldEnablePullToRefresh(false, 5, true), false);
+  assert.equal(shouldEnablePullToRefresh(true, 0, false), false);
+
+  assert.match(pwa, /display-mode: standalone/);
+  assert.match(pwa, /navigator\.maxTouchPoints/);
+  assert.match(pwa, /addEventListener\("touchstart"/);
+  assert.match(pwa, /addEventListener\("touchmove"/);
+  assert.match(pwa, /addEventListener\("touchend"/);
+  assert.match(pwa, /navigator\.vibrate\(12\)/);
+  assert.match(pwa, /window\.location\.reload\(\)/);
+  assert.match(pwa, /if \(!navigator\.onLine\)/);
+  assert.match(pwa, /Пусни за обновяване/);
+  assert.match(styles, /\.pwa-pull-refresh/);
+  assert.match(styles, /\.pwa-pull-refresh\.is-refreshing/);
+  assert.match(styles, /overscroll-behavior-y: none/);
 });

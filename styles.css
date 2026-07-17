@@ -1870,6 +1870,91 @@ body.pwa-install-modal-open {
   margin-right: 9px;
 }
 
+html.pwa-standalone.pwa-pull-refresh-enabled,
+html.pwa-standalone.pwa-pull-refresh-enabled body {
+  overscroll-behavior-y: none;
+}
+
+.pwa-pull-refresh {
+  --pull-distance: 0px;
+  --pull-opacity: 0;
+  --pull-rotation: 0deg;
+  position: fixed;
+  z-index: 12000;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 50%;
+  display: inline-flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(56, 242, 127, 0.42);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(56, 242, 127, 0.14), rgba(244, 212, 77, 0.05)),
+    rgba(5, 8, 10, 0.96);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.48), 0 0 24px rgba(56, 242, 127, 0.1);
+  color: var(--text);
+  opacity: var(--pull-opacity);
+  padding: 8px 15px 8px 10px;
+  pointer-events: none;
+  transform: translate3d(-50%, calc(-72px + var(--pull-distance)), 0);
+  transition: opacity 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms ease;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+  will-change: transform, opacity;
+}
+
+.pwa-pull-refresh.is-pulling {
+  transition: none;
+}
+
+.pwa-pull-refresh-icon {
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  border: 3px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  box-shadow: inset 0 0 8px rgba(56, 242, 127, 0.08);
+  transform: rotate(var(--pull-rotation));
+}
+
+.pwa-pull-refresh-label {
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.pwa-pull-refresh.is-ready {
+  border-color: rgba(56, 242, 127, 0.8);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.48), 0 0 30px rgba(56, 242, 127, 0.2);
+}
+
+.pwa-pull-refresh.is-ready .pwa-pull-refresh-icon {
+  border-color: rgba(56, 242, 127, 0.34);
+  border-top-color: var(--accent);
+}
+
+.pwa-pull-refresh.is-refreshing .pwa-pull-refresh-icon {
+  animation: pwa-pull-refresh-spin 700ms linear infinite;
+}
+
+.pwa-pull-refresh.is-error {
+  border-color: rgba(244, 212, 77, 0.62);
+}
+
+.pwa-pull-refresh.is-error .pwa-pull-refresh-icon {
+  border-color: rgba(244, 212, 77, 0.28);
+  border-top-color: var(--accent-2);
+}
+
+@keyframes pwa-pull-refresh-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 @media (max-width: 520px) {
   .pwa-offline-status {
     top: 8px;
@@ -1877,6 +1962,20 @@ body.pwa-install-modal-open {
     border-radius: 12px;
     font-size: 0.76rem;
     padding: 10px 12px;
+  }
+
+  .pwa-pull-refresh {
+    max-width: calc(100% - 20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pwa-pull-refresh {
+    transition-duration: 1ms;
+  }
+
+  .pwa-pull-refresh.is-refreshing .pwa-pull-refresh-icon {
+    animation-duration: 1.2s;
   }
 }
 
