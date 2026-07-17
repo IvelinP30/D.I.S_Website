@@ -1740,6 +1740,146 @@ h3 {
   gap: 10px;
 }
 
+.pwa-install-button {
+  border: 1px solid rgba(244, 212, 77, 0.32);
+  border-radius: 999px;
+  background: rgba(244, 212, 77, 0.09);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 900;
+  padding: 10px 13px;
+  transition: border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.pwa-install-button[hidden] {
+  display: none;
+}
+
+[data-pwa-install-button][hidden] {
+  display: none;
+}
+
+.pwa-install-button::before {
+  color: var(--accent-2);
+  content: "+";
+  font-size: 1rem;
+  margin-right: 7px;
+}
+
+.pwa-install-button:hover {
+  border-color: rgba(244, 212, 77, 0.62);
+  background: rgba(244, 212, 77, 0.15);
+  box-shadow: 0 10px 30px rgba(244, 212, 77, 0.1);
+  transform: translateY(-1px);
+}
+
+.pwa-install-modal {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.pwa-install-modal[hidden] {
+  display: none;
+}
+
+.pwa-install-backdrop {
+  position: absolute;
+  inset: 0;
+  border: 0;
+  background: rgba(3, 5, 7, 0.82);
+  cursor: default;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.pwa-install-dialog {
+  position: relative;
+  width: min(470px, 100%);
+  border: 1px solid rgba(56, 242, 127, 0.34);
+  border-radius: 10px;
+  background:
+    linear-gradient(150deg, rgba(56, 242, 127, 0.12), rgba(244, 212, 77, 0.05)),
+    rgba(7, 11, 16, 0.98);
+  box-shadow: 0 28px 110px rgba(0, 0, 0, 0.62);
+  padding: clamp(24px, 6vw, 34px);
+}
+
+.pwa-install-dialog h2 {
+  margin: 8px 0 14px;
+  font-size: clamp(1.8rem, 7vw, 2.7rem);
+}
+
+.pwa-install-dialog > p:not(.section-kicker) {
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.pwa-install-dialog strong {
+  color: var(--text);
+}
+
+.pwa-install-close {
+  margin-top: 24px;
+}
+
+body.pwa-install-modal-open {
+  overflow: hidden;
+}
+
+.pwa-offline-status {
+  position: fixed;
+  z-index: 11900;
+  top: 12px;
+  left: 50%;
+  width: min(760px, calc(100% - 24px));
+  border: 1px solid rgba(244, 212, 77, 0.58);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, rgba(244, 212, 77, 0.14), rgba(56, 242, 127, 0.08)),
+    rgba(5, 8, 10, 0.96);
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.46), 0 0 28px rgba(244, 212, 77, 0.08);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.45;
+  padding: 11px 18px;
+  text-align: center;
+  transform: translateX(-50%);
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
+}
+
+.pwa-offline-status[hidden] {
+  display: none;
+}
+
+.pwa-offline-status::before {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent-2);
+  box-shadow: 0 0 14px rgba(244, 212, 77, 0.78);
+  content: "";
+  margin-right: 9px;
+}
+
+@media (max-width: 520px) {
+  .pwa-offline-status {
+    top: 8px;
+    width: calc(100% - 16px);
+    border-radius: 12px;
+    font-size: 0.76rem;
+    padding: 10px 12px;
+  }
+}
+
 .footer-email {
   position: relative;
   gap: 8px;
@@ -3880,6 +4020,18 @@ h3 {
   padding: 34px 0 46px;
 }
 
+.admin-hero-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.admin-hero-topline .pwa-install-button {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .admin-hero .brand {
   width: max-content;
 }
@@ -4718,6 +4870,16 @@ h3 {
     padding: 24px 0 34px;
   }
 
+  .admin-hero-topline {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .admin-hero-topline .pwa-install-button {
+    align-self: flex-end;
+  }
+
   .admin-hero .brand {
     max-width: 100%;
   }
@@ -5251,10 +5413,6 @@ h3 {
   background: transparent;
   cursor: pointer;
   font: inherit;
-}
-
-.analytics-disabled [data-cookie-settings] {
-  display: none;
 }
 
 .footer-legal a:hover,

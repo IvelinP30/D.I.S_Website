@@ -3,12 +3,19 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Политика за бисквитките на D.I.S Подкаст." />
-    <title>D.I.S Подкаст - Политика за бисквитките</title>
+    <meta name="description" content="Политика за бисквитките и техническото хранилище на браузъра за D.I.S Подкаст." />
+    <title>D.I.S Подкаст - Бисквитки и техническо съхранение</title>
     <link rel="canonical" href="https://dis-podcast.onrender.com/cookies" />
     <meta name="robots" content="index, follow" />
-    <meta property="og:locale" content="bg_BG" /><meta property="og:type" content="website" /><meta property="og:site_name" content="D.I.S Подкаст" /><meta property="og:title" content="Политика за бисквитките | D.I.S Подкаст" /><meta property="og:description" content="Информация за необходимите бисквитки, използвани от D.I.S Подкаст." /><meta property="og:url" content="https://dis-podcast.onrender.com/cookies" /><meta property="og:image" content="https://dis-podcast.onrender.com/assets/hero-football-podcast.png" /><meta property="og:image:alt" content="D.I.S Подкаст" /><meta name="twitter:card" content="summary_large_image" /><meta name="twitter:title" content="Политика за бисквитките | D.I.S Подкаст" /><meta name="twitter:description" content="Информация за необходимите бисквитки на сайта." /><meta name="twitter:image" content="https://dis-podcast.onrender.com/assets/hero-football-podcast.png" />
+    <meta property="og:locale" content="bg_BG" /><meta property="og:type" content="website" /><meta property="og:site_name" content="D.I.S Подкаст" /><meta property="og:title" content="Бисквитки и техническо съхранение | D.I.S Подкаст" /><meta property="og:description" content="Информация за необходимите бисквитки и PWA кеша на D.I.S Подкаст." /><meta property="og:url" content="https://dis-podcast.onrender.com/cookies" /><meta property="og:image" content="https://dis-podcast.onrender.com/assets/hero-football-podcast.png" /><meta property="og:image:alt" content="D.I.S Подкаст" /><meta name="twitter:card" content="summary_large_image" /><meta name="twitter:title" content="Бисквитки и техническо съхранение | D.I.S Подкаст" /><meta name="twitter:description" content="Информация за необходимите бисквитки и PWA кеша на сайта." /><meta name="twitter:image" content="https://dis-podcast.onrender.com/assets/hero-football-podcast.png" />
     <link rel="icon" type="image/png" href="./assets/dis-logo.png" />
+    <meta name="theme-color" content="#050608" />
+    <meta name="application-name" content="D.I.S Подкаст" />
+    <meta name="apple-mobile-web-app-title" content="D.I.S Подкаст" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/pwa/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
@@ -23,15 +30,16 @@
       <main class="legal-page">
         <header class="legal-hero">
           <p class="section-kicker">Настройки и прозрачност</p>
-          <h1>Политика за бисквитките</h1>
-          <p>Кратко и ясно обяснение на техническите идентификатори, които използва сайтът.</p>
-          <time datetime="2026-07-16">Последна актуализация: 16 юли 2026 г.</time>
+          <h1>Бисквитки и техническо съхранение</h1>
+          <p>Кратко и ясно обяснение на техническите идентификатори и локалното хранилище на браузъра, които използва сайтът.</p>
+          <time datetime="2026-07-17">Последна актуализация: 17 юли 2026 г.</time>
         </header>
 
         <article class="legal-document">
           <section>
             <h2>1. Какво е бисквитка</h2>
             <p>Бисквитката е малък текстов запис, който браузърът пази за определен сайт. D.I.S Подкаст използва собствени бисквитки само за функции, поискани от посетителя, сигурност и административен достъп.</p>
+            <p>Браузърите разполагат и с други видове локално съхранение. PWA режимът на сайта използва Cache Storage за технически копия на публични статични файлове. Това не е бисквитка и не се използва за разпознаване или профилиране на посетителите.</p>
           </section>
 
           <section>
@@ -51,7 +59,21 @@
           </section>
 
           <section>
-            <h2>3. Аналитични бисквитки по избор</h2>
+            <h2>3. PWA и технически Cache Storage</h2>
+            <div class="legal-table-wrap">
+              <table class="legal-table">
+                <thead><tr><th>Технология</th><th>Предназначение</th><th>Срок</th><th>Кога се създава</th></tr></thead>
+                <tbody>
+                  <tr><td data-label="Технология"><code>dis-pwa-v1</code><br />Cache Storage</td><td data-label="Предназначение">Пази публични статични файлове и offline страница за PWA режима.</td><td data-label="Срок">До замяна с нова версия, автоматично освобождаване или ръчно изчистване от браузъра.</td><td data-label="Създава се">При първо посещение на публична страница в поддържан браузър; не е необходимо приложението да бъде инсталирано.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p>Техническият кеш може да съдържа стилове, скриптове, икони и публични изображения. В него не се записват изпратени формуляри, гласове, giveaway регистрации, съобщения, админ страници, API отговори или Google Analytics идентификатори. Админ приложението използва нормалната защитена бисквитка <code>dis_session</code>, но съдържанието на админ панела не се кешира.</p>
+            <p>PWA кешът не се управлява от избора за аналитична статистика, защото служи само за техническото зареждане и offline съобщението и не се използва за проследяване. Може да бъде премахнат чрез изчистване на данните за сайта в настройките на браузъра или при деинсталиране на уеб приложението.</p>
+          </section>
+
+          <section>
+            <h2>4. Аналитични бисквитки по избор</h2>
             <p>Google Analytics 4 се зарежда само след натискане на „Приемам статистика“. При избор „Само необходими“ не изпращаме analytics данни към Google.</p>
             <div class="legal-table-wrap">
               <table class="legal-table">
@@ -65,29 +87,29 @@
           </section>
 
           <section>
-            <h2>4. Външно съдържание</h2>
+            <h2>5. Външно съдържание</h2>
             <p>Началната страница съдържа вграден YouTube player, който се зарежда директно от YouTube/Google. При зареждането Google може да поставя или прочита свои идентификатори и да получава техническа информация според <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer">собствената си политика</a>.</p>
             <p>Сайтът зарежда и шрифта Inter от Google Fonts. Браузърът осъществява връзка с Google, за да изтегли необходимите файлове.</p>
           </section>
 
           <section>
-            <h2>5. Какво не използваме</h2>
+            <h2>6. Какво не използваме</h2>
             <p>Не използваме Meta Pixel, Google Signals, рекламна персонализация или други инструменти за рекламно профилиране. GA4 служи само за обобщена статистика след съгласие.</p>
           </section>
 
           <section>
-            <h2>6. Управление на избора</h2>
+            <h2>7. Управление на избора</h2>
             <p>Изборът за статистика може да бъде променен по всяко време чрез „Настройки“ във footer-а. При оттегляне GA4 се спира и достъпните analytics бисквитки за сайта се изтриват. Бисквитките могат да бъдат управлявани и от настройките на браузъра.</p>
           </section>
 
           <section>
-            <h2>7. Контакт</h2>
+            <h2>8. Контакт</h2>
             <p>За въпроси относно бисквитките или личните данни използвай <a href="/contact">страницата за контакт</a>. Повече информация има в <a href="/privacy">Политиката за поверителност</a>.</p>
           </section>
         </article>
       </main>
       <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><span class="brand-mark"><img class="footer-logo" src="./assets/dis-logo.png" alt="" /></span><div><strong class="footer-brand-name">D.I.S Подкаст</strong><p>Футболни реакции, подкасти, live моменти и кратки видеа.</p></div></div><nav class="footer-nav" data-footer-nav aria-label="Footer навигация"></nav><div class="footer-actions"><a class="footer-email" data-footer-email href="mailto:dispodcast10@gmail.com"></a><div class="footer-socials" data-footer-socials></div></div></div></footer>
     </div>
-    <script src="./config.js?v=20260713-2"></script><script src="./script.js?v=20260715-4"></script><script src="/analytics-config.js"></script><script src="./analytics.js?v=20260716-1"></script>
+    <script src="./pwa.js?v=20260717-3"></script><script src="./config.js?v=20260713-2"></script><script src="./script.js?v=20260715-4"></script><script src="/analytics-config.js"></script><script src="./analytics.js?v=20260717-2"></script>
   </body>
 </html>

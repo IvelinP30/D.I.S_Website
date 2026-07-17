@@ -30,6 +30,7 @@ Live site: https://dis-podcast.onrender.com
 - Uses a generated football podcast hero image in `assets/hero-football-podcast.png`
 - Uses the D.I.S logo in `assets/dis-logo.png` as the navbar mark and favicon
 - Uses generated football visuals for the news hero and scroll progress indicator
+- Can be installed as a lightweight PWA on supported desktop and mobile devices
 
 ## How To Preview
 
@@ -52,6 +53,20 @@ http://127.0.0.1:4177/privacy
 http://127.0.0.1:4177/cookies
 http://127.0.0.1:4177/login
 ```
+
+## Progressive Web App
+
+The eight public pages expose a shared web app manifest and can be installed in standalone mode. On Chromium browsers, a conditional **Добави като приложение** control appears in the public footer only when the browser reports that installation is available. On Safari for iPhone and iPad, the same control shows the manual **Share → Add to Home Screen** steps. Safari 17+ on Mac also shows the control with **Share → Add to Dock** instructions; creating a Mac web app requires macOS Sonoma 14 or newer. The control stays hidden on other unsupported devices and when the site is already running as an installed app.
+
+The protected admin page has a separate **D.I.S Админ** manifest with its own app identity and `/admin` start URL. Its conditional **Добави админ приложение** control uses the same design as the public footer installer and sits separately at the top-right of the admin hero. The installed admin app can require a fresh login when the saved session has expired or when the platform keeps web-app site data separate from the browser; the normal login flow then returns to the admin panel.
+
+The service worker provides a branded offline fallback and caches only same-origin static assets. Cache Storage can be created on the first supported public-page visit even when the visitor does not install the app. Navigation stays network-first, and API requests, admin/login routes, analytics configuration, form submissions, voting, and giveaway operations are never handled by the PWA cache. The feature adds no tracking, cookies, user-data collection, profiling, push notifications, or background synchronization. Visitors can remove the technical cache through their browser's site-data controls or when uninstalling the web app.
+
+The public Privacy and Cookie policies disclose the PWA installation flow, service worker, technical Cache Storage, cached resource types, exclusions, removal controls, and the separation from optional Analytics consent. Update those disclosures and the displayed policy dates whenever the cache scope or PWA data handling changes.
+
+The footer **Настройки** control remains visible even when `GA_MEASUREMENT_ID` is not configured. In that state it opens a read-only notice confirming that Analytics and analytics cookies are inactive; it never shows the first-visit consent prompt because there is no optional analytics processing to accept.
+
+When the browser reports that the device is offline, both the public and admin web apps keep the last rendered page visible and show a fixed Bulgarian status bar explaining that the content may be previously loaded and interactive operations are temporarily unavailable. The bar reacts to the browser's `online` and `offline` events and disappears automatically when connectivity returns. A completely uncached navigation can still fall back to the dedicated `offline.html` page.
 
 ## Protected Admin
 

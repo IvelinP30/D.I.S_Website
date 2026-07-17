@@ -1,0 +1,33 @@
+{
+  "id": "/",
+  "name": "D.I.S Подкаст",
+  "short_name": "D.I.S",
+  "description": "Футболни реакции, прогнози, новини и подкаст съдържание от D.I.S Подкаст.",
+  "lang": "bg-BG",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050608",
+  "theme_color": "#050608",
+  "categories": ["sports", "entertainment", "news"],
+  "icons": [
+    {
+      "src": "/assets/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/pwa/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

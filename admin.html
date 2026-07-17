@@ -6,6 +6,13 @@
     <meta name="robots" content="noindex, nofollow" />
     <title>D.I.S Admin Studio</title>
     <link rel="icon" type="image/png" href="./assets/dis-logo.png" />
+    <meta name="theme-color" content="#050608" />
+    <meta name="application-name" content="D.I.S Админ" />
+    <meta name="apple-mobile-web-app-title" content="D.I.S Админ" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <link rel="manifest" href="/admin.webmanifest" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/assets/pwa/apple-touch-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
@@ -14,10 +21,13 @@
   <body class="admin-body">
     <main class="admin-shell">
       <section class="admin-hero">
-        <a class="brand" href="/">
-          <span class="brand-mark"><img src="./assets/dis-logo.png" alt="" /></span>
-          <span>D.I.S Admin Studio</span>
-        </a>
+        <div class="admin-hero-topline">
+          <a class="brand" href="/">
+            <span class="brand-mark"><img src="./assets/dis-logo.png" alt="" /></span>
+            <span>D.I.S Admin Studio</span>
+          </a>
+          <button class="pwa-install-button" data-pwa-install-button type="button" hidden>Добави админ приложение</button>
+        </div>
         <h1>Редакция без код.</h1>
         <p>
           Променяш текстове, линкове, статистики, клипове и рекламни пакети от нормални
@@ -129,6 +139,7 @@
       </section>
     </div>
 
+    <script src="./pwa.js?v=20260717-3"></script>
     <script src="./config.js?v=20260713-2"></script>
     <script src="./admin.js?v=20260715-6"></script>
   </body>

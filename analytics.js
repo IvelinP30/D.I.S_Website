@@ -4,6 +4,29 @@
   const measurementId = String(window.DIS_ANALYTICS_CONFIG?.measurementId || "").trim();
   if (!/^G-[A-Z0-9]+$/i.test(measurementId)) {
     document.documentElement.classList.add("analytics-disabled");
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest("[data-cookie-settings]")) return;
+      document.querySelector("[data-consent-panel]")?.remove();
+      const panel = document.createElement("section");
+      panel.className = "consent-panel";
+      panel.dataset.consentPanel = "";
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-labelledby", "consent-title");
+      panel.innerHTML = `
+        <div class="consent-copy">
+          <p class="consent-kicker"><span aria-hidden="true"></span> Поверителност и статистика</p>
+          <h2 id="consent-title">Статистиката не е активна.</h2>
+          <p>Тази версия на сайта не зарежда Google Analytics и не създава аналитични бисквитки. Техническият PWA кеш не служи за проследяване.</p>
+          <a href="/cookies">Научи повече за бисквитките</a>
+        </div>
+        <div class="consent-actions">
+          <button class="button secondary" type="button" data-consent-close>Затвори</button>
+        </div>`;
+      document.body.append(panel);
+      const closeButton = panel.querySelector("[data-consent-close]");
+      closeButton.addEventListener("click", () => panel.remove());
+      closeButton.focus({ preventScroll: true });
+    });
     return;
   }
 
@@ -103,7 +126,7 @@
       <div class="consent-copy">
         <p class="consent-kicker"><span aria-hidden="true"></span> Поверителност и статистика</p>
         <h2 id="consent-title">Помогни ни да подобряваме сайта.</h2>
-        <p>С твое съгласие използваме Google Analytics 4 само за обобщена статистика за посещенията. Рекламно проследяване и персонализация не се използват.</p>
+        <p>С твое съгласие използваме Google Analytics 4 само за обобщена статистика за посещенията. Рекламно проследяване и персонализация не се използват. Техническият PWA кеш е отделен от този избор и не служи за проследяване.</p>
         <a href="/cookies">Научи повече за бисквитките</a>
       </div>
       <div class="consent-actions">
