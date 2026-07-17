@@ -344,7 +344,7 @@
     "fanZone": {
       "kicker": "Фен зона",
       "title": "Твоята прогноза влиза в играта.",
-      "description": "Виж прогнозите на водещите, гласувай веднъж в активните футболни анкети и изпрати тема за следващ разговор.",
+      "description": "Влез в D.I.S Лигата на прогнозите, прогнозирай резултати, печели точки и се състезавай с останалите фенове.",
       "image": "./assets/fan-zone-hero.webp",
       "predictionsKicker": "Прогнозите на D.I.S",
       "predictionsTitle": "Преди първия съдийски сигнал.",
@@ -452,6 +452,45 @@
       ]
     }
   ],
+  "predictionLeague": {
+    "enabled": true,
+    "title": "D.I.S Лига на прогнозите",
+    "description": "Познай кой ще спечели или дали мачът ще завърши наравно. Допълнителни точки носи и точният резултат.",
+    "seasonLabel": "D.I.S Сезон 2026/27",
+    "trophies": [
+      {
+        "id": "exact",
+        "label": "Точен мерник",
+        "condition": "exact",
+        "tier": "bronze"
+      },
+      {
+        "id": "voice",
+        "label": "Гласът на трибуните",
+        "condition": "voice",
+        "tier": "silver"
+      },
+      {
+        "id": "derby",
+        "label": "Дерби експерт",
+        "condition": "derby",
+        "tier": "gold"
+      },
+      {
+        "id": "streak",
+        "label": "Без загуба",
+        "condition": "streak",
+        "tier": "platinum"
+      },
+      {
+        "id": "oracle",
+        "label": "Шампион на месеца",
+        "condition": "monthlyChampion",
+        "tier": "legendary"
+      }
+    ],
+    "matches": []
+  },
   "giveaway": {
     "id": "giveaway-1784063751960",
     "enabled": false,

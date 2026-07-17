@@ -1,5 +1,10 @@
 let config = window.DIS_SITE_CONFIG || {};
 let giveawayCountdownTimer = null;
+let predictionLeagueState = null;
+let predictionLeaguePeriod = "week";
+let predictionLeagueRecoveryCode = "";
+let predictionLeagueNotice = "";
+let predictionLeagueFlashMatchId = "";
 
 function bindMainNavigation(mainNav) {
   const topbar = mainNav.closest(".topbar");
@@ -78,6 +83,7 @@ async function loadContent({ allowFallback = true } = {}) {
 
   renderPage();
   document.documentElement.classList.add("content-ready");
+  await renderPredictionLeague();
   await renderFanVoting();
   bindGiveawayForm();
   bindGiveawayRulesLinks();
@@ -145,6 +151,7 @@ function renderPage() {
   const discoveryGrid = document.querySelector("#home-discovery-grid");
   const giveawaySection = document.querySelector("#giveaway");
   const featuredGiveaway = document.querySelector("[data-featured-giveaway]");
+  const homeLeaguePromo = document.querySelector("[data-home-league-promo]");
 
   if (mainNav) {
     mainNav.innerHTML = (config.nav || [])
@@ -316,6 +323,7 @@ function renderPage() {
 
   if (giveawaySection) renderGiveaway(config.giveaway);
   if (featuredGiveaway) renderFeaturedGiveaway(config.giveaway);
+  if (homeLeaguePromo) renderHomeLeaguePromo(config.predictionLeague);
   if ((giveawaySection || featuredGiveaway) && giveawayIsActive(config.giveaway)) {
     loadGiveawayPublicStatus(config.giveaway);
     startGiveawayCountdown(config.giveaway);
@@ -439,6 +447,436 @@ function renderPage() {
   }
 
   renderLegalFooter(brandName);
+}
+
+async function leagueApi(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: { Accept: "application/json", ...(options.body ? { "Content-Type": "application/json" } : {}), ...(options.headers || {}) }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(payload.error || "Заявката към Лигата на прогнозите не успя.");
+  return payload;
+}
+
+const leagueTrophyTierOrder = Object.freeze({ bronze: 1, silver: 2, gold: 3, platinum: 4, legendary: 5 });
+let leagueTrophyTooltip = null;
+let leagueTrophyGlobalEventsBound = false;
+let leagueTrophyActiveTrigger = null;
+let leagueTrophyPinnedTrigger = null;
+
+function leaguePrimaryBadge(badges = []) {
+  return [...badges].sort((left, right) => (leagueTrophyTierOrder[right.tier] || 0) - (leagueTrophyTierOrder[left.tier] || 0))[0];
+}
+
+function leagueBadgeMarkup(badge = {}, compact = false) {
+  const tier = leagueTrophyTierOrder[badge.tier] ? badge.tier : "bronze";
+  const label = badge.label || "Трофей";
+  const description = badge.description || "Спечелен трофей в Лигата на прогнозите.";
+  const tierLabel = badge.tierLabel || "Бронзово";
+  return `<span class="league-badge tier-${tier} ${compact ? "is-compact" : ""}" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false" data-league-trophy data-trophy-label="${escapeAttribute(label)}" data-trophy-description="${escapeAttribute(description)}" data-trophy-tier="${escapeAttribute(tierLabel)}" aria-label="${escapeAttribute(`${label}. ${description} Ниво: ${tierLabel}.`)}"><i aria-hidden="true"></i><span>${escapeHTML(label)}</span></span>`;
+}
+
+function hideLeagueTrophyTooltip() {
+  leagueTrophyActiveTrigger?.setAttribute("aria-expanded", "false");
+  leagueTrophyActiveTrigger = null;
+  leagueTrophyPinnedTrigger = null;
+  if (!leagueTrophyTooltip) return;
+  leagueTrophyTooltip.classList.remove("is-visible");
+  leagueTrophyTooltip.setAttribute("aria-hidden", "true");
+}
+
+function showLeagueTrophyTooltip(trigger, { pinned = false } = {}) {
+  if (leagueTrophyActiveTrigger && leagueTrophyActiveTrigger !== trigger) {
+    leagueTrophyActiveTrigger.setAttribute("aria-expanded", "false");
+  }
+  leagueTrophyActiveTrigger = trigger;
+  if (pinned) leagueTrophyPinnedTrigger = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+  leagueTrophyTooltip ||= Object.assign(document.createElement("div"), { className: "league-trophy-tooltip" });
+  if (!leagueTrophyTooltip.isConnected) {
+    leagueTrophyTooltip.setAttribute("role", "tooltip");
+    document.body.appendChild(leagueTrophyTooltip);
+  }
+  leagueTrophyTooltip.innerHTML = `<span>${escapeHTML(trigger.dataset.trophyTier)} ниво</span><strong>${escapeHTML(trigger.dataset.trophyLabel)}</strong><small>${escapeHTML(trigger.dataset.trophyDescription)}</small>`;
+  leagueTrophyTooltip.setAttribute("aria-hidden", "false");
+  leagueTrophyTooltip.style.left = "0px";
+  leagueTrophyTooltip.style.top = "0px";
+  leagueTrophyTooltip.classList.add("is-visible");
+  const triggerRect = trigger.getBoundingClientRect();
+  const tooltipRect = leagueTrophyTooltip.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - tooltipRect.width - 10, Math.max(10, triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2));
+  const preferredTop = triggerRect.top - tooltipRect.height - 10;
+  const top = preferredTop >= 10 ? preferredTop : triggerRect.bottom + 10;
+  leagueTrophyTooltip.style.left = `${left}px`;
+  leagueTrophyTooltip.style.top = `${top}px`;
+}
+
+function bindLeagueTrophyTooltips(app) {
+  app.querySelectorAll("[data-league-trophy]").forEach((trigger) => {
+    trigger.addEventListener("mouseenter", () => {
+      if (!leagueTrophyPinnedTrigger) showLeagueTrophyTooltip(trigger);
+    });
+    trigger.addEventListener("mouseleave", () => {
+      if (!leagueTrophyPinnedTrigger) hideLeagueTrophyTooltip();
+    });
+    trigger.addEventListener("focus", () => showLeagueTrophyTooltip(trigger));
+    trigger.addEventListener("blur", hideLeagueTrophyTooltip);
+    trigger.addEventListener("click", () => {
+      if (leagueTrophyPinnedTrigger === trigger) {
+        hideLeagueTrophyTooltip();
+      } else {
+        showLeagueTrophyTooltip(trigger, { pinned: true });
+      }
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      trigger.click();
+    });
+  });
+  if (!app.dataset.trophyTooltipBound) {
+    app.addEventListener("scroll", hideLeagueTrophyTooltip, true);
+    app.dataset.trophyTooltipBound = "true";
+  }
+  if (!leagueTrophyGlobalEventsBound) {
+    window.addEventListener("resize", hideLeagueTrophyTooltip);
+    document.addEventListener("pointerdown", (event) => {
+      if (leagueTrophyPinnedTrigger && !event.target.closest?.("[data-league-trophy]")) hideLeagueTrophyTooltip();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") hideLeagueTrophyTooltip();
+    });
+    leagueTrophyGlobalEventsBound = true;
+  }
+}
+
+function leagueIdentityMarkup() {
+  return `
+    <article class="league-entry-card">
+      <span class="league-live-label"><i></i> Без акаунт и без имейл</span>
+      <h3>Избери своя прякор</h3>
+      <p>Ще те помним в този браузър и всяка прогноза ще се записва към твоето анонимно участие. Всеки прякор е уникален — главни букви, интервали, тирета и долни черти не създават нов вариант.</p>
+      <p class="league-privacy-note">Използваме само необходим анонимен идентификатор. <a href="/privacy">Как работи</a></p>
+      <form class="league-inline-form" data-league-register>
+        <label><span>Прякор <em>уникален</em></span><input name="nickname" required minlength="3" maxlength="24" autocomplete="nickname" placeholder="Напр. GUNNER_BG" /></label>
+        <button class="button primary" type="submit">Влизам в лигата</button>
+        <p class="league-form-feedback" data-league-feedback role="status"></p>
+      </form>
+      <details class="league-recovery-form">
+        <summary>Вече участваш? Възстанови с код</summary>
+        <form class="league-inline-form" data-league-recover>
+          <label><span>Recovery код</span><input name="recoveryCode" required maxlength="16" autocomplete="off" placeholder="DIS-XXXX-XXXX" /></label>
+          <button class="button secondary" type="submit">Възстанови</button>
+          <p class="league-form-feedback" data-league-feedback role="status"></p>
+        </form>
+      </details>
+    </article>`;
+}
+
+function leagueProfileMarkup(state) {
+  const me = state.me;
+  const badges = me.badges?.length
+    ? me.badges.map((badge) => leagueBadgeMarkup(badge)).join("")
+    : `<span class="league-badge-empty">Първият трофей те чака.</span>`;
+  return `
+    <article class="league-profile-card">
+      <div class="league-profile-heading">
+        <div><span>Твоят профил</span><h3>${escapeHTML(me.nickname)}</h3><small>${escapeHTML(state.seasonLabel)}</small></div>
+        <strong>${me.totalPoints}<small>точки</small></strong>
+      </div>
+      <div class="league-profile-stats">
+        <div><strong>${me.ranks.week ? `#${me.ranks.week}` : "—"}</strong><span>тази седмица</span></div>
+        <div><strong>${me.currentStreak}</strong><span>текуща серия</span></div>
+        <div><strong>${me.exactScores}</strong><span>точни резултати</span></div>
+      </div>
+      <div class="league-badges">${badges}</div>
+      <details class="league-profile-settings">
+        <summary>Промени прякора</summary>
+        <form class="league-inline-form" data-league-profile>
+          <label><span>Нов прякор</span><input name="nickname" required minlength="3" maxlength="24" value="${escapeAttribute(me.nickname)}" /></label>
+          <button class="button secondary" type="submit">Запази</button>
+          <p class="league-form-feedback" data-league-feedback role="status"></p>
+        </form>
+      </details>
+    </article>`;
+}
+
+function leagueLeaderboardMarkup(state) {
+  const period = predictionLeaguePeriod;
+  const rows = state.leaderboards?.[period] || [];
+  const labels = { week: "Тази седмица", month: "Този месец", season: "D.I.S сезон" };
+  const periodLabel = period === "season" ? state.seasonLabel : state.periods?.[period] || "";
+  return `
+    <article class="league-table-card">
+      <div class="league-table-heading"><div><span>Класация</span><h3>${labels[period]}</h3></div><small>${escapeHTML(periodLabel)}</small></div>
+      <div class="league-table-tabs" role="tablist" aria-label="Период на класацията">
+        ${Object.entries(labels).map(([key, label]) => `<button class="${period === key ? "is-active" : ""}" type="button" data-league-period="${key}" role="tab" aria-selected="${period === key}">${label}</button>`).join("")}
+      </div>
+      <div class="league-table">
+        ${rows.length ? rows.slice(0, 50).map((row) => `
+          <div class="league-table-row ${state.me?.nickname === row.nickname ? "is-me" : ""}">
+            <strong>${row.rank}</strong>
+            <span><b>${escapeHTML(row.nickname)}</b>${row.badges?.length ? leagueBadgeMarkup(leaguePrimaryBadge(row.badges), true) : ""}</span>
+            <em>${row.points} т.</em>
+          </div>`).join("") : `<div class="league-table-empty">Класацията чака първите прогнози.</div>`}
+      </div>
+    </article>`;
+}
+
+function leagueMatchMarkup(match, state) {
+  const me = state.me;
+  const prediction = match.myPrediction;
+  const statusLabel = match.status === "settled" ? "Приключил" : match.status === "locked" ? "Заключен" : "Приема прогнози";
+  const kickoff = match.kickoffAt ? formatLocalDate(match.kickoffAt) : "Началният час предстои";
+  const result = match.result ? `${match.result.homeScore}:${match.result.awayScore}` : "";
+  const scoring = prediction?.scoring;
+  const predictionCopy = prediction ? `${prediction.homeScore}:${prediction.awayScore}` : "—";
+  const justSaved = predictionLeagueFlashMatchId === match.id;
+  let action = "";
+  if (match.status === "open") {
+    action = me ? `
+      <form class="league-prediction-form" data-league-prediction="${escapeAttribute(match.id)}">
+        <div class="league-score-inputs">
+          <label><span>${escapeHTML(match.homeTeam)}</span><input name="homeScore" type="number" min="0" max="30" inputmode="numeric" required value="${prediction?.homeScore ?? ""}" aria-label="Голове за ${escapeAttribute(match.homeTeam)}" /></label>
+          <b>:</b>
+          <label><span>${escapeHTML(match.awayTeam)}</span><input name="awayScore" type="number" min="0" max="30" inputmode="numeric" required value="${prediction?.awayScore ?? ""}" aria-label="Голове за ${escapeAttribute(match.awayTeam)}" /></label>
+        </div>
+        <button class="button ${prediction ? "league-update-button" : "primary"} ${justSaved ? "is-confirmed" : ""}" type="submit">${justSaved ? "Прогнозата е записана ✓" : prediction ? "Промени прогнозата" : "Запиши прогнозата"}</button>
+        <p class="league-form-feedback" data-league-feedback role="status">${prediction ? `Записана прогноза: ${predictionCopy} · Можеш да я промениш до ${kickoff}.` : `Край за прогнози: ${kickoff} — началото на мача.`}</p>
+      </form>` : `<div class="league-match-locked-note">Избери прякор, за да запишеш резултат.</div>`;
+  } else {
+    action = `
+      <div class="league-settled-prediction ${scoring?.correctOutcome ? "is-correct" : ""}">
+        <div><span>Твоята прогноза</span><strong>${predictionCopy}</strong></div>
+        ${match.status === "settled" ? `<div><span>Краен резултат</span><strong>${result}</strong></div>` : ""}
+        ${scoring ? `<div class="league-earned-points"><span>Спечелени точки</span><strong>+${scoring.points}</strong><small>${scoring.exactScore ? "Точен мерник!" : scoring.correctOutcome ? "Позна победителя или равенството" : "Следващият мач е твой"}${scoring.streakBonus ? ` · +${scoring.streakBonus} серия` : ""}</small></div>` : ""}
+      </div>
+      ${match.status === "settled" && prediction ? `<button class="button secondary league-share-button" type="button" data-league-share="${escapeAttribute(match.id)}">Сподели резултата</button>` : ""}
+      ${!prediction ? `<p class="league-match-locked-note">Няма записана прогноза за този мач.</p>` : ""}`;
+  }
+  return `
+    <article class="league-match-card ${match.status === "settled" ? "is-settled" : ""} ${justSaved ? "is-just-saved" : ""}">
+      <div class="league-match-top"><span class="league-match-status status-${match.status}"><i></i>${statusLabel}</span><small>${escapeHTML(match.competition)}${match.isDerby ? " · Дерби" : ""}</small></div>
+      <time datetime="${escapeAttribute(match.kickoffAt || "")}"><span>Начало на мача и край за прогнози</span>${escapeHTML(kickoff)}</time>
+      <div class="league-fixture"><strong>${escapeHTML(match.homeTeam)}</strong><span>${result || "VS"}</span><strong>${escapeHTML(match.awayTeam)}</strong></div>
+      ${action}
+    </article>`;
+}
+
+function renderPredictionLeagueApp() {
+  const section = document.querySelector("#prediction-league");
+  const app = document.querySelector("#prediction-league-app");
+  const state = predictionLeagueState;
+  if (!section || !app || !state?.enabled) {
+    if (section) section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  setText("[data-league-title]", state.title || "D.I.S Лига на прогнозите");
+  setText("[data-league-description]", state.description || "");
+  app.innerHTML = `
+    ${predictionLeagueNotice ? `<div class="league-notice">${escapeHTML(predictionLeagueNotice)}</div>` : ""}
+    ${predictionLeagueRecoveryCode ? `
+      <div class="league-recovery-banner">
+        <div><span>Запази този код сега</span><strong>${escapeHTML(predictionLeagueRecoveryCode)}</strong><p>Това е единственият начин да възстановиш точките си на друг телефон.</p></div>
+        <button class="button primary" type="button" data-copy-recovery>Копирай кода</button>
+      </div>` : ""}
+    <div class="league-dashboard-grid">
+      ${state.me ? leagueProfileMarkup(state) : leagueIdentityMarkup()}
+      ${leagueLeaderboardMarkup(state)}
+    </div>
+    <div class="league-rules-strip">
+      <span><b>+${state.points.outcome}</b> победител или равенство</span>
+      <span><b>+${state.points.exactScore}</b> допълнително за точен резултат</span>
+      <span><b>+${state.points.streakBonus}</b> бонус на всеки ${state.points.streakEvery} поредни</span>
+      <span><b>${state.me?.currentStreak || 0}</b> твоята серия</span>
+    </div>
+    <div class="league-match-list">
+      <div class="league-match-list-heading"><div><span>Следващи прогнози</span><h3>Прогнозирай преди началото на мача.</h3></div><small>${state.matches.length} ${state.matches.length === 1 ? "мач" : "мача"}</small></div>
+      <div class="league-match-grid">${state.matches.length ? state.matches.map((match) => leagueMatchMarkup(match, state)).join("") : `<article class="empty-state">Следващият кръг в Лигата на прогнозите скоро ще бъде добавен.</article>`}</div>
+    </div>`;
+  bindPredictionLeagueActions();
+  bindLeagueTrophyTooltips(app);
+  const flashedMatchId = predictionLeagueFlashMatchId;
+  predictionLeagueFlashMatchId = "";
+  if (flashedMatchId) {
+    const confirmedForm = [...app.querySelectorAll("[data-league-prediction]")].find((form) => form.dataset.leaguePrediction === flashedMatchId);
+    const confirmedButton = confirmedForm?.querySelector("button");
+    if (confirmedButton) {
+      window.setTimeout(() => {
+        confirmedButton.textContent = "Промени прогнозата";
+        confirmedButton.classList.remove("is-confirmed");
+      }, 1400);
+    }
+  }
+}
+
+function leagueFormError(form, error) {
+  const feedback = form.querySelector("[data-league-feedback]");
+  if (feedback) {
+    feedback.textContent = error.message;
+    feedback.classList.add("is-error");
+  }
+}
+
+function bindPredictionLeagueActions() {
+  const app = document.querySelector("#prediction-league-app");
+  if (!app) return;
+  app.querySelector("[data-league-register]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const payload = await leagueApi("/api/league/register", { method: "POST", body: JSON.stringify({ nickname: form.nickname.value }) });
+      predictionLeagueState = payload.league;
+      predictionLeagueRecoveryCode = payload.recoveryCode || "";
+      predictionLeagueNotice = "Добре дошъл в D.I.S Лигата на прогнозите!";
+      renderPredictionLeagueApp();
+    } catch (error) {
+      leagueFormError(form, error);
+      button.disabled = false;
+    }
+  });
+  app.querySelector("[data-league-recover]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const payload = await leagueApi("/api/league/recover", { method: "POST", body: JSON.stringify({ recoveryCode: form.recoveryCode.value }) });
+      predictionLeagueState = payload.league;
+      predictionLeagueRecoveryCode = "";
+      predictionLeagueNotice = "Участието и точките ти са възстановени.";
+      renderPredictionLeagueApp();
+    } catch (error) {
+      leagueFormError(form, error);
+      button.disabled = false;
+    }
+  });
+  app.querySelector("[data-league-profile]")?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    try {
+      const payload = await leagueApi("/api/league/profile", { method: "PATCH", body: JSON.stringify({ nickname: form.nickname.value }) });
+      predictionLeagueState = payload.league;
+      predictionLeagueNotice = "Прякорът е променен, а историята ти е запазена.";
+      renderPredictionLeagueApp();
+    } catch (error) {
+      leagueFormError(form, error);
+    }
+  });
+  app.querySelectorAll("[data-league-prediction]").forEach((form) => {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button");
+      button.disabled = true;
+      try {
+        const payload = await leagueApi(`/api/league/predictions/${encodeURIComponent(form.dataset.leaguePrediction)}`, {
+          method: "PUT",
+          body: JSON.stringify({ homeScore: form.homeScore.value, awayScore: form.awayScore.value })
+        });
+        predictionLeagueState = payload.league;
+        predictionLeagueNotice = "";
+        predictionLeagueFlashMatchId = form.dataset.leaguePrediction;
+        renderPredictionLeagueApp();
+      } catch (error) {
+        leagueFormError(form, error);
+        button.disabled = false;
+      }
+    });
+  });
+  app.querySelectorAll("[data-league-period]").forEach((button) => {
+    button.addEventListener("click", () => {
+      predictionLeaguePeriod = button.dataset.leaguePeriod;
+      renderPredictionLeagueApp();
+    });
+  });
+  app.querySelector("[data-copy-recovery]")?.addEventListener("click", async (event) => {
+    try {
+      await navigator.clipboard.writeText(predictionLeagueRecoveryCode);
+      event.currentTarget.textContent = "Кодът е копиран";
+    } catch {
+      event.currentTarget.textContent = "Маркирай кода ръчно";
+    }
+  });
+  app.querySelectorAll("[data-league-share]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const match = predictionLeagueState.matches.find((item) => item.id === button.dataset.leagueShare);
+      if (match) await shareLeagueResult(match, predictionLeagueState.me);
+    });
+  });
+}
+
+async function renderPredictionLeague() {
+  const section = document.querySelector("#prediction-league");
+  if (!section) return;
+  try {
+    predictionLeagueState = await leagueApi("/api/league");
+    renderPredictionLeagueApp();
+  } catch (error) {
+    section.hidden = false;
+    document.querySelector("#prediction-league-app").innerHTML = `<article class="empty-state">${escapeHTML(error.message)}</article>`;
+  }
+}
+
+async function shareLeagueResult(match, me) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const context = canvas.getContext("2d");
+  const gradient = context.createLinearGradient(0, 0, 1080, 1350);
+  gradient.addColorStop(0, "#07120d");
+  gradient.addColorStop(0.55, "#0b111a");
+  gradient.addColorStop(1, "#030506");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, 1080, 1350);
+  context.strokeStyle = "#38f27f";
+  context.lineWidth = 8;
+  context.strokeRect(38, 38, 1004, 1274);
+  context.fillStyle = "#38f27f";
+  context.font = "900 48px Inter, sans-serif";
+  context.fillText("D.I.S ЛИГА НА ПРОГНОЗИТЕ", 84, 140);
+  context.fillStyle = "#f7f8fb";
+  context.font = "900 82px Inter, sans-serif";
+  context.fillText(me.nickname, 84, 270);
+  context.fillStyle = "#aab2c0";
+  context.font = "700 38px Inter, sans-serif";
+  context.fillText(match.competition, 84, 350);
+  context.fillStyle = "#f7f8fb";
+  context.font = "800 54px Inter, sans-serif";
+  context.fillText(match.homeTeam, 84, 500);
+  context.fillText(match.awayTeam, 84, 720);
+  context.fillStyle = "#38f27f";
+  context.font = "900 150px Inter, sans-serif";
+  context.fillText(`${match.myPrediction.homeScore}:${match.myPrediction.awayScore}`, 84, 640);
+  context.fillStyle = "#f4d44d";
+  context.font = "900 170px Inter, sans-serif";
+  context.fillText(`+${match.myPrediction.scoring?.points || 0}`, 84, 980);
+  context.fillStyle = "#f7f8fb";
+  context.font = "800 48px Inter, sans-serif";
+  context.fillText("ТОЧКИ", 420, 970);
+  context.fillStyle = "#aab2c0";
+  context.font = "600 36px Inter, sans-serif";
+  context.fillText(`Краен резултат: ${match.result.homeScore}:${match.result.awayScore}`, 84, 1080);
+  context.fillText(`Позиция за седмицата: ${me.ranks.week ? `#${me.ranks.week}` : "—"}`, 84, 1140);
+  context.fillStyle = "#38f27f";
+  context.font = "800 36px Inter, sans-serif";
+  context.fillText("dis-podcast.onrender.com/fan-zone", 84, 1240);
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) return;
+  const filename = `dis-prediction-${String(me.nickname).replace(/[^a-z0-9а-я_-]+/gi, "-")}.png`;
+  const file = new File([blob], filename, { type: "image/png" });
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ title: "D.I.S Лига на прогнозите", text: `Моята прогноза донесе +${match.myPrediction.scoring?.points || 0} точки!`, files: [file] });
+    return;
+  }
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
 async function renderFanVoting() {
@@ -600,6 +1038,32 @@ function renderFeaturedGiveaway(giveaway = {}) {
   setAttribute("[data-featured-giveaway-image]", "src", giveaway.image || "./assets/giveaway-football.webp");
   setHTML("[data-featured-giveaway-title]", brandText(giveaway.title || "D.I.S Giveaway"));
   setHTML("[data-featured-giveaway-prize]", brandText(giveawayPrizeSummary(giveaway)));
+}
+
+function renderHomeLeaguePromo(league = {}) {
+  const section = document.querySelector("[data-home-league-promo]");
+  if (!section) return;
+
+  const matches = Array.isArray(league.matches)
+    ? league.matches
+      .filter((match) => match?.enabled !== false)
+      .sort((left, right) => {
+        const resultDifference = Number(Boolean(left?.result)) - Number(Boolean(right?.result));
+        if (resultDifference) return resultDifference;
+        return new Date(left?.kickoffAt || 0) - new Date(right?.kickoffAt || 0);
+      })
+    : [];
+  const active = league.enabled !== false && matches.length > 0;
+  section.hidden = !active;
+  if (!active) return;
+
+  const featuredMatch = matches[0];
+  setHTML("[data-home-league-title]", brandText(league.title || "D.I.S Лига на прогнозите"));
+  setText("[data-home-league-competition]", featuredMatch.competition || "Мач в лигата");
+  setText("[data-home-league-home]", featuredMatch.homeTeam || "Отбор 1");
+  setText("[data-home-league-away]", featuredMatch.awayTeam || "Отбор 2");
+  setText("[data-home-league-count]", matches.length);
+  setText("[data-home-league-count-label]", matches.length === 1 ? "мач в играта" : "мача в играта");
 }
 
 function renderGiveaway(giveaway = {}) {
@@ -1108,7 +1572,7 @@ function getYouTubeEmbedUrl(url) {
 
 function bindMotion() {
   const revealTargets = document.querySelectorAll(
-    ".section, .format-card, .social-card, .stat-card, .ad-card, .package-card, .marquee-ad-card, .youtube-player, .discovery-card, .host-card, .prediction-card, .poll-card"
+    ".section, .format-card, .social-card, .stat-card, .ad-card, .package-card, .marquee-ad-card, .youtube-player, .discovery-card, .host-card, .prediction-card, .poll-card, .league-entry-card, .league-profile-card, .league-table-card, .league-match-card"
   );
   const revealObserver = new IntersectionObserver(
     (entries) => {

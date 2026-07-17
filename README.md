@@ -10,6 +10,7 @@ Live site: https://dis-podcast.onrender.com
 - Separate news page with manually managed posts
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
+- D.I.S Prediction League with nickname-only participation, score predictions, automatic points and streaks, badges, weekly/monthly/season tables, and recovery codes
 - Optional Fan Zone giveaway registration with protected participants, CSV export, and random winner drawing
 - Contact, partnership, and fan-idea forms stored in a protected admin inbox, with production email notifications
 - Presents the channel as a football media brand
@@ -25,7 +26,7 @@ Live site: https://dis-podcast.onrender.com
 - Includes dedicated Privacy and Cookie Policy pages for the live data flow
 - Includes a YouTube player block controlled from admin
 - Includes a password-protected admin panel
-- Stores editable content in `data/content.json`, votes in `data/votes.json`, inbox messages in `data/messages.json`, and local giveaway entries in `data/giveaway-entries.json`
+- Stores editable content in `data/content.json`, votes in `data/votes.json`, inbox messages in `data/messages.json`, local giveaway entries in `data/giveaway-entries.json`, and local Prediction League participation in the ignored `data/prediction-league.json`
 - Supports uploads for logo, hero backgrounds, ad media, and news images
 - Uses a generated football podcast hero image in `assets/hero-football-podcast.png`
 - Uses the D.I.S logo in `assets/dis-logo.png` as the navbar mark and favicon
@@ -92,6 +93,14 @@ Voting creates a long-lived signed `dis_voter` cookie only after the visitor sub
 
 Each visitor can vote once in every separate poll. Deleting a poll from admin also removes its stored vote records on the next content save.
 
+Prediction League uses a nickname instead of an account. Creating or recovering participation sets a signed, `HttpOnly` `dis_league` cookie that contains only an anonymous player ID and integrity signature. Its 400-day lifetime is renewed after every authenticated League visit, nickname change, or saved prediction, allowing an active browser to remain connected indefinitely. The server-side participation and points do not expire automatically. A one-time recovery code can reconnect a different browser or phone; only its keyed hash is stored, never the readable code. Nicknames are globally unique after case, spaces, dots, hyphens, and underscores are normalized; mixing Cyrillic and Latin letters in one nickname is rejected. The server locks predictions at kickoff, calculates points from admin-entered final scores, awards 3 points for the correct outcome, 7 additional points for an exact score, and 2 bonus points after each third consecutive correct outcome. Recovery and registration attempts are rate-limited in memory to slow guessing and automated nickname creation.
+
+The public league endpoint exposes standings and only the current visitor's predictions. It never exposes recovery hashes, player IDs, or another participant's score picks. Local data uses `data/prediction-league.json`; production uses the protected `predictionLeague` row in Supabase `app_state` through the existing storage abstraction.
+
+Deleting a settled Prediction League match from the admin archives its result internally instead of deleting its scoring history. The match disappears from the public page and admin editor, while earned points and statistics continue to count. Deleting a match without a final result removes its unearned predictions.
+
+Prediction League trophies are managed from the Fan Zone admin page. Admins can add or remove trophies, edit their names, select one of the supported automatic award conditions, and choose a fixed bronze/silver/gold/platinum/legendary difficulty tier. The tier controls the public color. Trophy ownership is derived from prediction statistics, so changing or deleting a trophy recalculates awards without changing participant points.
+
 Public forms write validated messages through `POST /api/messages`. The backend includes a honeypot and an in-memory per-IP rate limit. Reading, changing status, and deleting messages require an authenticated admin session.
 
 After a message is saved successfully, production also sends a server-side email notification through Resend to the public contact address configured in admin. Local development never calls the email provider. Email delivery is secondary to inbox persistence: a provider error or timeout is logged with the internal message ID, but the visitor still receives a successful response because the message remains available in admin.
@@ -141,6 +150,7 @@ Most public content is editable from the admin panel, including:
 - host profiles and optional profile photos
 - host predictions
 - fan polls, options, status, deadline, and result visibility
+- Prediction League title, season, point-rule copy, matches, kickoff times, derby flags, and final scores
 - giveaway title, multiple prizes, prize quantities/images, dates, eligibility, rules, privacy notice, image, and active state
 - giveaway participant search/review, eligibility control, CSV export, secure winner/prize draw, and result reset
 - inbox message statuses and deletion
@@ -156,7 +166,7 @@ Each upload field displays its own loading spinner and progress message while op
 
 - `/` - main website
 - `/news` - news page
-- `/fan-zone` - host predictions, polls, and fan idea form
+- `/fan-zone` - D.I.S Prediction League, host predictions, polls, and fan idea form
 - `/fan-zone#giveaway` - direct link to the active giveaway; hidden when no campaign is active
 - `/hosts` - editable host profiles
 - `/partners` - advertising formats, packages, active campaigns, and statistics
@@ -217,7 +227,7 @@ Production analytics uses the GA4 web data stream `G-G21K94TW2T` for `https://di
 - Contact, fan-idea, and giveaway forms show a short privacy notice beside the submit flow.
 - Production general questions, fan ideas, and partnership messages are forwarded server-to-server through Resend as an internal notification after they are saved; Resend does not add browser cookies or contact the visitor directly.
 - Every giveaway has its own admin-editable official rules, privacy notice, platform disclaimer, dates, eligibility, and prizes. The public form links directly to the rules for the active campaign.
-- `dis_session` is created only after admin login, `dis_voter` only after voting, and `dis_giveaway` only after successful giveaway registration.
+- `dis_session` is created only after admin login, `dis_voter` only after voting, `dis_league` only after Prediction League registration or recovery, and `dis_giveaway` only after successful giveaway registration.
 - Google Analytics 4 is optional and loads only after explicit analytics consent; Meta Pixel and advertising-profile trackers are not used.
 - The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
 - Google Fonts is also loaded from Google and is disclosed as an external service.
@@ -239,7 +249,7 @@ The policy text is a practical transparency baseline and not a substitute for ad
 ## GitHub And Deployment Preparation
 
 - `.env` and all environment-specific secret files are ignored by Git.
-- Runtime inbox messages, vote records, and uploaded files are ignored by Git.
+- Runtime inbox messages, vote records, Prediction League participants/predictions, and uploaded files are ignored by Git.
 - Production requires explicit `ADMIN_PASSWORD` and `SESSION_SECRET` environment variables.
 - Production requires `RESEND_API_KEY` and `MESSAGE_EMAIL_FROM`; local development does not send message emails even if they exist in `.env`.
 - `GET /health` is available for hosting health checks.
@@ -254,9 +264,11 @@ The current local JSON and upload storage remains suitable for development only.
 3. Copy the Project URL and service-role key into the hosting environment variables shown in `.env.example`.
 4. Never expose `SUPABASE_SECRET_KEY` in frontend code or commit it to Git.
 
-When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
+When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, Prediction League data, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
 
 Production giveaway participants are stored in the protected Supabase `app_state` row whose key is `giveawayEntries`. Local development uses the ignored `data/giveaway-entries.json` file, so local tests do not touch production unless `USE_SUPABASE_LOCAL=true` is set intentionally. No additional Supabase table or migration is required.
+
+Prediction League participants and predictions use the same protected `app_state` table under the `predictionLeague` key, so no additional Supabase migration is required.
 
 Local development uses JSON files and the local `uploads/` directory even when Supabase credentials exist in `.env`. Set `USE_SUPABASE_LOCAL=true` only when intentionally testing against the production Supabase project. Render uses Supabase automatically because `NODE_ENV=production`.
 

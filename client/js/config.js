@@ -231,7 +231,7 @@ window.DIS_SITE_CONFIG = {
     fanZone: {
       kicker: "Фен зона",
       title: "Твоята прогноза влиза в играта.",
-      description: "Виж прогнозите на водещите, гласувай веднъж в активните футболни анкети и изпрати тема за следващ разговор.",
+      description: "Влез в D.I.S Лигата на прогнозите, прогнозирай резултати, печели точки и се състезавай с останалите фенове.",
       image: "./assets/fan-zone-hero.webp",
       predictionsKicker: "Прогнозите на D.I.S", predictionsTitle: "Преди първия съдийски сигнал.", predictionsDescription: "Най-важните прогнози на водещите, записани на едно място.",
       voteKicker: "Фенски вот", voteTitle: "Ти как виждаш мача?", voteDescription: "Всеки посетител може да даде един глас във всяка активна анкета.",
@@ -263,6 +263,20 @@ window.DIS_SITE_CONFIG = {
   hosts: [],
   predictions: [],
   polls: [],
+  predictionLeague: {
+    enabled: true,
+    title: "D.I.S Лига на прогнозите",
+    description: "Познай кой ще спечели или дали мачът ще завърши наравно. Допълнителни точки носи и точният резултат.",
+    seasonLabel: "D.I.S Сезон 2026/27",
+    trophies: [
+      { id: "exact", condition: "exact", label: "Точен мерник", tier: "bronze" },
+      { id: "voice", condition: "voice", label: "Гласът на трибуните", tier: "silver" },
+      { id: "derby", condition: "derby", label: "Дерби експерт", tier: "gold" },
+      { id: "streak", condition: "streak", label: "Без загуба", tier: "platinum" },
+      { id: "oracle", condition: "monthlyChampion", label: "Шампион на месеца", tier: "legendary" }
+    ],
+    matches: []
+  },
   giveaway: null,
   mediaLibrary: []
 };

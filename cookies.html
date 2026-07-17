@@ -19,7 +19,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./client/css/styles.css?v=20260717-5" />
+    <link rel="stylesheet" href="./client/css/styles.css?v=20260717-11" />
   </head>
   <body>
     <div class="site-shell">
@@ -50,6 +50,7 @@
                 <tbody>
                   <tr><td data-label="Име"><code>dis_session</code></td><td data-label="Предназначение">Защитен вход и сесия в админ панела.</td><td data-label="Срок">До 1 ден</td><td data-label="Създава се">Само след успешен админ вход.</td></tr>
                   <tr><td data-label="Име"><code>dis_voter</code></td><td data-label="Предназначение">Запазва състоянието и коректността на фенското гласуване.</td><td data-label="Срок">До 1 година</td><td data-label="Създава се">При използване на гласуването.</td></tr>
+                  <tr><td data-label="Име"><code>dis_league</code></td><td data-label="Предназначение">Свързва този браузър с анонимното участие, прогнозите, точките и трофеите в D.I.S Лигата на прогнозите.</td><td data-label="Срок">До 400 дни от последното посещение на Лигата</td><td data-label="Създава се">След избор на прякор или успешно възстановяване с recovery код; срокът се подновява при използване на Лигата.</td></tr>
                   <tr><td data-label="Име"><code>dis_giveaway</code></td><td data-label="Предназначение">Запазва състоянието и сигурността на регистрацията за активна кампания.</td><td data-label="Срок">До 1 година</td><td data-label="Създава се">При използване на формата за участие.</td></tr>
                   <tr><td data-label="Име"><code>dis_cookie_consent</code></td><td data-label="Предназначение">Запомня избора за аналитична статистика.</td><td data-label="Срок">До 1 година</td><td data-label="Създава се">След избор от панела за поверителност.</td></tr>
                 </tbody>
@@ -68,7 +69,7 @@
                 </tbody>
               </table>
             </div>
-            <p>Техническият кеш може да съдържа стилове, скриптове, икони и публични изображения. В него не се записват изпратени формуляри, гласове, giveaway регистрации, съобщения, админ страници, API отговори или Google Analytics идентификатори. Админ приложението използва нормалната защитена бисквитка <code>dis_session</code>, но съдържанието на админ панела не се кешира.</p>
+            <p>Техническият кеш може да съдържа стилове, скриптове, икони и публични изображения. В него не се записват изпратени формуляри, гласове, прогнози от Лигата на прогнозите, giveaway регистрации, съобщения, админ страници, API отговори или Google Analytics идентификатори. Админ приложението използва нормалната защитена бисквитка <code>dis_session</code>, но съдържанието на админ панела не се кешира.</p>
             <p>PWA кешът не се управлява от избора за аналитична статистика, защото служи само за техническото зареждане и offline съобщението и не се използва за проследяване. Може да бъде премахнат чрез изчистване на данните за сайта в настройките на браузъра или при деинсталиране на уеб приложението.</p>
           </section>
 
@@ -110,6 +111,6 @@
       </main>
       <footer class="site-footer"><div class="footer-inner"><div class="footer-brand"><span class="brand-mark"><img class="footer-logo" src="./assets/dis-logo.png" alt="" /></span><div><strong class="footer-brand-name">D.I.S Подкаст</strong><p>Футболни реакции, подкасти, live моменти и кратки видеа.</p></div></div><nav class="footer-nav" data-footer-nav aria-label="Footer навигация"></nav><div class="footer-actions"><a class="footer-email" data-footer-email href="mailto:dispodcast10@gmail.com"></a><div class="footer-socials" data-footer-socials></div></div></div></footer>
     </div>
-    <script src="./client/js/pwa.js?v=20260717-9"></script><script src="./client/js/config.js?v=20260713-2"></script><script src="./client/js/script.js?v=20260717-2"></script><script src="/analytics-config.js"></script><script src="./client/js/analytics.js?v=20260717-3"></script>
+    <script src="./client/js/pwa.js?v=20260717-9"></script><script src="./client/js/config.js?v=20260717-4"></script><script src="./client/js/script.js?v=20260717-7"></script><script src="/analytics-config.js"></script><script src="./client/js/analytics.js?v=20260717-3"></script>
   </body>
 </html>

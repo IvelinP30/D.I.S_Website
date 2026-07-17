@@ -7,4 +7,5 @@ uploads/*
 data/messages.json
 data/votes.json
 data/giveaway-entries.json
+data/prediction-league.json
 npm-debug.log*

@@ -3,6 +3,19 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { sendMessageEmail } = require("./server/message-email");
+const {
+  archiveDeletedLeagueMatches,
+  buildLeagueState,
+  createRecoveryCode,
+  hashRecoveryCode,
+  matchStatus,
+  nicknameIsTaken,
+  nicknameKey,
+  normalizeLeagueConfig,
+  normalizeLeagueStore,
+  normalizeNickname,
+  normalizePrediction
+} = require("./server/prediction-league");
 
 const root = __dirname;
 const envFile = path.join(root, ".env");
@@ -23,6 +36,7 @@ const dataFile = path.join(root, "data", "content.json");
 const votesFile = path.join(root, "data", "votes.json");
 const messagesFile = path.join(root, "data", "messages.json");
 const giveawayEntriesFile = path.join(root, "data", "giveaway-entries.json");
+const predictionLeagueFile = path.join(root, "data", "prediction-league.json");
 const uploadsDir = path.join(root, "uploads");
 const port = Number(process.env.PORT || 4177);
 const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
@@ -38,12 +52,16 @@ const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? config
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
+const leagueCookieLifetime = oneDay * 400;
 const maxUploadBytes = 25_000_000;
 const maxStoredImageBytes = 1_200_000;
 const giveawayAttemptsPerHour = 30;
 const messageAttemptsPerHour = 15;
+const leagueIdentityAttemptsPerHour = 30;
 const messageRateLimits = new Map();
 const giveawayRateLimits = new Map();
+const leagueIdentityRateLimits = new Map();
+let predictionLeagueMutation = Promise.resolve();
 
 if (isProduction && adminPassword === "change-this-password") {
   throw new Error("ADMIN_PASSWORD must be configured in production.");
@@ -94,6 +112,7 @@ fs.mkdirSync(uploadsDir, { recursive: true });
 if (!fs.existsSync(votesFile)) fs.writeFileSync(votesFile, '{"polls":{}}\n');
 if (!fs.existsSync(messagesFile)) fs.writeFileSync(messagesFile, "[]\n");
 if (!fs.existsSync(giveawayEntriesFile)) fs.writeFileSync(giveawayEntriesFile, "[]\n");
+if (!fs.existsSync(predictionLeagueFile)) fs.writeFileSync(predictionLeagueFile, '{"players":[],"predictions":[]}\n');
 
 function supabaseHeaders(extra = {}) {
   const headers = { apikey: supabaseKey, ...extra };
@@ -106,6 +125,13 @@ async function readContent() {
 }
 
 async function writeContent(content) {
+  const previousContent = await readContent();
+  await mutateLeagueStore((leagueStore) => {
+    const archivedStore = archiveDeletedLeagueMatches(previousContent.predictionLeague, content.predictionLeague, leagueStore);
+    leagueStore.players = archivedStore.players;
+    leagueStore.predictions = archivedStore.predictions;
+    leagueStore.archivedMatches = archivedStore.archivedMatches;
+  });
   await writeJsonFile(dataFile, content, "content");
   const storedVotes = await readJsonFile(votesFile, { polls: {} });
   const validPollIds = new Set((content.polls || []).map((poll) => poll.id));
@@ -334,8 +360,65 @@ function voterHash(token, pollId) {
   return crypto.createHash("sha256").update(`${token}:${pollId}:${sessionSecret}`).digest("hex");
 }
 
+function leagueCookieValue(playerId) {
+  return `${playerId}.${sign(`league:${playerId}`)}`;
+}
+
+function leagueCookieHeader(playerId) {
+  return `dis_league=${leagueCookieValue(playerId)}; HttpOnly; SameSite=Lax; Max-Age=${leagueCookieLifetime}; Path=/${isProduction ? "; Secure" : ""}`;
+}
+
+function getLeaguePlayerId(request) {
+  const token = parseCookies(request).dis_league || "";
+  const separator = token.lastIndexOf(".");
+  if (separator <= 0) return "";
+  const playerId = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  const expected = sign(`league:${playerId}`);
+  if (expected.length !== signature.length) return "";
+  return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature)) ? playerId : "";
+}
+
+async function readLeagueStore() {
+  return normalizeLeagueStore(await readJsonFile(predictionLeagueFile, { players: [], predictions: [] }, "predictionLeague"));
+}
+
+async function mutateLeagueStore(mutator) {
+  const operation = predictionLeagueMutation.then(async () => {
+    const store = await readLeagueStore();
+    const result = await mutator(store);
+    await writeJsonFile(predictionLeagueFile, store, "predictionLeague");
+    return { store, result };
+  });
+  predictionLeagueMutation = operation.catch(() => undefined);
+  return operation;
+}
+
+async function leagueState(request, storeOverride = null, playerIdOverride = null) {
+  const content = await readContent();
+  const store = storeOverride || await readLeagueStore();
+  const requestedPlayerId = playerIdOverride === null ? getLeaguePlayerId(request) : playerIdOverride;
+  const playerId = store.players.some((player) => player.id === requestedPlayerId) ? requestedPlayerId : "";
+  return buildLeagueState(content.predictionLeague, store, playerId);
+}
+
+function safeRecoveryMatch(player, recoveryHash) {
+  const stored = String(player.recoveryHash || "");
+  if (stored.length !== recoveryHash.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(stored), Buffer.from(recoveryHash));
+}
+
 function clientIp(request) {
   return String(request.headers["x-forwarded-for"] || request.socket.remoteAddress || "unknown").split(",")[0].trim();
+}
+
+function leagueIdentityRateLimited(request) {
+  const ipKey = crypto.createHash("sha256").update(`league:${clientIp(request)}:${sessionSecret}`).digest("hex");
+  const recent = (leagueIdentityRateLimits.get(ipKey) || []).filter((time) => Date.now() - time < 60 * 60 * 1000);
+  if (recent.length >= leagueIdentityAttemptsPerHour) return true;
+  recent.push(Date.now());
+  leagueIdentityRateLimits.set(ipKey, recent);
+  return false;
 }
 
 async function voteState(request, token) {
@@ -548,6 +631,154 @@ async function handleRequest(request, response) {
     const nextContent = JSON.parse(await readBody(request));
     await writeContent(nextContent);
     return sendJson(response, 200, nextContent);
+  }
+
+  if (url.pathname === "/api/league" && request.method === "GET") {
+    const playerId = getLeaguePlayerId(request);
+    const state = await leagueState(request);
+    const headers = { "Cache-Control": "no-store, max-age=0" };
+    if (playerId && state.me) headers["Set-Cookie"] = leagueCookieHeader(playerId);
+    return sendJson(response, 200, state, headers);
+  }
+
+  if (url.pathname === "/api/league/register" && request.method === "POST") {
+    if (leagueIdentityRateLimited(request)) {
+      return sendJson(response, 429, { error: "Твърде много опити. Опитай отново по-късно." });
+    }
+    const currentPlayerId = getLeaguePlayerId(request);
+    const currentStore = await readLeagueStore();
+    if (currentStore.players.some((player) => player.id === currentPlayerId)) {
+      return sendJson(response, 409, { error: "Вече имаш активно участие в Лигата на прогнозите в този браузър." });
+    }
+    let nickname;
+    try {
+      nickname = normalizeNickname(JSON.parse(await readBody(request)).nickname);
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message });
+    }
+
+    try {
+      const { store, result } = await mutateLeagueStore((leagueStore) => {
+        const key = nicknameKey(nickname);
+        if (nicknameIsTaken(leagueStore.players, nickname)) {
+          throw new Error("Този прякор или негов вариант вече участва. Избери друг или използвай recovery кода си.");
+        }
+        let recoveryCode = createRecoveryCode();
+        let recoveryHash = hashRecoveryCode(recoveryCode, sessionSecret);
+        while (leagueStore.players.some((player) => safeRecoveryMatch(player, recoveryHash))) {
+          recoveryCode = createRecoveryCode();
+          recoveryHash = hashRecoveryCode(recoveryCode, sessionSecret);
+        }
+        const player = {
+          id: crypto.randomUUID(),
+          nickname,
+          nicknameKey: key,
+          recoveryHash,
+          createdAt: new Date().toISOString()
+        };
+        leagueStore.players.push(player);
+        return { player, recoveryCode };
+      });
+      return sendJson(response, 201, {
+        recoveryCode: result.recoveryCode,
+        league: await leagueState(request, store, result.player.id)
+      }, { "Set-Cookie": leagueCookieHeader(result.player.id) });
+    } catch (error) {
+      return sendJson(response, 409, { error: error.message });
+    }
+  }
+
+  if (url.pathname === "/api/league/recover" && request.method === "POST") {
+    if (leagueIdentityRateLimited(request)) {
+      return sendJson(response, 429, { error: "Твърде много опити. Опитай отново по-късно." });
+    }
+    let recoveryHash;
+    try {
+      const payload = JSON.parse(await readBody(request));
+      recoveryHash = hashRecoveryCode(payload.recoveryCode, sessionSecret);
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message });
+    }
+    const store = await readLeagueStore();
+    const player = store.players.find((item) => safeRecoveryMatch(item, recoveryHash));
+    if (!player) return sendJson(response, 404, { error: "Не открихме участие с този recovery код." });
+    return sendJson(response, 200, { league: await leagueState(request, store, player.id) }, {
+      "Set-Cookie": leagueCookieHeader(player.id)
+    });
+  }
+
+  if (url.pathname === "/api/league/profile" && request.method === "PATCH") {
+    const playerId = getLeaguePlayerId(request);
+    if (!playerId) return sendJson(response, 401, { error: "Първо създай или възстанови участие в Лигата на прогнозите." });
+    let nickname;
+    try {
+      nickname = normalizeNickname(JSON.parse(await readBody(request)).nickname);
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message });
+    }
+    try {
+      const { store } = await mutateLeagueStore((leagueStore) => {
+        const player = leagueStore.players.find((item) => item.id === playerId);
+        if (!player) throw new Error("Участието в Лигата на прогнозите не е намерено.");
+        const key = nicknameKey(nickname);
+        if (nicknameIsTaken(leagueStore.players, nickname, playerId)) {
+          throw new Error("Този прякор или негов вариант вече участва.");
+        }
+        player.nickname = nickname;
+        player.nicknameKey = key;
+        player.updatedAt = new Date().toISOString();
+      });
+      return sendJson(response, 200, { league: await leagueState(request, store, playerId) }, {
+        "Set-Cookie": leagueCookieHeader(playerId)
+      });
+    } catch (error) {
+      return sendJson(response, 409, { error: error.message });
+    }
+  }
+
+  const leaguePredictionMatch = url.pathname.match(/^\/api\/league\/predictions\/([^/]+)$/);
+  if (leaguePredictionMatch && request.method === "PUT") {
+    const playerId = getLeaguePlayerId(request);
+    if (!playerId) return sendJson(response, 401, { error: "Първо избери прякор за Лигата на прогнозите." });
+    const content = await readContent();
+    const leagueConfig = normalizeLeagueConfig(content.predictionLeague);
+    if (!leagueConfig.enabled) return sendJson(response, 409, { error: "Лигата на прогнозите не е активна в момента." });
+    const matchId = decodeURIComponent(leaguePredictionMatch[1]);
+    const match = leagueConfig.matches.find((item) => item.id === matchId);
+    if (!match) return sendJson(response, 404, { error: "Този мач не е намерен." });
+    if (matchStatus(match) !== "open") return sendJson(response, 409, { error: "Прогнозите за този мач вече са заключени." });
+    let prediction;
+    try {
+      prediction = normalizePrediction(JSON.parse(await readBody(request)));
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message });
+    }
+    try {
+      const { store } = await mutateLeagueStore((leagueStore) => {
+        if (!leagueStore.players.some((player) => player.id === playerId)) throw new Error("Участието в Лигата на прогнозите не е намерено.");
+        const now = new Date().toISOString();
+        const existing = leagueStore.predictions.find((item) => item.playerId === playerId && item.matchId === matchId);
+        if (existing) {
+          existing.homeScore = prediction.homeScore;
+          existing.awayScore = prediction.awayScore;
+          existing.updatedAt = now;
+        } else {
+          leagueStore.predictions.push({
+            id: crypto.randomUUID(),
+            playerId,
+            matchId,
+            ...prediction,
+            submittedAt: now,
+            updatedAt: now
+          });
+        }
+      });
+      return sendJson(response, 200, { league: await leagueState(request, store, playerId) }, {
+        "Set-Cookie": leagueCookieHeader(playerId)
+      });
+    } catch (error) {
+      return sendJson(response, 409, { error: error.message });
+    }
   }
 
   if (url.pathname === "/api/votes" && request.method === "GET") {

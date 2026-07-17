@@ -22,6 +22,9 @@ const partnersPageEditor = document.querySelector("#partners-page-editor");
 const contactPageEditor = document.querySelector("#contact-page-editor");
 const predictionsEditor = document.querySelector("#predictions-editor");
 const pollsEditor = document.querySelector("#polls-editor");
+const leagueSettingsEditor = document.querySelector("#league-settings-editor");
+const leagueMatchesEditor = document.querySelector("#league-matches-editor");
+const leagueTrophiesEditor = document.querySelector("#league-trophies-editor");
 const giveawayEditor = document.querySelector("#giveaway-editor");
 const giveawayEntriesEditor = document.querySelector("#giveaway-entries-editor");
 const giveawayAdminToolbar = document.querySelector("#giveaway-admin-toolbar");
@@ -47,6 +50,20 @@ let giveawayEntriesCache = [];
 let giveawayEntrySearchTerm = "";
 let giveawayEntryFilters = { winnersOnly: false, ineligibleOnly: false };
 let winnerAnimationTimer = null;
+const leagueTrophyConditions = Object.freeze([
+  ["exact", "Поне 1 точен резултат", "Познал си точния резултат в поне един мач."],
+  ["voice", "Участие в поне 10 мача", "Участвал си с прогноза в поне 10 мача."],
+  ["derby", "3 правилни дерби прогнози", "Познал си победителя или равенството в 3 дербита."],
+  ["streak", "5 правилни прогнози поред", "Направил си 5 правилни прогнози поред."],
+  ["monthlyChampion", "№1 за месеца", "Завършил си на първо място в месечната класация."]
+]);
+const leagueTrophyTiers = Object.freeze([
+  ["bronze", "Бронзово · кафяво-оранжево"],
+  ["silver", "Сребърно · светлосиво"],
+  ["gold", "Златно · жълто"],
+  ["platinum", "Платинено · светлосиньо"],
+  ["legendary", "Легендарно · лилаво"]
+]);
 const imageUploadProfiles = {
   hero: { maxDimension: 1920, targetBytes: 1_200_000, label: "1920 px и 1.2 MB" },
   content: { maxDimension: 1600, targetBytes: 800_000, label: "1600 px и 800 KB" }
@@ -216,6 +233,8 @@ function removalLabel(type) {
       package: "този рекламен пакет",
       prediction: "тази прогноза",
       poll: "това гласуване",
+      "league-match": "този мач от админ панела",
+      "league-trophy": "този трофей",
       giveaway: "този giveaway и всички записани участници",
       host: "този водещ",
       "footer-link": "този footer линк",
@@ -284,6 +303,12 @@ function withDefaults(config) {
     hosts: config.hosts || fallback.hosts || [],
     predictions: config.predictions || fallback.predictions || [],
     polls: config.polls || fallback.polls || [],
+    predictionLeague: {
+      ...(fallback.predictionLeague || {}),
+      ...(config.predictionLeague || {}),
+      trophies: config.predictionLeague?.trophies ?? fallback.predictionLeague?.trophies ?? [],
+      matches: config.predictionLeague?.matches || fallback.predictionLeague?.matches || []
+    },
     giveaway,
     mediaLibrary: config.mediaLibrary || fallback.mediaLibrary || []
   };
@@ -302,6 +327,15 @@ function field(label, name, value = "", type = "text") {
     <label class="mini-field">
       <span>${label}</span>
       <input name="${name}" type="${type}" value="${escapeValue(value)}" />
+    </label>
+  `;
+}
+
+function numberField(label, name, value = "", min = 0, max = 30) {
+  return `
+    <label class="mini-field">
+      <span>${label}</span>
+      <input name="${name}" type="number" min="${min}" max="${max}" step="1" value="${escapeValue(value)}" />
     </label>
   `;
 }
@@ -388,6 +422,28 @@ function selectField(label, name, value, options) {
       </select>
     </label>
   `;
+}
+
+function leagueTrophyConditionDescription(condition) {
+  return leagueTrophyConditions.find(([value]) => value === condition)?.[2] || leagueTrophyConditions[0][2];
+}
+
+function updateLeagueTrophyCard(card) {
+  if (!card) return;
+  const label = value(card, "label").trim() || "Нов трофей";
+  const tier = value(card, "tier") || "bronze";
+  const condition = value(card, "condition") || "exact";
+  const preview = card.querySelector(".admin-trophy-preview .league-badge");
+  const previewLabel = card.querySelector("[data-admin-trophy-label]");
+  const previewNote = card.querySelector("[data-admin-trophy-condition]");
+  const heading = card.querySelector("h3");
+  if (heading) heading.textContent = label;
+  if (previewLabel) previewLabel.textContent = label;
+  if (previewNote) previewNote.textContent = leagueTrophyConditionDescription(condition);
+  if (preview) {
+    leagueTrophyTiers.forEach(([level]) => preview.classList.remove(`tier-${level}`));
+    preview.classList.add(`tier-${tier}`);
+  }
 }
 
 function inboxStatusField(value) {
@@ -622,6 +678,56 @@ function renderEditors() {
   hostsPageEditor.innerHTML = pageEditorMarkup("hosts", "Водещи");
   partnersPageEditor.innerHTML = pageEditorMarkup("partners", "Партньорства");
   contactPageEditor.innerHTML = pageEditorMarkup("contact", "Контакт");
+
+  const predictionLeague = adminConfig.predictionLeague || {};
+  leagueSettingsEditor.innerHTML = `
+    <article class="editor-card">
+      <h3>Настройки на лигата</h3>
+      ${checkboxField("Покажи Лигата на прогнозите във Фен зоната", "enabled", predictionLeague.enabled !== false)}
+      ${field("Заглавие", "title", predictionLeague.title || "D.I.S Лига на прогнозите")}
+      ${textarea("Кратко описание", "description", predictionLeague.description || "", 3)}
+      ${field("Име на сезона", "seasonLabel", predictionLeague.seasonLabel || "D.I.S Сезон 2026/27")}
+      ${readonlyInfo("Точкуване", "Познаваш победителя или равенството: 3 т. · Познаваш точния резултат: още 7 т. · Всеки 3 поредни правилни прогнози: +2 т.")}
+    </article>`;
+
+  leagueTrophiesEditor.innerHTML = (predictionLeague.trophies || []).map((trophy, index) => {
+    const condition = leagueTrophyConditions.some(([value]) => value === trophy.condition) ? trophy.condition : "exact";
+    const tier = leagueTrophyTiers.some(([value]) => value === trophy.tier) ? trophy.tier : "bronze";
+    const label = trophy.label || `Трофей ${index + 1}`;
+    return `
+      <article class="editor-card league-trophy-editor" data-index="${index}">
+        <button class="remove-card" data-remove="league-trophy" type="button" aria-label="Премахни">x</button>
+        <h3>${escapeValue(label)}</h3>
+        ${hiddenField("id", trophy.id || `trophy-${Date.now()}-${index}`)}
+        ${field("Име на трофея", "label", label)}
+        ${selectField("Как се печели", "condition", condition, leagueTrophyConditions.map(([value, optionLabel]) => [value, optionLabel]))}
+        ${selectField("Трудност и цвят", "tier", tier, leagueTrophyTiers.map(([value, optionLabel]) => [value, optionLabel]))}
+        <div class="admin-trophy-preview wide">
+          <span class="league-badge tier-${tier}"><i aria-hidden="true"></i><span data-admin-trophy-label>${escapeValue(label)}</span></span>
+          <small data-admin-trophy-condition>${escapeValue(leagueTrophyConditionDescription(condition))}</small>
+        </div>
+      </article>`;
+  }).join("");
+
+  leagueMatchesEditor.innerHTML = (predictionLeague.matches || []).map((match, index) => {
+    const resultHome = match.result?.homeScore ?? "";
+    const resultAway = match.result?.awayScore ?? "";
+    return `
+      <article class="editor-card league-match-editor" data-index="${index}">
+        <button class="remove-card" data-remove="league-match" type="button" aria-label="Премахни">x</button>
+        <h3>${escapeValue(`${match.homeTeam || "Отбор A"} – ${match.awayTeam || "Отбор B"}`)}</h3>
+        ${hiddenField("id", match.id || `league-match-${Date.now()}-${index}`)}
+        ${checkboxField("Покажи този мач", "enabled", match.enabled !== false)}
+        ${field("Турнир / кръг", "competition", match.competition || "D.I.S Matchday")}
+        ${field("Домакин", "homeTeam", match.homeTeam || "")}
+        ${field("Гост", "awayTeam", match.awayTeam || "")}
+        ${field("Начало на мача / край за прогнози", "kickoffAt", dateTimeLocalValue(match.kickoffAt), "datetime-local")}
+        ${checkboxField("Дерби мач", "isDerby", Boolean(match.isDerby))}
+        ${numberField("Краен резултат – домакин", "resultHome", resultHome)}
+        ${numberField("Краен резултат – гост", "resultAway", resultAway)}
+        <p class="form-privacy-note wide">Остави крайния резултат празен, докато мачът не приключи. След като го запазиш, можеш да премахнеш мача от админ панела — спечелените точки и статистиката ще останат.</p>
+      </article>`;
+  }).join("");
 
   const footer = adminConfig.footer || {};
   footerEditor.innerHTML = `
@@ -1169,6 +1275,7 @@ function collectConfig() {
   const sponsorPanelCard = singleCard(sponsorPanelEditor);
   const footerCard = singleCard(footerEditor);
   const giveawayCard = singleCard(giveawayEditor);
+  const leagueSettingsCard = singleCard(leagueSettingsEditor);
   const giveawayMinAge = giveawayCard ? value(giveawayCard, "minAge").trim() : "";
   const giveawayPrizes = giveawayCard
     ? [...giveawayCard.querySelectorAll(".giveaway-prize-editor")].map((card, index) => ({
@@ -1309,6 +1416,39 @@ function collectConfig() {
         }))
       };
     }),
+    predictionLeague: {
+      enabled: Boolean(leagueSettingsCard?.querySelector('[name="enabled"]')?.checked),
+      title: value(leagueSettingsCard, "title") || "D.I.S Лига на прогнозите",
+      description: value(leagueSettingsCard, "description"),
+      seasonLabel: value(leagueSettingsCard, "seasonLabel") || "D.I.S Сезон",
+      trophies: collectCards(leagueTrophiesEditor, (card) => {
+        const index = Number(card.dataset.index);
+        return {
+          id: value(card, "id") || `trophy-${Date.now()}-${index}`,
+          label: value(card, "label").trim() || `Трофей ${index + 1}`,
+          condition: value(card, "condition") || "exact",
+          tier: value(card, "tier") || "bronze"
+        };
+      }),
+      matches: collectCards(leagueMatchesEditor, (card) => {
+        const index = Number(card.dataset.index);
+        const previous = adminConfig.predictionLeague?.matches?.[index] || {};
+        const resultHome = value(card, "resultHome").trim();
+        const resultAway = value(card, "resultAway").trim();
+        const hasResult = resultHome !== "" && resultAway !== "";
+        return {
+          id: value(card, "id") || `league-match-${Date.now()}-${index}`,
+          enabled: Boolean(card.querySelector('[name="enabled"]')?.checked),
+          competition: value(card, "competition") || "D.I.S Matchday",
+          homeTeam: value(card, "homeTeam"),
+          awayTeam: value(card, "awayTeam"),
+          kickoffAt: value(card, "kickoffAt") ? new Date(value(card, "kickoffAt")).toISOString() : "",
+          isDerby: Boolean(card.querySelector('[name="isDerby"]')?.checked),
+          result: hasResult ? { homeScore: Number(resultHome), awayScore: Number(resultAway) } : null,
+          settledAt: hasResult ? (previous.settledAt || new Date().toISOString()) : ""
+        };
+      })
+    },
     giveaway: giveawayCard ? {
       id: value(giveawayCard, "id") || `giveaway-${Date.now()}`,
       enabled: Boolean(giveawayCard.querySelector('[name="enabled"]')?.checked),
@@ -1396,6 +1536,7 @@ function applyPage(target, page, snapshot) {
   }
   if (page === "fan") {
     target.pages.fanZone = source.pages.fanZone;
+    target.predictionLeague = source.predictionLeague;
     target.predictions = source.predictions;
     target.polls = source.polls;
     target.giveaway = source.giveaway;
@@ -1424,6 +1565,25 @@ document.querySelectorAll("[data-save-page]").forEach((button) => {
   button.addEventListener("click", async () => {
     const page = button.dataset.savePage;
     const draftConfig = collectConfig();
+    if (page === "fan") {
+      const incompleteResult = [...leagueMatchesEditor.querySelectorAll(".editor-card")].some((card) => {
+        const home = value(card, "resultHome").trim();
+        const away = value(card, "resultAway").trim();
+        return (home === "") !== (away === "");
+      });
+      if (incompleteResult) {
+        await showInfo("За краен резултат въведи и двата резултата или остави и двете полета празни.");
+        return;
+      }
+      const invalidLeagueMatch = (draftConfig.predictionLeague?.matches || []).find((match) =>
+        !match.homeTeam || !match.awayTeam ||
+        (match.result && (!Number.isInteger(match.result.homeScore) || !Number.isInteger(match.result.awayScore) || match.result.homeScore < 0 || match.result.awayScore < 0 || match.result.homeScore > 30 || match.result.awayScore > 30))
+      );
+      if (invalidLeagueMatch) {
+        await showInfo("Всеки мач от Лигата на прогнозите трябва да има два отбора и валиден резултат между 0 и 30.");
+        return;
+      }
+    }
     const configuredWinnerCount = (draftConfig.giveaway?.prizes || []).reduce((sum, prize) => sum + (Number(prize.quantity) || 0), 0);
     if (page === "fan" && draftConfig.giveaway && configuredWinnerCount > 20) {
       await showInfo("Общият брой награди и победители може да бъде най-много 20. Намали количеството на някоя награда.");
@@ -1512,6 +1672,35 @@ document.querySelectorAll("[data-add]").forEach((button) => {
     }
     if (type === "poll") {
       adminConfig.polls.unshift({ id: `poll-${Date.now()}`, title: "Фенски вот", match: "Отбор A срещу Отбор B", question: "Кой ще спечели?", status: "active", resultsVisible: true, closesAt: "", options: [{ id: `option-${Date.now()}-0`, label: "Отбор A" }, { id: `option-${Date.now()}-1`, label: "Равенство" }, { id: `option-${Date.now()}-2`, label: "Отбор B" }] });
+    }
+    if (type === "league-match") {
+      adminConfig.predictionLeague ||= { enabled: true, title: "D.I.S Лига на прогнозите", description: "", seasonLabel: "D.I.S Сезон", trophies: [], matches: [] };
+      adminConfig.predictionLeague.matches ||= [];
+      adminConfig.predictionLeague.matches.push({
+        id: `league-match-${Date.now()}`,
+        enabled: true,
+        competition: "D.I.S Matchday",
+        homeTeam: "Отбор A",
+        awayTeam: "Отбор B",
+        kickoffAt: "",
+        isDerby: false,
+        result: null,
+        settledAt: ""
+      });
+    }
+    if (type === "league-trophy") {
+      adminConfig.predictionLeague ||= { enabled: true, title: "D.I.S Лига на прогнозите", description: "", seasonLabel: "D.I.S Сезон", trophies: [], matches: [] };
+      adminConfig.predictionLeague.trophies ||= [];
+      if (adminConfig.predictionLeague.trophies.length >= 20) {
+        setStatus("Можеш да добавиш най-много 20 трофея.");
+        return;
+      }
+      adminConfig.predictionLeague.trophies.push({
+        id: `trophy-${Date.now()}`,
+        label: "Нов трофей",
+        condition: "exact",
+        tier: "bronze"
+      });
     }
     if (type === "giveaway" && !adminConfig.giveaway) {
       adminConfig.giveaway = createGiveawayDraft();
@@ -1630,7 +1819,10 @@ document.addEventListener("click", async (event) => {
   const removeButton = event.target.closest("[data-remove]");
   if (!removeButton) return;
   const type = removeButton.dataset.remove;
-  if (!(await askConfirmation(`Сигурен ли си, че искаш да премахнеш ${removalLabel(type)}?`))) return;
+  const removalQuestion = type === "league-match"
+    ? "Да премахна ли този мач от админ панела? Ако има въведен краен резултат, спечелените точки и статистиката ще се запазят."
+    : `Сигурен ли си, че искаш да премахнеш ${removalLabel(type)}?`;
+  if (!(await askConfirmation(removalQuestion))) return;
 
   syncBeforeMutating();
   const card = removeButton.closest(".editor-card");
@@ -1649,6 +1841,8 @@ document.addEventListener("click", async (event) => {
   if (type === "package") adminConfig.sponsorPackages.splice(index, 1);
   if (type === "prediction") adminConfig.predictions.splice(index, 1);
   if (type === "poll") adminConfig.polls.splice(index, 1);
+  if (type === "league-match") adminConfig.predictionLeague.matches.splice(index, 1);
+  if (type === "league-trophy") adminConfig.predictionLeague.trophies.splice(index, 1);
   if (type === "giveaway") adminConfig.giveaway = null;
   if (type === "footer-link") adminConfig.footer.links.splice(index, 1);
   if (type === "footer-social") adminConfig.footer.socials.splice(index, 1);
@@ -1659,11 +1853,18 @@ document.addEventListener("click", async (event) => {
 });
 
 document.addEventListener("change", (event) => {
+  const trophyCard = event.target.closest(".league-trophy-editor");
+  if (trophyCard) updateLeagueTrophyCard(trophyCard);
   const recommendedInput = event.target.closest('[name="recommended"]');
   if (!recommendedInput || !recommendedInput.checked) return;
   packagesEditor.querySelectorAll('[name="recommended"]').forEach((input) => {
     if (input !== recommendedInput) input.checked = false;
   });
+});
+
+document.addEventListener("input", (event) => {
+  const trophyCard = event.target.closest(".league-trophy-editor");
+  if (trophyCard) updateLeagueTrophyCard(trophyCard);
 });
 
 confirmOk.addEventListener("click", () => closeConfirmation(true));

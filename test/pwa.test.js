@@ -134,6 +134,20 @@ test("public navigation and consent UI are compact on mobile", () => {
   assert.match(styles, /width: min\(780px, calc\(100% - 32px\)\)/);
 });
 
+test("homepage promotes the prediction league only when visible matches exist", () => {
+  const homepage = read("index.html");
+  const publicScript = read("client/js/script.js");
+  const styles = read("client/css/styles.css");
+
+  assert.match(homepage, /data-home-league-promo[^>]*hidden/);
+  assert.match(homepage, /href="\/fan-zone#prediction-league"/);
+  assert.match(homepage, /Влез в играта/);
+  assert.match(publicScript, /renderHomeLeaguePromo\(config\.predictionLeague\)/);
+  assert.match(publicScript, /match\?\.enabled !== false/);
+  assert.match(publicScript, /league\.enabled !== false && matches\.length > 0/);
+  assert.match(styles, /\.home-league-promo-card/);
+});
+
 test("shared PWA script exposes an automatic offline status bar", () => {
   const pwa = read("client/js/pwa.js");
   const styles = read("client/css/styles.css");
