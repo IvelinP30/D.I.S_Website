@@ -10,13 +10,16 @@ function optimizeStaticAssetUrls(value) {
   return value.replace(/\.png$/, ".webp");
 }
 
-async function loadContent() {
+async function loadContent({ allowFallback = true } = {}) {
   try {
-    const response = await fetch("/api/content", { headers: { Accept: "application/json" } });
-    if (response.ok) {
-      config = optimizeStaticAssetUrls(await response.json());
-    }
-  } catch {
+    const response = await fetch("/api/content", {
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    });
+    if (!response.ok) throw new Error("Content API unavailable");
+    config = optimizeStaticAssetUrls(await response.json());
+  } catch (error) {
+    if (!allowFallback) throw error;
     const savedConfig = localStorage.getItem("dis-site-config");
     if (savedConfig) config = optimizeStaticAssetUrls(JSON.parse(savedConfig));
   }
@@ -693,14 +696,19 @@ function bindMessageForms() {
   if (typeSelect) {
     const requestedType = new URLSearchParams(window.location.search).get("type");
     if (["general", "idea", "partner"].includes(requestedType)) typeSelect.value = requestedType;
-    const syncPartnerFields = () => {
-      document.querySelectorAll(".partner-only").forEach((field) => { field.hidden = typeSelect.value !== "partner"; });
-    };
-    typeSelect.addEventListener("change", syncPartnerFields);
+    if (typeSelect.dataset.messageFieldsBound !== "true") {
+      typeSelect.dataset.messageFieldsBound = "true";
+      const syncPartnerFields = () => {
+        document.querySelectorAll(".partner-only").forEach((field) => { field.hidden = typeSelect.value !== "partner"; });
+      };
+      typeSelect.addEventListener("change", syncPartnerFields);
+    }
     typeSelect.dispatchEvent(new Event("change", { bubbles: true }));
   }
 
   document.querySelectorAll("[data-message-form]").forEach((form) => {
+    if (form.dataset.bound === "true") return;
+    form.dataset.bound = "true";
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const button = form.querySelector('button[type="submit"]');
@@ -734,6 +742,8 @@ function bindMessageForms() {
 
 function bindCustomSelects() {
   document.querySelectorAll("[data-custom-select]").forEach((select) => {
+    if (select.dataset.bound === "true") return;
+    select.dataset.bound = "true";
     const input = select.querySelector("[data-message-type-select]");
     const trigger = select.querySelector(".custom-select-trigger");
     const menu = select.querySelector(".custom-select-menu");
@@ -1016,6 +1026,8 @@ function bindGiveawayRulesLinks() {
   const rules = document.querySelector("#giveaway-rules");
   if (!rules) return;
   document.querySelectorAll('a[href="#giveaway-rules"]').forEach((link) => {
+    if (link.dataset.bound === "true") return;
+    link.dataset.bound = "true";
     link.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
@@ -1057,6 +1069,8 @@ function bindMotion() {
   );
 
   revealTargets.forEach((target) => {
+    if (target.dataset.revealBound === "true") return;
+    target.dataset.revealBound = "true";
     target.classList.add("reveal");
     revealObserver.observe(target);
   });
@@ -1083,9 +1097,15 @@ function bindMotion() {
     { threshold: 0.45 }
   );
 
-  document.querySelectorAll("[data-count]").forEach((counter) => countObserver.observe(counter));
+  document.querySelectorAll("[data-count]").forEach((counter) => {
+    if (counter.dataset.countBound === "true") return;
+    counter.dataset.countBound = "true";
+    countObserver.observe(counter);
+  });
 
   document.querySelectorAll(".magnetic").forEach((button) => {
+    if (button.dataset.motionBound === "true") return;
+    button.dataset.motionBound = "true";
     button.addEventListener("pointermove", (event) => {
       const rect = button.getBoundingClientRect();
       const x = event.clientX - rect.left - rect.width / 2;
@@ -1099,6 +1119,8 @@ function bindMotion() {
   });
 
   document.querySelectorAll(".tilt-card").forEach((card) => {
+    if (card.dataset.motionBound === "true") return;
+    card.dataset.motionBound = "true";
     card.addEventListener("pointermove", (event) => {
       const rect = card.getBoundingClientRect();
       const x = (event.clientX - rect.left) / rect.width - 0.5;
@@ -1120,6 +1142,8 @@ function bindFootballCursor() {
     !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   if (!canUseCursor) return;
+  if (document.documentElement.dataset.footballCursorBound === "true") return;
+  document.documentElement.dataset.footballCursorBound = "true";
 
   let lastTrail = 0;
 
@@ -1191,4 +1215,5 @@ if (window.location.hash && performance.getEntriesByType("navigation")[0]?.type 
   window.scrollTo(0, 0);
 }
 
+window.DIS_PWA_REFRESH = () => loadContent({ allowFallback: false });
 loadContent();

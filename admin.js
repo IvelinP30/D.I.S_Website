@@ -224,19 +224,23 @@ function removalLabel(type) {
   );
 }
 
-async function loadAdminContent() {
+async function loadAdminContent({ rethrow = false } = {}) {
   try {
-    const response = await fetch("/api/content", { headers: { Accept: "application/json" } });
+    const response = await fetch("/api/content", {
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    });
     if (!response.ok) throw new Error("Content API unavailable");
     adminConfig = await response.json();
-  } catch {
+  } catch (error) {
     setStatus("Съдържанието не може да бъде заредено от сървъра.", true);
+    if (rethrow) throw error;
   }
 
   adminConfig = withDefaults(adminConfig);
   savedConfig = structuredClone(adminConfig);
   renderEditors();
-  loadMessages();
+  await loadMessages();
 }
 
 function withDefaults(config) {
@@ -2034,4 +2038,5 @@ document.querySelector("#logout-button").addEventListener("click", async () => {
   }
 });
 
+window.DIS_PWA_REFRESH = () => loadAdminContent({ rethrow: true });
 loadAdminContent();

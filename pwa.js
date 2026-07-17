@@ -38,10 +38,22 @@ function shouldEnablePullToRefresh(standalone, maxTouchPoints, hasTouchStart) {
   return standalone && (maxTouchPoints > 0 || hasTouchStart);
 }
 
+function getPullHapticStep(distance, threshold, steps = 6) {
+  if (distance <= 0 || threshold <= 0 || steps <= 0) return 0;
+  return Math.min(steps, Math.floor((distance / threshold) * steps));
+}
+
+function getElasticPullDistance(distance, limit = 92, resistance = 68) {
+  if (distance <= 0 || limit <= 0 || resistance <= 0) return 0;
+  return limit * (1 - Math.exp(-distance / resistance));
+}
+
 function setupPullToRefresh() {
   if (!shouldEnablePullToRefresh(isStandalonePwa(), navigator.maxTouchPoints, "ontouchstart" in window)) return;
 
   document.documentElement.classList.add("pwa-standalone", "pwa-pull-refresh-enabled");
+  const content = document.querySelector(".site-shell, .admin-shell") || document.body;
+  content.classList.add("pwa-pull-refresh-content");
 
   const indicator = document.createElement("aside");
   indicator.className = "pwa-pull-refresh";
@@ -56,36 +68,63 @@ function setupPullToRefresh() {
 
   const label = indicator.querySelector(".pwa-pull-refresh-label");
   const refreshThreshold = 96;
-  const maxPullDistance = 118;
+  const maxPullDistance = 180;
+  const hapticSteps = 6;
   let startX = 0;
   let startY = 0;
   let tracking = false;
   let readyToRefresh = false;
   let refreshing = false;
   let resetTimer = 0;
+  let lastHapticStep = 0;
+  let pullFrame = 0;
+  let pendingPullDistance = 0;
 
-  const setPullPosition = (rawDistance) => {
+  const renderPullPosition = (rawDistance) => {
     const progress = Math.min(1, rawDistance / refreshThreshold);
-    const visualDistance = Math.min(88, rawDistance * 0.8);
+    const visualDistance = getElasticPullDistance(rawDistance);
     indicator.style.setProperty("--pull-distance", `${visualDistance}px`);
     indicator.style.setProperty("--pull-opacity", String(Math.min(1, progress * 1.5)));
-    indicator.style.setProperty("--pull-rotation", `${Math.round(progress * 280)}deg`);
+    indicator.style.setProperty("--pull-rotation", `${Math.round(progress * 320)}deg`);
+    indicator.style.setProperty("--pull-scale", String(0.82 + progress * 0.18));
+    content.style.setProperty("--pwa-content-pull-distance", `${visualDistance}px`);
+  };
+
+  const setPullPosition = (rawDistance, immediate = false) => {
+    pendingPullDistance = Math.max(0, rawDistance);
+    if (pullFrame) window.cancelAnimationFrame(pullFrame);
+    if (immediate) {
+      renderPullPosition(pendingPullDistance);
+      pullFrame = 0;
+      return;
+    }
+    pullFrame = window.requestAnimationFrame(() => {
+      renderPullPosition(pendingPullDistance);
+      pullFrame = 0;
+    });
   };
 
   const hideIndicator = () => {
     indicator.classList.remove("is-visible", "is-pulling", "is-ready", "is-refreshing", "is-error");
+    content.classList.remove("is-pulling", "is-refreshing");
     indicator.setAttribute("aria-hidden", "true");
-    indicator.style.setProperty("--pull-distance", "0px");
-    indicator.style.setProperty("--pull-opacity", "0");
-    indicator.style.setProperty("--pull-rotation", "0deg");
     label.textContent = "Издърпай за обновяване";
     readyToRefresh = false;
     tracking = false;
+    refreshing = false;
+    lastHapticStep = 0;
   };
 
   const scheduleHide = (delay = 220) => {
     window.clearTimeout(resetTimer);
     resetTimer = window.setTimeout(hideIndicator, delay);
+  };
+
+  const returnToRest = (delay = 280) => {
+    indicator.classList.remove("is-pulling", "is-ready", "is-refreshing", "is-error");
+    content.classList.remove("is-pulling", "is-refreshing");
+    setPullPosition(0, true);
+    scheduleHide(delay);
   };
 
   window.addEventListener("touchstart", (event) => {
@@ -96,6 +135,9 @@ function setupPullToRefresh() {
     startY = touch.clientY;
     tracking = true;
     readyToRefresh = false;
+    lastHapticStep = 0;
+    indicator.classList.remove("is-error", "is-refreshing");
+    content.classList.remove("is-refreshing");
     window.clearTimeout(resetTimer);
   }, { passive: true });
 
@@ -108,7 +150,7 @@ function setupPullToRefresh() {
 
     if (window.scrollY > 0 || deltaY <= 0 || deltaX > deltaY) {
       tracking = false;
-      scheduleHide();
+      returnToRest();
       return;
     }
 
@@ -118,45 +160,65 @@ function setupPullToRefresh() {
 
     indicator.classList.add("is-visible", "is-pulling");
     indicator.classList.toggle("is-ready", reachedThreshold);
+    content.classList.add("is-pulling");
     indicator.setAttribute("aria-hidden", "false");
     label.textContent = reachedThreshold ? "Пусни за обновяване" : "Издърпай за обновяване";
     setPullPosition(pullDistance);
 
-    if (reachedThreshold && !readyToRefresh && typeof navigator.vibrate === "function") {
-      navigator.vibrate(12);
+    const hapticStep = getPullHapticStep(pullDistance, refreshThreshold, hapticSteps);
+    if (hapticStep > lastHapticStep) {
+      if (typeof navigator.vibrate === "function") navigator.vibrate(hapticStep === hapticSteps ? 18 : 6);
+      lastHapticStep = hapticStep;
     }
     readyToRefresh = reachedThreshold;
   }, { passive: false });
 
-  const finishPull = () => {
+  const finishPull = async () => {
     if (!tracking || refreshing) return;
 
     tracking = false;
     indicator.classList.remove("is-pulling", "is-ready");
+    content.classList.remove("is-pulling");
 
     if (!readyToRefresh) {
-      scheduleHide();
+      returnToRest();
       return;
     }
 
     if (!navigator.onLine) {
       indicator.classList.add("is-visible", "is-error");
       label.textContent = "Няма интернет";
-      setPullPosition(refreshThreshold);
-      scheduleHide(900);
+      setPullPosition(refreshThreshold, true);
+      window.setTimeout(() => returnToRest(), 700);
       return;
     }
 
     refreshing = true;
     indicator.classList.add("is-visible", "is-refreshing");
+    content.classList.add("is-refreshing");
     label.textContent = "Обновяване…";
-    setPullPosition(refreshThreshold);
-    window.setTimeout(() => window.location.reload(), 260);
+    setPullPosition(refreshThreshold, true);
+
+    try {
+      if (typeof window.DIS_PWA_REFRESH !== "function") throw new Error("Content refresh is unavailable");
+      await Promise.all([
+        window.DIS_PWA_REFRESH(),
+        new Promise((resolve) => window.setTimeout(resolve, 520))
+      ]);
+      label.textContent = "Обновено";
+      returnToRest(320);
+    } catch {
+      indicator.classList.remove("is-refreshing");
+      indicator.classList.add("is-error");
+      content.classList.remove("is-refreshing");
+      label.textContent = "Обновяването не успя";
+      window.setTimeout(() => returnToRest(), 800);
+    }
   };
 
   window.addEventListener("touchend", finishPull, { passive: true });
   window.addEventListener("touchcancel", () => {
-    if (!refreshing) scheduleHide();
+    if (!refreshing) returnToRest();
   }, { passive: true });
 }
 
@@ -257,4 +319,6 @@ if (typeof window !== "undefined") {
   setupPullToRefresh();
   setupPwa();
 }
-if (typeof module !== "undefined") module.exports = { getSafariInstallPlatform, shouldEnablePullToRefresh };
+if (typeof module !== "undefined") {
+  module.exports = { getSafariInstallPlatform, shouldEnablePullToRefresh, getPullHapticStep, getElasticPullDistance };
+}

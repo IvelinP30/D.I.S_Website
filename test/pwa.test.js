@@ -2,7 +2,12 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const { getSafariInstallPlatform, shouldEnablePullToRefresh } = require("../pwa");
+const {
+  getSafariInstallPlatform,
+  shouldEnablePullToRefresh,
+  getPullHapticStep,
+  getElasticPullDistance
+} = require("../pwa");
 
 const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -118,22 +123,37 @@ test("shared PWA script exposes an automatic offline status bar", () => {
 test("installed touch PWAs expose a guarded pull-to-refresh gesture", () => {
   const pwa = read("pwa.js");
   const styles = read("styles.css");
+  const publicScript = read("script.js");
+  const adminScript = read("admin.js");
 
   assert.equal(shouldEnablePullToRefresh(true, 5, false), true);
   assert.equal(shouldEnablePullToRefresh(true, 0, true), true);
   assert.equal(shouldEnablePullToRefresh(false, 5, true), false);
   assert.equal(shouldEnablePullToRefresh(true, 0, false), false);
+  assert.equal(getPullHapticStep(0, 96), 0);
+  assert.equal(getPullHapticStep(16, 96), 1);
+  assert.equal(getPullHapticStep(48, 96), 3);
+  assert.equal(getPullHapticStep(96, 96), 6);
+  assert.ok(getElasticPullDistance(96) < 96);
+  assert.ok(getElasticPullDistance(48) - getElasticPullDistance(0) > getElasticPullDistance(144) - getElasticPullDistance(96));
 
   assert.match(pwa, /display-mode: standalone/);
   assert.match(pwa, /navigator\.maxTouchPoints/);
   assert.match(pwa, /addEventListener\("touchstart"/);
   assert.match(pwa, /addEventListener\("touchmove"/);
   assert.match(pwa, /addEventListener\("touchend"/);
-  assert.match(pwa, /navigator\.vibrate\(12\)/);
-  assert.match(pwa, /window\.location\.reload\(\)/);
+  assert.match(pwa, /navigator\.vibrate\(hapticStep === hapticSteps \? 18 : 6\)/);
+  assert.match(pwa, /window\.DIS_PWA_REFRESH\(\)/);
+  assert.doesNotMatch(pwa, /window\.location\.reload\(\)/);
   assert.match(pwa, /if \(!navigator\.onLine\)/);
   assert.match(pwa, /Пусни за обновяване/);
   assert.match(styles, /\.pwa-pull-refresh/);
+  assert.match(styles, /\.pwa-pull-refresh-content/);
   assert.match(styles, /\.pwa-pull-refresh\.is-refreshing/);
+  assert.match(styles, /clip-path: inset\(50%\)/);
   assert.match(styles, /overscroll-behavior-y: none/);
+  assert.match(publicScript, /window\.DIS_PWA_REFRESH = \(\) => loadContent/);
+  assert.match(adminScript, /window\.DIS_PWA_REFRESH = \(\) => loadAdminContent/);
+  assert.match(publicScript, /cache: "no-store"/);
+  assert.match(adminScript, /cache: "no-store"/);
 });
