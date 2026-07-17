@@ -808,6 +808,10 @@ async function handleRequest(request, response) {
     });
   }
 
+  if (url.pathname === "/admin.webmanifest" && !isAuthenticated(request)) {
+    return send(response, 404, "Not found", { "Content-Type": "text/plain; charset=utf-8" });
+  }
+
   if (url.pathname === "/admin" || url.pathname === "/admin.html") {
     if (!isAuthenticated(request)) return send(response, 302, "", { Location: "/login" });
     const adminPath = path.join(root, "admin.html");

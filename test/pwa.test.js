@@ -20,6 +20,8 @@ test("public and admin manifests have separate install identities", () => {
   assert.equal(publicManifest.start_url, "/");
   assert.equal(adminManifest.id, "/admin");
   assert.equal(adminManifest.start_url, "/admin");
+  assert.equal(publicManifest.scope, "/");
+  assert.equal(adminManifest.scope, "/admin");
   assert.equal(publicManifest.display, "standalone");
   assert.equal(adminManifest.display, "standalone");
 
@@ -69,12 +71,20 @@ test("admin page loads its own manifest and a capability-gated install button", 
   const html = read("admin.html");
 
   assert.match(html, /rel="manifest" href="\/admin\.webmanifest"/);
+  assert.match(html, /href="\/admin\.webmanifest" crossorigin="use-credentials"/);
   assert.match(html, /apple-touch-icon[^>]+admin-apple-touch-icon\.png/);
   assert.match(html, /data-pwa-install-button[^>]*hidden/);
   assert.match(html, /admin-hero-topline/);
   assert.match(html, /class="pwa-install-button" data-pwa-install-button/);
   assert.match(html, /Добави админ приложение/);
   assert.match(html, /pwa\.js\?v=/);
+});
+
+test("server keeps the admin manifest private", () => {
+  const server = read("server.js");
+
+  assert.match(server, /url\.pathname === "\/admin\.webmanifest" && !isAuthenticated\(request\)/);
+  assert.match(server, /return send\(response, 404, "Not found"/);
 });
 
 test("service worker bypasses private and dynamic routes", () => {

@@ -5,7 +5,7 @@
   "description": "Защитен админ панел за управление на D.I.S Подкаст.",
   "lang": "bg-BG",
   "start_url": "/admin",
-  "scope": "/",
+  "scope": "/admin",
   "display": "standalone",
   "background_color": "#050608",
   "theme_color": "#050608",
