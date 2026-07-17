@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
-const { sendMessageEmail } = require("./message-email");
+const { sendMessageEmail } = require("./server/message-email");
 
 const root = __dirname;
 const envFile = path.join(root, ".env");
@@ -504,7 +504,7 @@ function loginPage(error = "") {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-        <link rel="stylesheet" href="/styles.css?v=20260713-2" />
+        <link rel="stylesheet" href="/client/css/styles.css?v=20260713-2" />
       </head>
       <body class="admin-body">
         <main class="login-shell">

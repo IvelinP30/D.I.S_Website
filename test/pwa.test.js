@@ -7,7 +7,7 @@ const {
   shouldEnablePullToRefresh,
   getPullHapticStep,
   getElasticPullDistance
-} = require("../pwa");
+} = require("../client/js/pwa");
 
 const root = path.join(__dirname, "..");
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
@@ -100,8 +100,8 @@ test("public policies disclose PWA storage and its exclusions", () => {
 });
 
 test("cookie settings remain available when analytics is not configured", () => {
-  const analytics = read("analytics.js");
-  const styles = read("styles.css");
+  const analytics = read("client/js/analytics.js");
+  const styles = read("client/css/styles.css");
 
   assert.match(analytics, /Статистиката не е активна/);
   assert.match(analytics, /data-consent-close/);
@@ -109,8 +109,8 @@ test("cookie settings remain available when analytics is not configured", () => 
 });
 
 test("shared PWA script exposes an automatic offline status bar", () => {
-  const pwa = read("pwa.js");
-  const styles = read("styles.css");
+  const pwa = read("client/js/pwa.js");
+  const styles = read("client/css/styles.css");
 
   assert.match(pwa, /Офлайн режим — виждаш последно зареденото съдържание/);
   assert.match(pwa, /window\.addEventListener\("online"/);
@@ -121,10 +121,10 @@ test("shared PWA script exposes an automatic offline status bar", () => {
 });
 
 test("installed touch PWAs expose a guarded pull-to-refresh gesture", () => {
-  const pwa = read("pwa.js");
-  const styles = read("styles.css");
-  const publicScript = read("script.js");
-  const adminScript = read("admin.js");
+  const pwa = read("client/js/pwa.js");
+  const styles = read("client/css/styles.css");
+  const publicScript = read("client/js/script.js");
+  const adminScript = read("client/js/admin.js");
 
   assert.equal(shouldEnablePullToRefresh(true, 5, false), true);
   assert.equal(shouldEnablePullToRefresh(true, 0, true), true);

@@ -1557,7 +1557,7 @@ h3 {
   position: absolute;
   inset: 0;
   z-index: 0;
-  background: url("./assets/scroll-football-track-alpha.webp") center / auto 100% no-repeat;
+  background: url("../../assets/scroll-football-track-alpha.webp") center / auto 100% no-repeat;
   content: "";
   opacity: 0.88;
 }
@@ -1572,7 +1572,7 @@ h3 {
   border: 0;
   border-radius: 50%;
   overflow: hidden;
-  background: url("./assets/scroll-football-ball.webp") center / 124% no-repeat;
+  background: url("../../assets/scroll-football-ball.webp") center / 124% no-repeat;
   transform: translate3d(-50%, -50%, 0) rotate(calc(var(--scroll-progress) * 540deg));
   will-change: top, transform;
   --scroll-progress: 0;
@@ -1639,7 +1639,7 @@ h3 {
   inset: 0;
   background:
     linear-gradient(90deg, rgba(5, 6, 8, 0.96), rgba(5, 6, 8, 0.78)),
-    url("./assets/news-football-hero.webp") center / cover no-repeat;
+    url("../../assets/news-football-hero.webp") center / cover no-repeat;
   content: "";
   opacity: 0.34;
 }
@@ -2277,7 +2277,7 @@ html.pwa-refreshing body {
     height: auto;
     border: 0;
     border-radius: 0;
-    background: url("./assets/scroll-football-track-mobile.webp") center / 100% auto no-repeat;
+    background: url("../../assets/scroll-football-track-mobile.webp") center / 100% auto no-repeat;
     box-shadow: none;
     opacity: 1;
   }
@@ -5667,7 +5667,7 @@ html.pwa-refreshing body {
   border-radius: 8px;
   background:
     linear-gradient(120deg, rgba(5, 6, 8, 0.96), rgba(7, 31, 23, 0.86)),
-    url("./assets/hero-football-podcast.webp") center 42% / cover no-repeat;
+    url("../../assets/hero-football-podcast.webp") center 42% / cover no-repeat;
   padding: clamp(34px, 6vw, 72px);
 }
 

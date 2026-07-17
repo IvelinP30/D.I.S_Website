@@ -5,7 +5,7 @@ const {
   buildMessageEmail,
   resolveMessageRecipient,
   sendMessageEmail
-} = require("../message-email");
+} = require("../server/message-email");
 
 function sampleMessage(overrides = {}) {
   return {

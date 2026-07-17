@@ -77,7 +77,7 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  if (["/styles.css", "/pwa.js", "/script.js", "/config.js"].includes(url.pathname)) {
+  if (["/client/css/styles.css", "/client/js/pwa.js", "/client/js/script.js", "/client/js/config.js"].includes(url.pathname)) {
     event.respondWith(networkFirst(request));
   }
 });
