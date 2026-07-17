@@ -118,6 +118,22 @@ test("cookie settings remain available when analytics is not configured", () => 
   assert.doesNotMatch(styles, /analytics-disabled \[data-cookie-settings\]/);
 });
 
+test("public navigation and consent UI are compact on mobile", () => {
+  const publicScript = read("client/js/script.js");
+  const analytics = read("client/js/analytics.js");
+  const styles = read("client/css/styles.css");
+
+  assert.match(publicScript, /className = "nav-toggle"/);
+  assert.match(publicScript, /aria-expanded/);
+  assert.match(publicScript, /event\.key !== "Escape"/);
+  assert.match(styles, /\.topbar\.is-nav-open \.nav/);
+  assert.match(styles, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /min-height: clamp\(510px, 70svh, 620px\)/);
+  assert.doesNotMatch(styles, /\.subpage-hero \{ min-height: 100vh/);
+  assert.match(analytics, /Помогни ни с анонимна статистика/);
+  assert.match(styles, /width: min\(780px, calc\(100% - 32px\)\)/);
+});
+
 test("shared PWA script exposes an automatic offline status bar", () => {
   const pwa = read("client/js/pwa.js");
   const styles = read("client/css/styles.css");

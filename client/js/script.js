@@ -1,6 +1,56 @@
 let config = window.DIS_SITE_CONFIG || {};
 let giveawayCountdownTimer = null;
 
+function bindMainNavigation(mainNav) {
+  const topbar = mainNav.closest(".topbar");
+  if (!topbar || topbar.dataset.mobileNavigationBound === "true") return;
+  topbar.dataset.mobileNavigationBound = "true";
+
+  const toggle = document.createElement("button");
+  toggle.className = "nav-toggle";
+  toggle.type = "button";
+  toggle.dataset.navToggle = "";
+  toggle.setAttribute("aria-controls", mainNav.id || "main-nav");
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.setAttribute("aria-label", "Отвори меню");
+  toggle.innerHTML = `
+    <span aria-hidden="true"></span>
+    <span aria-hidden="true"></span>
+    <span aria-hidden="true"></span>`;
+  topbar.insertBefore(toggle, mainNav);
+
+  const closeNavigation = () => {
+    topbar.classList.remove("is-nav-open");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-label", "Отвори меню");
+  };
+
+  toggle.addEventListener("click", () => {
+    const isOpen = !topbar.classList.contains("is-nav-open");
+    topbar.classList.toggle("is-nav-open", isOpen);
+    toggle.setAttribute("aria-expanded", String(isOpen));
+    toggle.setAttribute("aria-label", isOpen ? "Затвори меню" : "Отвори меню");
+  });
+
+  mainNav.addEventListener("click", (event) => {
+    if (event.target.closest("a")) closeNavigation();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!topbar.contains(event.target)) closeNavigation();
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !topbar.classList.contains("is-nav-open")) return;
+    closeNavigation();
+    toggle.focus({ preventScroll: true });
+  });
+
+  window.addEventListener("resize", () => {
+    if (window.innerWidth > 860) closeNavigation();
+  }, { passive: true });
+}
+
 function optimizeStaticAssetUrls(value) {
   if (Array.isArray(value)) return value.map(optimizeStaticAssetUrls);
   if (value && typeof value === "object") {
@@ -105,6 +155,7 @@ function renderPage() {
         return `<a class="${current ? "is-current" : ""}" href="${escapeAttribute(pageHref)}">${escapeHTML(item.label || "")}</a>`;
       })
       .join("");
+    bindMainNavigation(mainNav);
   }
 
   setHTML("#hero-eyebrow", brandText(hero.eyebrow || "Футбол. Реакции. Подкаст."));
