@@ -151,9 +151,13 @@ test("installed touch PWAs expose a guarded pull-to-refresh gesture", () => {
   assert.match(pwa, /if \(!navigator\.onLine\)/);
   assert.match(pwa, /Пусни за обновяване/);
   assert.match(styles, /\.pwa-pull-refresh/);
-  assert.doesNotMatch(styles, /\.pwa-pull-refresh-content/);
-  assert.doesNotMatch(pwa, /--pwa-content-pull-distance/);
+  assert.match(styles, /\.pwa-pull-refresh-content/);
+  assert.match(pwa, /--pwa-content-pull-distance/);
   assert.match(styles, /\.pwa-pull-refresh\.is-refreshing/);
+  assert.match(styles, /\.pwa-pull-refresh\.is-complete/);
+  assert.match(styles, /html\.pwa-refreshing body/);
+  assert.match(pwa, /const completeRefresh = \(\) =>/);
+  assert.match(pwa, /window\.setTimeout\(\(\) => \{[\s\S]*setPullPosition\(0, true\)[\s\S]*\}, 180\)/);
   assert.match(styles, /clip-path: inset\(50%\)/);
   assert.match(styles, /overscroll-behavior-y: none/);
   assert.match(publicScript, /window\.DIS_PWA_REFRESH = \(\) => loadContent/);

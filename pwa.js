@@ -52,6 +52,8 @@ function setupPullToRefresh() {
   if (!shouldEnablePullToRefresh(isStandalonePwa(), navigator.maxTouchPoints, "ontouchstart" in window)) return;
 
   document.documentElement.classList.add("pwa-standalone", "pwa-pull-refresh-enabled");
+  const content = document.querySelector(".site-shell, .admin-shell") || document.body;
+  content.classList.add("pwa-pull-refresh-content");
 
   const indicator = document.createElement("aside");
   indicator.className = "pwa-pull-refresh";
@@ -85,6 +87,7 @@ function setupPullToRefresh() {
     indicator.style.setProperty("--pull-opacity", String(Math.min(1, progress * 1.5)));
     indicator.style.setProperty("--pull-rotation", `${Math.round(progress * 320)}deg`);
     indicator.style.setProperty("--pull-scale", String(0.82 + progress * 0.18));
+    content.style.setProperty("--pwa-content-pull-distance", `${visualDistance}px`);
   };
 
   const setPullPosition = (rawDistance, immediate = false) => {
@@ -102,7 +105,8 @@ function setupPullToRefresh() {
   };
 
   const hideIndicator = () => {
-    indicator.classList.remove("is-visible", "is-pulling", "is-ready", "is-refreshing", "is-error");
+    indicator.classList.remove("is-visible", "is-pulling", "is-ready", "is-refreshing", "is-complete", "is-error");
+    content.classList.remove("is-pulling", "is-refreshing");
     document.documentElement.classList.remove("pwa-refreshing");
     indicator.setAttribute("aria-hidden", "true");
     label.textContent = "Издърпай за обновяване";
@@ -118,9 +122,20 @@ function setupPullToRefresh() {
   };
 
   const returnToRest = (delay = 280) => {
-    indicator.classList.remove("is-pulling", "is-ready", "is-refreshing", "is-error");
+    indicator.classList.remove("is-pulling", "is-ready", "is-refreshing", "is-complete", "is-error");
+    content.classList.remove("is-pulling", "is-refreshing");
     setPullPosition(0, true);
     scheduleHide(delay);
+  };
+
+  const completeRefresh = () => {
+    indicator.classList.add("is-complete");
+    window.setTimeout(() => {
+      indicator.classList.remove("is-refreshing");
+      content.classList.remove("is-refreshing");
+      setPullPosition(0, true);
+      scheduleHide(360);
+    }, 180);
   };
 
   window.addEventListener("touchstart", (event) => {
@@ -132,7 +147,8 @@ function setupPullToRefresh() {
     tracking = true;
     readyToRefresh = false;
     lastHapticStep = 0;
-    indicator.classList.remove("is-error", "is-refreshing");
+    indicator.classList.remove("is-complete", "is-error", "is-refreshing");
+    content.classList.remove("is-refreshing");
     window.clearTimeout(resetTimer);
   }, { passive: true });
 
@@ -159,6 +175,7 @@ function setupPullToRefresh() {
 
     indicator.classList.add("is-visible", "is-pulling");
     indicator.classList.toggle("is-ready", reachedThreshold);
+    content.classList.add("is-pulling");
     indicator.setAttribute("aria-hidden", "false");
     label.textContent = reachedThreshold ? "Пусни за обновяване" : "Издърпай за обновяване";
     setPullPosition(pullDistance);
@@ -176,6 +193,7 @@ function setupPullToRefresh() {
 
     tracking = false;
     indicator.classList.remove("is-pulling", "is-ready");
+    content.classList.remove("is-pulling");
 
     if (!readyToRefresh) {
       returnToRest();
@@ -193,6 +211,7 @@ function setupPullToRefresh() {
     refreshing = true;
     document.documentElement.classList.add("pwa-refreshing");
     indicator.classList.add("is-visible", "is-refreshing");
+    content.classList.add("is-refreshing");
     label.textContent = "Обновяване…";
     setPullPosition(refreshThreshold, true);
 
@@ -203,10 +222,11 @@ function setupPullToRefresh() {
         new Promise((resolve) => window.setTimeout(resolve, 520))
       ]);
       label.textContent = "Обновено";
-      returnToRest(320);
+      completeRefresh();
     } catch {
       indicator.classList.remove("is-refreshing");
       indicator.classList.add("is-error");
+      content.classList.remove("is-refreshing");
       label.textContent = "Обновяването не успя";
       window.setTimeout(() => returnToRest(), 800);
     }
