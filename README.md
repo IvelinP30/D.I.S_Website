@@ -10,7 +10,7 @@ Live site: https://dis-podcast.onrender.com
 - Separate news page with manually managed posts
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
-- D.I.S Prediction League with nickname-only participation, score predictions, automatic points and streaks, badges, weekly/monthly/season tables, and recovery codes
+- Multiple D.I.S Prediction Leagues with one shared nickname-only profile, separate matches, points, streaks, trophies and standings, plus recovery codes
 - Optional Fan Zone giveaway registration with protected participants, CSV export, and random winner drawing
 - Contact, partnership, and fan-idea forms stored in a protected admin inbox, with production email notifications
 - Presents the channel as a football media brand
@@ -93,13 +93,13 @@ Voting creates a long-lived signed `dis_voter` cookie only after the visitor sub
 
 Each visitor can vote once in every separate poll. Deleting a poll from admin also removes its stored vote records on the next content save.
 
-Prediction League uses a nickname instead of an account. Creating or recovering participation sets a signed, `HttpOnly` `dis_league` cookie that contains only an anonymous player ID and integrity signature. Its 400-day lifetime is renewed after every authenticated League visit, nickname change, or saved prediction, allowing an active browser to remain connected indefinitely. The server-side participation and points do not expire automatically. A one-time recovery code can reconnect a different browser or phone; only its keyed hash is stored, never the readable code. Nicknames are globally unique after case, spaces, dots, hyphens, and underscores are normalized; mixing Cyrillic and Latin letters in one nickname is rejected. The server locks predictions at kickoff, calculates points from admin-entered final scores, awards 3 points for the correct outcome, 7 additional points for an exact score, and 2 bonus points after each third consecutive correct outcome. Recovery and registration attempts are rate-limited in memory to slow guessing and automated nickname creation.
+Prediction Leagues use one shared nickname instead of separate accounts. Creating or recovering participation sets a signed, `HttpOnly` `dis_league` cookie that contains only an anonymous player ID and integrity signature. Its 400-day lifetime is renewed after every authenticated League visit, nickname change, or saved prediction, allowing an active browser to remain connected indefinitely. The server-side participation and points do not expire automatically. A one-time recovery code reconnects the same shared profile on a different browser or phone; only its keyed hash is stored, never the readable code. Nicknames are globally unique after case, spaces, dots, hyphens, and underscores are normalized; mixing Cyrillic and Latin letters in one nickname is rejected. Each configured league has separate matches, points, streaks, trophies and weekly/monthly/season standings. A participant enters a league's table after making a prediction there.
 
-The public league endpoint exposes standings and only the current visitor's predictions. It never exposes recovery hashes, player IDs, or another participant's score picks. Local data uses `data/prediction-league.json`; production uses the protected `predictionLeague` row in Supabase `app_state` through the existing storage abstraction.
+The public league endpoint accepts a league ID and exposes only that league's standings and the current visitor's predictions. It also returns a small catalogue for switching leagues. It never exposes recovery hashes, player IDs, or another participant's score picks. Local data uses `data/prediction-league.json`; production uses the protected `predictionLeague` row in Supabase `app_state` through the existing storage abstraction.
 
-Deleting a settled Prediction League match from the admin archives its result internally instead of deleting its scoring history. The match disappears from the public page and admin editor, while earned points and statistics continue to count. Deleting a match without a final result removes its unearned predictions.
+Deleting a settled match or removing its league from the admin archives the result with its league ID instead of deleting its scoring history. The match disappears from the public page and admin editor, while earned points and statistics remain preserved. Deleting a match without a final result removes its unearned predictions.
 
-Prediction League trophies are managed from the Fan Zone admin page. Admins can add or remove trophies, edit their names, select one of the supported automatic award conditions, and choose a fixed bronze/silver/gold/platinum/legendary difficulty tier. The tier controls the public color. Trophy ownership is derived from prediction statistics, so changing or deleting a trophy recalculates awards without changing participant points.
+Leagues and their trophies are managed from the Fan Zone admin page. Admins can create, select, hide or remove leagues and edit each league's own settings, matches and trophies. Trophy ownership is derived only from statistics in that league, so changing or deleting a trophy recalculates its awards without changing participant points.
 
 Public forms write validated messages through `POST /api/messages`. The backend includes a honeypot and an in-memory per-IP rate limit. Reading, changing status, and deleting messages require an authenticated admin session.
 
@@ -150,7 +150,7 @@ Most public content is editable from the admin panel, including:
 - host profiles and optional profile photos
 - host predictions
 - fan polls, options, status, deadline, and result visibility
-- Prediction League title, season, point-rule copy, matches, kickoff times, derby flags, and final scores
+- Prediction League catalogue and each league's title, season, matches, kickoff times, derby flags, final scores and trophies
 - giveaway title, multiple prizes, prize quantities/images, dates, eligibility, rules, privacy notice, image, and active state
 - giveaway participant search/review, eligibility control, CSV export, secure winner/prize draw, and result reset
 - inbox message statuses and deletion
@@ -166,7 +166,7 @@ Each upload field displays its own loading spinner and progress message while op
 
 - `/` - main website
 - `/news` - news page
-- `/fan-zone` - D.I.S Prediction League, host predictions, polls, and fan idea form
+- `/fan-zone` - D.I.S Prediction Leagues, host predictions, polls, and fan idea form
 - `/fan-zone#giveaway` - direct link to the active giveaway; hidden when no campaign is active
 - `/hosts` - editable host profiles
 - `/partners` - advertising formats, packages, active campaigns, and statistics
@@ -268,7 +268,7 @@ When all Supabase variables are present, the Node backend automatically stores c
 
 Production giveaway participants are stored in the protected Supabase `app_state` row whose key is `giveawayEntries`. Local development uses the ignored `data/giveaway-entries.json` file, so local tests do not touch production unless `USE_SUPABASE_LOCAL=true` is set intentionally. No additional Supabase table or migration is required.
 
-Prediction League participants and predictions use the same protected `app_state` table under the `predictionLeague` key, so no additional Supabase migration is required.
+Prediction League participants and predictions use the same protected `app_state` table under the `predictionLeague` key. Existing single-league content is migrated in memory to the `general` league, while new predictions include a league ID, so no additional Supabase migration is required.
 
 Local development uses JSON files and the local `uploads/` directory even when Supabase credentials exist in `.env`. Set `USE_SUPABASE_LOCAL=true` only when intentionally testing against the production Supabase project. Render uses Supabase automatically because `NODE_ENV=production`.
 

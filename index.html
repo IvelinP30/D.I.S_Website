@@ -76,7 +76,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./client/css/styles.css?v=20260717-15" />
+    <link rel="stylesheet" href="./client/css/styles.css?v=20260718-2" />
   </head>
   <body>
     <div class="site-shell">
@@ -139,24 +139,24 @@
           </a>
         </section>
 
-        <section class="section home-league-promo" data-home-league-promo hidden>
-          <a class="home-league-promo-card" href="/fan-zone#prediction-league" aria-label="Влез в D.I.S Лигата на прогнозите">
-            <span class="home-league-promo-glow" aria-hidden="true"></span>
-            <span class="home-league-promo-copy">
+        <section class="section home-league-promo" id="home-prediction-leagues" data-home-league-promo hidden>
+          <header class="home-league-promo-heading">
+            <div>
               <small><i></i> Фенска футболна игра</small>
-              <strong data-home-league-title>D.I.S Лига на прогнозите</strong>
-              <span>Прогнозирай кой ще спечели или дали ще има равенство. Печели точки и се изкачи в класацията.</span>
-              <span class="home-league-promo-match">
-                <small data-home-league-competition>Предстоящ мач</small>
-                <b><span data-home-league-home>Отбор 1</span><em>срещу</em><span data-home-league-away>Отбор 2</span></b>
-              </span>
-              <span class="home-league-promo-cta">Влез в играта <b aria-hidden="true">→</b></span>
-            </span>
-            <span class="home-league-promo-trophy" aria-hidden="true">
-              <b>🏆</b>
-              <small><strong data-home-league-count>1</strong> <span data-home-league-count-label>мач в играта</span></small>
-            </span>
-          </a>
+              <h2 data-home-league-title>D.I.S Лиги на прогнозите</h2>
+              <p data-home-league-description>Избери първенство, направи прогноза и се изкачи в отделната класация.</p>
+            </div>
+            <p class="home-league-promo-summary" aria-label="Активност в лигите">
+              <span><strong data-home-league-count>1</strong> <small data-home-league-count-label>активна лига</small></span>
+              <i aria-hidden="true"></i>
+              <span><strong data-home-league-match-count>1</strong> <small data-home-league-match-label>отворена прогноза</small></span>
+            </p>
+          </header>
+          <div class="home-league-promo-grid" data-home-league-cards></div>
+          <footer class="home-league-promo-footer">
+            <span data-home-league-more hidden></span>
+            <a href="/fan-zone#prediction-league">Виж всички лиги <b aria-hidden="true">→</b></a>
+          </footer>
         </section>
 
         <section class="section socials priority-section" id="socials">
@@ -249,7 +249,7 @@
 
     <script src="./client/js/pwa.js?v=20260717-9"></script>
     <script src="./client/js/config.js?v=20260717-5"></script>
-    <script src="./client/js/script.js?v=20260717-11"></script>
+    <script src="./client/js/script.js?v=20260718-2"></script>
     <script src="/analytics-config.js"></script>
     <script src="./client/js/analytics.js?v=20260717-3"></script>
   </body>

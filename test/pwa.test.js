@@ -141,11 +141,15 @@ test("homepage promotes the prediction league only when visible matches exist", 
 
   assert.match(homepage, /data-home-league-promo[^>]*hidden/);
   assert.match(homepage, /href="\/fan-zone#prediction-league"/);
-  assert.match(homepage, /Влез в играта/);
+  assert.match(homepage, /data-home-league-cards/);
+  assert.match(homepage, /Виж всички лиги/);
   assert.match(publicScript, /renderHomeLeaguePromo\(config\.predictionLeague\)/);
-  assert.match(publicScript, /match\?\.enabled !== false/);
-  assert.match(publicScript, /league\.enabled !== false && matches\.length > 0/);
-  assert.match(styles, /\.home-league-promo-card/);
+  assert.match(publicScript, /match\?\.enabled === false \|\| match\?\.result/);
+  assert.match(publicScript, /kickoff > now/);
+  assert.match(publicScript, /activeLeagues\.slice\(0, 3\)/);
+  assert.match(publicScript, /home-league-card\$\{singleLeague/);
+  assert.match(styles, /\.home-league-promo-grid/);
+  assert.match(styles, /\.home-league-card/);
 });
 
 test("new prediction league recovery codes use a timed one-time modal", () => {
@@ -175,6 +179,23 @@ test("recognized league players can replace a lost recovery code", () => {
   assert.match(publicScript, /Новият код за възстановяване е готов\. Старият вече не работи/);
   assert.match(server, /url\.pathname === "\/api\/league\/recovery-code"/);
   assert.match(server, /rotatePlayerRecoveryCode\(leagueStore, playerId, sessionSecret\)/);
+});
+
+test("prediction leagues share one profile but expose separate league selectors and admin editors", () => {
+  const publicScript = read("client/js/script.js");
+  const adminScript = read("client/js/admin.js");
+  const adminHtml = read("admin.html");
+  const server = read("server.js");
+
+  assert.match(publicScript, /data-league-select/);
+  assert.match(publicScript, /Създавам общ профил/);
+  assert.match(publicScript, /selectedLeagueId/);
+  assert.match(publicScript, /\/api\/league\/\$\{encodeURIComponent\(predictionLeagueState\.selectedLeagueId\)\}\/predictions/);
+  assert.match(adminHtml, /data-add="league"/);
+  assert.match(adminHtml, /id="league-list-editor"/);
+  assert.match(adminScript, /normalizeAdminLeagueCollection/);
+  assert.match(adminScript, /data-admin-league-select/);
+  assert.match(server, /normalizeLeagueCollection\(content\.predictionLeague\)/);
 });
 
 test("shared PWA script exposes an automatic offline status bar", () => {

@@ -2,6 +2,7 @@ const crypto = require("crypto");
 
 const POINTS = Object.freeze({ outcome: 3, exactScore: 7, streakEvery: 3, streakBonus: 2 });
 const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const DEFAULT_LEAGUE_ID = "general";
 
 const TROPHY_TIERS = Object.freeze({
   bronze: "Бронзово",
@@ -129,6 +130,23 @@ function normalizeLeagueStore(value = {}) {
   };
 }
 
+function normalizeLeagueId(value, fallback = DEFAULT_LEAGUE_ID) {
+  const normalized = String(value || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return normalized || fallback;
+}
+
+function itemBelongsToLeague(item, leagueId) {
+  return item?.leagueId
+    ? normalizeLeagueId(item.leagueId) === leagueId
+    : leagueId === DEFAULT_LEAGUE_ID;
+}
+
 function scoreValue(value) {
   if (value === "" || value === null || value === undefined) return null;
   const score = Number(value);
@@ -194,8 +212,9 @@ function periodLabels(now = Date.now()) {
   };
 }
 
-function normalizeLeagueConfig(value = {}) {
+function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
   return {
+    id: normalizeLeagueId(value.id, fallbackId),
     enabled: value.enabled !== false,
     title: String(value.title || "D.I.S Лига на прогнозите").trim(),
     description: String(value.description || "Прогнозирай резултата, печели точки и се изкачи в седмичната класация.").trim(),
@@ -216,31 +235,67 @@ function normalizeLeagueConfig(value = {}) {
   };
 }
 
+function normalizeLeagueCollection(value = {}) {
+  const isCollection = Array.isArray(value.leagues);
+  const source = isCollection ? value.leagues : [{ ...value, id: value.id || DEFAULT_LEAGUE_ID }];
+  const usedIds = new Set();
+  const leagues = source.slice(0, 24).map((league, index) => {
+    const requestedId = normalizeLeagueId(league?.id, index === 0 ? DEFAULT_LEAGUE_ID : `league-${index + 1}`);
+    let id = requestedId;
+    let suffix = 2;
+    while (usedIds.has(id)) {
+      id = `${requestedId}-${suffix}`;
+      suffix += 1;
+    }
+    usedIds.add(id);
+    return normalizeLeagueConfig({ ...(league || {}), id }, id);
+  });
+  return {
+    enabled: value.enabled !== false,
+    title: String(isCollection ? (value.title || "D.I.S Лиги на прогнозите") : "D.I.S Лиги на прогнозите").trim(),
+    description: String(isCollection ? (value.description || "Избери първенство, прогнозирай мачове и се състезавай в отделна класация.") : "Избери първенство, прогнозирай мачове и се състезавай в отделна класация.").trim(),
+    leagues
+  };
+}
+
 function normalizeAllLeagueMatches(value = {}) {
   const matches = (Array.isArray(value.matches) ? value.matches : []).map((match) => ({ ...match, enabled: true }));
   return normalizeLeagueConfig({ ...value, matches }).matches;
 }
 
+function allCollectionMatches(value = {}) {
+  return normalizeLeagueCollection(value).leagues.flatMap((league) =>
+    normalizeAllLeagueMatches(league).map((match) => ({ ...match, leagueId: league.id }))
+  );
+}
+
 function archiveDeletedLeagueMatches(rawPreviousConfig, rawNextConfig, rawStore) {
   const store = normalizeLeagueStore(rawStore);
-  const previousMatches = normalizeAllLeagueMatches(rawPreviousConfig);
-  const nextMatches = normalizeAllLeagueMatches(rawNextConfig);
-  const nextIds = new Set(nextMatches.map((match) => match.id));
+  const previousMatches = allCollectionMatches(rawPreviousConfig);
+  const nextMatches = allCollectionMatches(rawNextConfig);
+  const matchKey = (match) => `${match.leagueId || DEFAULT_LEAGUE_ID}:${match.id}`;
+  const nextIds = new Set(nextMatches.map(matchKey));
   const archivedById = new Map(
-    normalizeAllLeagueMatches({ matches: store.archivedMatches })
-      .filter((match) => !nextIds.has(match.id) && resultForMatch(match))
-      .map((match) => [match.id, match])
+    store.archivedMatches
+      .map((match) => ({ ...match, leagueId: normalizeLeagueId(match.leagueId, DEFAULT_LEAGUE_ID) }))
+      .filter((match) => !nextIds.has(matchKey(match)) && resultForMatch(match))
+      .map((match) => [matchKey(match), match])
   );
 
   previousMatches.forEach((match) => {
-    if (!nextIds.has(match.id) && resultForMatch(match)) archivedById.set(match.id, match);
+    if (!nextIds.has(matchKey(match)) && resultForMatch(match)) archivedById.set(matchKey(match), match);
   });
 
   const archivedMatches = [...archivedById.values()];
-  const preservedMatchIds = new Set([...nextIds, ...archivedMatches.map((match) => match.id)]);
+  const preservedMatchKeys = new Set([...nextIds, ...archivedMatches.map(matchKey)]);
+  const preservedLegacyMatchIds = new Set([...nextMatches, ...archivedMatches]
+    .filter((match) => normalizeLeagueId(match.leagueId) === DEFAULT_LEAGUE_ID)
+    .map((match) => match.id));
   return {
     players: store.players,
-    predictions: store.predictions.filter((prediction) => preservedMatchIds.has(prediction.matchId)),
+    predictions: store.predictions.filter((prediction) => prediction.leagueId
+      ? preservedMatchKeys.has(`${normalizeLeagueId(prediction.leagueId)}:${prediction.matchId}`)
+      : preservedLegacyMatchIds.has(prediction.matchId)),
     archivedMatches
   };
 }
@@ -249,6 +304,7 @@ function scoreEvents(config, store) {
   const matches = new Map(config.matches.map((match) => [match.id, match]));
   const predictionsByPlayer = new Map();
   store.predictions.forEach((prediction) => {
+    if (!itemBelongsToLeague(prediction, config.id)) return;
     if (!matches.has(prediction.matchId)) return;
     if (!predictionsByPlayer.has(prediction.playerId)) predictionsByPlayer.set(prediction.playerId, []);
     predictionsByPlayer.get(prediction.playerId).push(prediction);
@@ -345,7 +401,10 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
   const config = normalizeLeagueConfig(rawConfig);
   const store = normalizeLeagueStore(rawStore);
   const activeMatchIds = new Set(normalizeAllLeagueMatches(rawConfig).map((match) => match.id));
-  const archivedMatches = normalizeAllLeagueMatches({ matches: store.archivedMatches }).filter((match) => !activeMatchIds.has(match.id));
+  const archivedMatches = normalizeAllLeagueMatches({
+    ...config,
+    matches: store.archivedMatches.filter((match) => itemBelongsToLeague(match, config.id))
+  }).filter((match) => !activeMatchIds.has(match.id));
   const scoringConfig = { ...config, matches: [...normalizeAllLeagueMatches(rawConfig), ...archivedMatches] };
   const scoring = scoreEvents(scoringConfig, store);
   const leaderboards = {
@@ -367,7 +426,9 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
   }
 
   const player = store.players.find((item) => item.id === playerId);
-  const playerPredictions = new Map(store.predictions.filter((item) => item.playerId === playerId).map((item) => [item.matchId, item]));
+  const playerPredictions = new Map(store.predictions
+    .filter((item) => item.playerId === playerId && itemBelongsToLeague(item, config.id))
+    .map((item) => [item.matchId, item]));
   const playerEvents = scoring.events.get(playerId) || new Map();
   const publicMatches = [...config.matches]
     .sort((left, right) => matchTimestamp(left) - matchTimestamp(right))
@@ -415,6 +476,7 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
 
   const safeLeaderboard = (rows) => rows.slice(0, 50).map(({ playerId: _playerId, ...row }) => row);
   return {
+    id: config.id,
     enabled: config.enabled,
     title: config.title,
     description: config.description,
@@ -431,6 +493,55 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
   };
 }
 
+function buildPredictionLeagueState(rawCollection, rawStore, playerId = "", requestedLeagueId = "", now = Date.now()) {
+  const collection = normalizeLeagueCollection(rawCollection);
+  const store = normalizeLeagueStore(rawStore);
+  const visibleLeagues = collection.enabled ? collection.leagues.filter((league) => league.enabled) : [];
+  const requestedId = normalizeLeagueId(requestedLeagueId, visibleLeagues[0]?.id || DEFAULT_LEAGUE_ID);
+  const selectedLeague = visibleLeagues.find((league) => league.id === requestedId) || visibleLeagues[0] || null;
+  const leagues = visibleLeagues.map((league) => {
+    const matchIds = new Set(normalizeAllLeagueMatches(league).map((match) => match.id));
+    const predictions = store.predictions.filter((prediction) =>
+      prediction.playerId === playerId &&
+      itemBelongsToLeague(prediction, league.id) &&
+      matchIds.has(prediction.matchId)
+    );
+    return {
+      id: league.id,
+      title: league.title,
+      description: league.description,
+      seasonLabel: league.seasonLabel,
+      matchCount: league.matches.length,
+      openMatchCount: league.matches.filter((match) => matchStatus(match, now) === "open").length,
+      participating: predictions.length > 0
+    };
+  });
+
+  if (!selectedLeague) {
+    const player = store.players.find((item) => item.id === playerId);
+    return {
+      enabled: false,
+      hubTitle: collection.title,
+      hubDescription: collection.description,
+      leagues,
+      selectedLeagueId: "",
+      me: player ? { nickname: player.nickname } : null,
+      matches: [],
+      leaderboards: { week: [], month: [], season: [] },
+      points: POINTS,
+      periods: periodLabels(now)
+    };
+  }
+
+  return {
+    ...buildLeagueState(selectedLeague, store, playerId, now),
+    hubTitle: collection.title,
+    hubDescription: collection.description,
+    leagues,
+    selectedLeagueId: selectedLeague.id
+  };
+}
+
 module.exports = {
   BADGE_DEFINITIONS,
   DEFAULT_TROPHY_DEFINITIONS,
@@ -439,12 +550,15 @@ module.exports = {
   TROPHY_TIERS,
   archiveDeletedLeagueMatches,
   buildLeagueState,
+  buildPredictionLeagueState,
   createRecoveryCode,
   hashRecoveryCode,
   matchStatus,
   nicknameIsTaken,
   nicknameKey,
   normalizeLeagueConfig,
+  normalizeLeagueCollection,
+  normalizeLeagueId,
   normalizeLeagueStore,
   normalizeNickname,
   normalizePrediction,

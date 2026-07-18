@@ -6,13 +6,14 @@ const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
 const {
   archiveDeletedLeagueMatches,
-  buildLeagueState,
+  buildPredictionLeagueState,
   createRecoveryCode,
   hashRecoveryCode,
   matchStatus,
   nicknameIsTaken,
   nicknameKey,
-  normalizeLeagueConfig,
+  normalizeLeagueCollection,
+  normalizeLeagueId,
   normalizeLeagueStore,
   normalizeNickname,
   normalizePrediction,
@@ -385,12 +386,21 @@ async function mutateLeagueStore(mutator) {
   return operation;
 }
 
-async function leagueState(request, storeOverride = null, playerIdOverride = null) {
+function requestedLeagueId(request) {
+  try {
+    return new URL(request.url, `http://${request.headers.host}`).searchParams.get("league") || "";
+  } catch {
+    return "";
+  }
+}
+
+async function leagueState(request, storeOverride = null, playerIdOverride = null, leagueIdOverride = null) {
   const content = await readContent();
   const store = storeOverride || await readLeagueStore();
   const requestedPlayerId = playerIdOverride === null ? getLeaguePlayerId(request) : playerIdOverride;
   const playerId = store.players.some((player) => player.id === requestedPlayerId) ? requestedPlayerId : "";
-  return buildLeagueState(content.predictionLeague, store, playerId);
+  const leagueId = leagueIdOverride === null ? requestedLeagueId(request) : leagueIdOverride;
+  return buildPredictionLeagueState(content.predictionLeague, store, playerId, leagueId);
 }
 
 function safeRecoveryMatch(player, recoveryHash) {
@@ -744,14 +754,17 @@ async function handleRequest(request, response) {
     }
   }
 
-  const leaguePredictionMatch = url.pathname.match(/^\/api\/league\/predictions\/([^/]+)$/);
-  if (leaguePredictionMatch && request.method === "PUT") {
+  const leaguePredictionMatch = url.pathname.match(/^\/api\/league\/([^/]+)\/predictions\/([^/]+)$/);
+  const legacyLeaguePredictionMatch = url.pathname.match(/^\/api\/league\/predictions\/([^/]+)$/);
+  if ((leaguePredictionMatch || legacyLeaguePredictionMatch) && request.method === "PUT") {
     const playerId = getLeaguePlayerId(request);
     if (!playerId) return sendJson(response, 401, { error: "Първо избери прякор за Лигата на прогнозите." });
     const content = await readContent();
-    const leagueConfig = normalizeLeagueConfig(content.predictionLeague);
-    if (!leagueConfig.enabled) return sendJson(response, 409, { error: "Лигата на прогнозите не е активна в момента." });
-    const matchId = decodeURIComponent(leaguePredictionMatch[1]);
+    const collection = normalizeLeagueCollection(content.predictionLeague);
+    const leagueId = normalizeLeagueId(leaguePredictionMatch ? decodeURIComponent(leaguePredictionMatch[1]) : requestedLeagueId(request));
+    const leagueConfig = collection.leagues.find((league) => league.id === leagueId);
+    if (!collection.enabled || !leagueConfig?.enabled) return sendJson(response, 409, { error: "Тази лига не е активна в момента." });
+    const matchId = decodeURIComponent(leaguePredictionMatch ? leaguePredictionMatch[2] : legacyLeaguePredictionMatch[1]);
     const match = leagueConfig.matches.find((item) => item.id === matchId);
     if (!match) return sendJson(response, 404, { error: "Този мач не е намерен." });
     if (matchStatus(match) !== "open") return sendJson(response, 409, { error: "Прогнозите за този мач вече са заключени." });
@@ -765,8 +778,13 @@ async function handleRequest(request, response) {
       const { store } = await mutateLeagueStore((leagueStore) => {
         if (!leagueStore.players.some((player) => player.id === playerId)) throw new Error("Участието в Лигата на прогнозите не е намерено.");
         const now = new Date().toISOString();
-        const existing = leagueStore.predictions.find((item) => item.playerId === playerId && item.matchId === matchId);
+        const existing = leagueStore.predictions.find((item) =>
+          item.playerId === playerId && item.matchId === matchId && (item.leagueId
+            ? normalizeLeagueId(item.leagueId) === leagueConfig.id
+            : leagueConfig.id === "general")
+        );
         if (existing) {
+          existing.leagueId = leagueConfig.id;
           existing.homeScore = prediction.homeScore;
           existing.awayScore = prediction.awayScore;
           existing.updatedAt = now;
@@ -774,6 +792,7 @@ async function handleRequest(request, response) {
           leagueStore.predictions.push({
             id: crypto.randomUUID(),
             playerId,
+            leagueId: leagueConfig.id,
             matchId,
             ...prediction,
             submittedAt: now,
@@ -781,7 +800,7 @@ async function handleRequest(request, response) {
           });
         }
       });
-      return sendJson(response, 200, { league: await leagueState(request, store, playerId) }, {
+      return sendJson(response, 200, { league: await leagueState(request, store, playerId, leagueConfig.id) }, {
         "Set-Cookie": leagueCookieHeader(playerId)
       });
     } catch (error) {

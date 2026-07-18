@@ -22,6 +22,7 @@ const partnersPageEditor = document.querySelector("#partners-page-editor");
 const contactPageEditor = document.querySelector("#contact-page-editor");
 const predictionsEditor = document.querySelector("#predictions-editor");
 const pollsEditor = document.querySelector("#polls-editor");
+const leagueListEditor = document.querySelector("#league-list-editor");
 const leagueSettingsEditor = document.querySelector("#league-settings-editor");
 const leagueMatchesEditor = document.querySelector("#league-matches-editor");
 const leagueTrophiesEditor = document.querySelector("#league-trophies-editor");
@@ -50,6 +51,7 @@ let giveawayEntriesCache = [];
 let giveawayEntrySearchTerm = "";
 let giveawayEntryFilters = { winnersOnly: false, ineligibleOnly: false };
 let winnerAnimationTimer = null;
+let adminSelectedLeagueId = "";
 const leagueTrophyConditions = Object.freeze([
   ["exact", "Поне 1 точен резултат", "Познал си точния резултат в поне един мач."],
   ["voice", "Участие в поне 10 мача", "Участвал си с прогноза в поне 10 мача."],
@@ -89,6 +91,45 @@ function createGiveawayDraft() {
     officialRules: "Участието е безплатно и е позволено по веднъж на човек. Победителят се избира на случаен принцип сред валидните участници и ще бъде потърсен по имейл.",
     privacyNotice: "D.I.S Подкаст обработва името, имейла и посочения социален профил само за провеждането на giveaway и връзка с победителя. Данните се изтриват след приключване на кампанията и предаването на наградата. За оттегляне на участието или изтриване на данните използвай страницата Контакт.",
     platformNotice: "Тази промоция не е спонсорирана, администрирана, одобрена или свързана с Instagram, Facebook, YouTube или TikTok. Тези платформи не носят отговорност за провеждането й."
+  };
+}
+
+function adminLeagueId(value = "", fallback = `league-${Date.now()}`) {
+  const normalized = String(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+  return normalized || fallback;
+}
+
+function normalizeAdminLeagueCollection(value = {}) {
+  const isCollection = Array.isArray(value.leagues);
+  const source = isCollection ? value.leagues : [{ ...value, id: value.id || "general" }];
+  const used = new Set();
+  const leagues = source.map((item, index) => {
+    const requested = adminLeagueId(item?.id, index === 0 ? "general" : `league-${index + 1}`);
+    let id = requested;
+    let suffix = 2;
+    while (used.has(id)) id = `${requested}-${suffix++}`;
+    used.add(id);
+    return {
+      id,
+      enabled: item?.enabled !== false,
+      title: String(item?.title || `Лига ${index + 1}`),
+      description: String(item?.description || "Прогнозирай резултата и се изкачи в класацията."),
+      seasonLabel: String(item?.seasonLabel || "D.I.S Сезон"),
+      trophies: Array.isArray(item?.trophies) ? item.trophies : [],
+      matches: Array.isArray(item?.matches) ? item.matches : []
+    };
+  });
+  return {
+    enabled: value.enabled !== false,
+    title: isCollection ? String(value.title || "D.I.S Лиги на прогнозите") : "D.I.S Лиги на прогнозите",
+    description: isCollection ? String(value.description || "Избери първенство и участвай в отделна класация.") : "Избери първенство и участвай в отделна класация.",
+    leagues
   };
 }
 
@@ -233,6 +274,7 @@ function removalLabel(type) {
       package: "този рекламен пакет",
       prediction: "тази прогноза",
       poll: "това гласуване",
+      league: "тази лига",
       "league-match": "този мач от админ панела",
       "league-trophy": "този трофей",
       giveaway: "този giveaway и всички записани участници",
@@ -271,6 +313,9 @@ function withDefaults(config) {
   });
   const rawGiveaway = config.giveaway === undefined ? (fallback.giveaway || null) : config.giveaway;
   const giveaway = rawGiveaway ? { ...rawGiveaway, prizes: normalizeGiveawayPrizes(rawGiveaway) } : null;
+  const predictionLeague = normalizeAdminLeagueCollection(config.predictionLeague === undefined
+    ? (fallback.predictionLeague || {})
+    : config.predictionLeague);
   return {
     ...fallback,
     ...config,
@@ -303,12 +348,7 @@ function withDefaults(config) {
     hosts: config.hosts || fallback.hosts || [],
     predictions: config.predictions || fallback.predictions || [],
     polls: config.polls || fallback.polls || [],
-    predictionLeague: {
-      ...(fallback.predictionLeague || {}),
-      ...(config.predictionLeague || {}),
-      trophies: config.predictionLeague?.trophies ?? fallback.predictionLeague?.trophies ?? [],
-      matches: config.predictionLeague?.matches || fallback.predictionLeague?.matches || []
-    },
+    predictionLeague,
     giveaway,
     mediaLibrary: config.mediaLibrary || fallback.mediaLibrary || []
   };
@@ -679,18 +719,43 @@ function renderEditors() {
   partnersPageEditor.innerHTML = pageEditorMarkup("partners", "Партньорства");
   contactPageEditor.innerHTML = pageEditorMarkup("contact", "Контакт");
 
-  const predictionLeague = adminConfig.predictionLeague || {};
-  leagueSettingsEditor.innerHTML = `
-    <article class="editor-card">
-      <h3>Настройки на лигата</h3>
-      ${checkboxField("Покажи Лигата на прогнозите във Фен зоната", "enabled", predictionLeague.enabled !== false)}
-      ${field("Заглавие", "title", predictionLeague.title || "D.I.S Лига на прогнозите")}
-      ${textarea("Кратко описание", "description", predictionLeague.description || "", 3)}
-      ${field("Име на сезона", "seasonLabel", predictionLeague.seasonLabel || "D.I.S Сезон 2026/27")}
-      ${readonlyInfo("Точкуване", "Познаваш победителя или равенството: 3 т. · Познаваш точния резултат: още 7 т. · Всеки 3 поредни правилни прогнози: +2 т.")}
-    </article>`;
+  const predictionLeague = normalizeAdminLeagueCollection(adminConfig.predictionLeague || {});
+  adminConfig.predictionLeague = predictionLeague;
+  if (!predictionLeague.leagues.some((league) => league.id === adminSelectedLeagueId)) {
+    adminSelectedLeagueId = predictionLeague.leagues[0]?.id || "";
+  }
+  const selectedLeague = predictionLeague.leagues.find((league) => league.id === adminSelectedLeagueId) || null;
 
-  leagueTrophiesEditor.innerHTML = (predictionLeague.trophies || []).map((trophy, index) => {
+  leagueListEditor.innerHTML = predictionLeague.leagues.length
+    ? predictionLeague.leagues.map((league, index) => `
+      <article class="admin-league-card ${league.id === adminSelectedLeagueId ? "is-active" : ""}" data-index="${index}">
+        <button class="admin-league-select" type="button" data-admin-league-select="${escapeValue(league.id)}" aria-pressed="${league.id === adminSelectedLeagueId}">
+          <span>${league.enabled === false ? "Скрита" : "Активна"}</span>
+          <strong>${escapeValue(league.title)}</strong>
+          <small>${escapeValue(league.seasonLabel)} · ${(league.matches || []).length} ${(league.matches || []).length === 1 ? "мач" : "мача"}</small>
+        </button>
+        <button class="remove-card" data-remove="league" type="button" aria-label="Премахни лигата">x</button>
+      </article>`).join("")
+    : `<article class="empty-state">Няма създадени лиги. Натисни „Добави лига“.</article>`;
+
+  leagueSettingsEditor.innerHTML = `
+    <article class="editor-card" data-league-hub-settings>
+      <h3>Общи настройки</h3>
+      ${checkboxField("Покажи лигите на прогнозите във Фен зоната", "hubEnabled", predictionLeague.enabled !== false)}
+      ${field("Общо заглавие", "hubTitle", predictionLeague.title || "D.I.S Лиги на прогнозите")}
+      ${textarea("Общо описание", "hubDescription", predictionLeague.description || "", 3)}
+    </article>
+    ${selectedLeague ? `<article class="editor-card" data-league-settings>
+      <h3>${escapeValue(selectedLeague.title)}</h3>
+      ${hiddenField("id", selectedLeague.id)}
+      ${checkboxField("Покажи тази лига", "enabled", selectedLeague.enabled !== false)}
+      ${field("Име на лигата", "title", selectedLeague.title)}
+      ${textarea("Кратко описание", "description", selectedLeague.description || "", 3)}
+      ${field("Име на сезона", "seasonLabel", selectedLeague.seasonLabel || "D.I.S Сезон 2026/27")}
+      ${readonlyInfo("Точкуване", "Победител или равенство: 3 т. · Точен резултат: още 7 т. · Всеки 3 поредни правилни: +2 т.")}
+    </article>` : ""}`;
+
+  leagueTrophiesEditor.innerHTML = (selectedLeague?.trophies || []).map((trophy, index) => {
     const condition = leagueTrophyConditions.some(([value]) => value === trophy.condition) ? trophy.condition : "exact";
     const tier = leagueTrophyTiers.some(([value]) => value === trophy.tier) ? trophy.tier : "bronze";
     const label = trophy.label || `Трофей ${index + 1}`;
@@ -709,7 +774,7 @@ function renderEditors() {
       </article>`;
   }).join("");
 
-  leagueMatchesEditor.innerHTML = (predictionLeague.matches || []).map((match, index) => {
+  leagueMatchesEditor.innerHTML = (selectedLeague?.matches || []).map((match, index) => {
     const resultHome = match.result?.homeScore ?? "";
     const resultAway = match.result?.awayScore ?? "";
     return `
@@ -1275,7 +1340,8 @@ function collectConfig() {
   const sponsorPanelCard = singleCard(sponsorPanelEditor);
   const footerCard = singleCard(footerEditor);
   const giveawayCard = singleCard(giveawayEditor);
-  const leagueSettingsCard = singleCard(leagueSettingsEditor);
+  const leagueHubSettingsCard = leagueSettingsEditor.querySelector("[data-league-hub-settings]");
+  const leagueSettingsCard = leagueSettingsEditor.querySelector("[data-league-settings]");
   const giveawayMinAge = giveawayCard ? value(giveawayCard, "minAge").trim() : "";
   const giveawayPrizes = giveawayCard
     ? [...giveawayCard.querySelectorAll(".giveaway-prize-editor")].map((card, index) => ({
@@ -1286,6 +1352,49 @@ function collectConfig() {
       }))
     : [];
   const giveawayWinnerTotal = Math.max(1, Math.min(20, giveawayPrizes.reduce((sum, prize) => sum + prize.quantity, 0) || 1));
+  const currentLeagueCollection = normalizeAdminLeagueCollection(adminConfig.predictionLeague || {});
+  const selectedLeagueIndex = currentLeagueCollection.leagues.findIndex((league) => league.id === adminSelectedLeagueId);
+  if (selectedLeagueIndex >= 0 && leagueSettingsCard) {
+    const previousLeague = currentLeagueCollection.leagues[selectedLeagueIndex];
+    currentLeagueCollection.leagues[selectedLeagueIndex] = {
+      ...previousLeague,
+      id: value(leagueSettingsCard, "id") || previousLeague.id,
+      enabled: Boolean(leagueSettingsCard.querySelector('[name="enabled"]')?.checked),
+      title: value(leagueSettingsCard, "title") || previousLeague.title,
+      description: value(leagueSettingsCard, "description"),
+      seasonLabel: value(leagueSettingsCard, "seasonLabel") || "D.I.S Сезон",
+      trophies: collectCards(leagueTrophiesEditor, (card) => {
+        const index = Number(card.dataset.index);
+        return {
+          id: value(card, "id") || `trophy-${Date.now()}-${index}`,
+          label: value(card, "label").trim() || `Трофей ${index + 1}`,
+          condition: value(card, "condition") || "exact",
+          tier: value(card, "tier") || "bronze"
+        };
+      }),
+      matches: collectCards(leagueMatchesEditor, (card) => {
+        const index = Number(card.dataset.index);
+        const previous = previousLeague.matches?.[index] || {};
+        const resultHome = value(card, "resultHome").trim();
+        const resultAway = value(card, "resultAway").trim();
+        const hasResult = resultHome !== "" && resultAway !== "";
+        return {
+          id: value(card, "id") || `${previousLeague.id}-match-${Date.now()}-${index}`,
+          enabled: Boolean(card.querySelector('[name="enabled"]')?.checked),
+          competition: value(card, "competition") || previousLeague.title,
+          homeTeam: value(card, "homeTeam"),
+          awayTeam: value(card, "awayTeam"),
+          kickoffAt: value(card, "kickoffAt") ? new Date(value(card, "kickoffAt")).toISOString() : "",
+          isDerby: Boolean(card.querySelector('[name="isDerby"]')?.checked),
+          result: hasResult ? { homeScore: Number(resultHome), awayScore: Number(resultAway) } : null,
+          settledAt: hasResult ? (previous.settledAt || new Date().toISOString()) : ""
+        };
+      })
+    };
+  }
+  currentLeagueCollection.enabled = Boolean(leagueHubSettingsCard?.querySelector('[name="hubEnabled"]')?.checked);
+  currentLeagueCollection.title = value(leagueHubSettingsCard, "hubTitle") || "D.I.S Лиги на прогнозите";
+  currentLeagueCollection.description = value(leagueHubSettingsCard, "hubDescription");
 
   const sections = { ...(adminConfig.sections || {}) };
   sectionEditors.flatMap((editor) => [...editor.querySelectorAll(".editor-card")]).forEach((card) => {
@@ -1416,39 +1525,7 @@ function collectConfig() {
         }))
       };
     }),
-    predictionLeague: {
-      enabled: Boolean(leagueSettingsCard?.querySelector('[name="enabled"]')?.checked),
-      title: value(leagueSettingsCard, "title") || "D.I.S Лига на прогнозите",
-      description: value(leagueSettingsCard, "description"),
-      seasonLabel: value(leagueSettingsCard, "seasonLabel") || "D.I.S Сезон",
-      trophies: collectCards(leagueTrophiesEditor, (card) => {
-        const index = Number(card.dataset.index);
-        return {
-          id: value(card, "id") || `trophy-${Date.now()}-${index}`,
-          label: value(card, "label").trim() || `Трофей ${index + 1}`,
-          condition: value(card, "condition") || "exact",
-          tier: value(card, "tier") || "bronze"
-        };
-      }),
-      matches: collectCards(leagueMatchesEditor, (card) => {
-        const index = Number(card.dataset.index);
-        const previous = adminConfig.predictionLeague?.matches?.[index] || {};
-        const resultHome = value(card, "resultHome").trim();
-        const resultAway = value(card, "resultAway").trim();
-        const hasResult = resultHome !== "" && resultAway !== "";
-        return {
-          id: value(card, "id") || `league-match-${Date.now()}-${index}`,
-          enabled: Boolean(card.querySelector('[name="enabled"]')?.checked),
-          competition: value(card, "competition") || "D.I.S Matchday",
-          homeTeam: value(card, "homeTeam"),
-          awayTeam: value(card, "awayTeam"),
-          kickoffAt: value(card, "kickoffAt") ? new Date(value(card, "kickoffAt")).toISOString() : "",
-          isDerby: Boolean(card.querySelector('[name="isDerby"]')?.checked),
-          result: hasResult ? { homeScore: Number(resultHome), awayScore: Number(resultAway) } : null,
-          settledAt: hasResult ? (previous.settledAt || new Date().toISOString()) : ""
-        };
-      })
-    },
+    predictionLeague: currentLeagueCollection,
     giveaway: giveawayCard ? {
       id: value(giveawayCard, "id") || `giveaway-${Date.now()}`,
       enabled: Boolean(giveawayCard.querySelector('[name="enabled"]')?.checked),
@@ -1575,7 +1652,7 @@ document.querySelectorAll("[data-save-page]").forEach((button) => {
         await showInfo("За краен резултат въведи и двата резултата или остави и двете полета празни.");
         return;
       }
-      const invalidLeagueMatch = (draftConfig.predictionLeague?.matches || []).find((match) =>
+      const invalidLeagueMatch = (draftConfig.predictionLeague?.leagues || []).flatMap((league) => league.matches || []).find((match) =>
         !match.homeTeam || !match.awayTeam ||
         (match.result && (!Number.isInteger(match.result.homeScore) || !Number.isInteger(match.result.awayScore) || match.result.homeScore < 0 || match.result.awayScore < 0 || match.result.homeScore > 30 || match.result.awayScore > 30))
       );
@@ -1673,13 +1750,36 @@ document.querySelectorAll("[data-add]").forEach((button) => {
     if (type === "poll") {
       adminConfig.polls.unshift({ id: `poll-${Date.now()}`, title: "Фенски вот", match: "Отбор A срещу Отбор B", question: "Кой ще спечели?", status: "active", resultsVisible: true, closesAt: "", options: [{ id: `option-${Date.now()}-0`, label: "Отбор A" }, { id: `option-${Date.now()}-1`, label: "Равенство" }, { id: `option-${Date.now()}-2`, label: "Отбор B" }] });
     }
-    if (type === "league-match") {
-      adminConfig.predictionLeague ||= { enabled: true, title: "D.I.S Лига на прогнозите", description: "", seasonLabel: "D.I.S Сезон", trophies: [], matches: [] };
-      adminConfig.predictionLeague.matches ||= [];
-      adminConfig.predictionLeague.matches.push({
-        id: `league-match-${Date.now()}`,
+    if (type === "league") {
+      adminConfig.predictionLeague = normalizeAdminLeagueCollection(adminConfig.predictionLeague || {});
+      if (adminConfig.predictionLeague.leagues.length >= 24) {
+        setStatus("Можеш да добавиш най-много 24 лиги.", true);
+        return;
+      }
+      const id = `league-${Date.now()}`;
+      adminConfig.predictionLeague.leagues.push({
+        id,
         enabled: true,
-        competition: "D.I.S Matchday",
+        title: "Нова лига",
+        description: "Прогнозирай резултата и се изкачи в отделната класация.",
+        seasonLabel: "D.I.S Сезон 2026/27",
+        trophies: structuredClone(adminConfig.predictionLeague.leagues[0]?.trophies || []),
+        matches: []
+      });
+      adminSelectedLeagueId = id;
+    }
+    if (type === "league-match") {
+      adminConfig.predictionLeague = normalizeAdminLeagueCollection(adminConfig.predictionLeague || {});
+      const selectedLeague = adminConfig.predictionLeague.leagues.find((league) => league.id === adminSelectedLeagueId);
+      if (!selectedLeague) {
+        setStatus("Първо добави и избери лига.", true);
+        return;
+      }
+      selectedLeague.matches ||= [];
+      selectedLeague.matches.push({
+        id: `${selectedLeague.id}-match-${Date.now()}`,
+        enabled: true,
+        competition: selectedLeague.title,
         homeTeam: "Отбор A",
         awayTeam: "Отбор B",
         kickoffAt: "",
@@ -1689,14 +1789,19 @@ document.querySelectorAll("[data-add]").forEach((button) => {
       });
     }
     if (type === "league-trophy") {
-      adminConfig.predictionLeague ||= { enabled: true, title: "D.I.S Лига на прогнозите", description: "", seasonLabel: "D.I.S Сезон", trophies: [], matches: [] };
-      adminConfig.predictionLeague.trophies ||= [];
-      if (adminConfig.predictionLeague.trophies.length >= 20) {
+      adminConfig.predictionLeague = normalizeAdminLeagueCollection(adminConfig.predictionLeague || {});
+      const selectedLeague = adminConfig.predictionLeague.leagues.find((league) => league.id === adminSelectedLeagueId);
+      if (!selectedLeague) {
+        setStatus("Първо добави и избери лига.", true);
+        return;
+      }
+      selectedLeague.trophies ||= [];
+      if (selectedLeague.trophies.length >= 20) {
         setStatus("Можеш да добавиш най-много 20 трофея.");
         return;
       }
-      adminConfig.predictionLeague.trophies.push({
-        id: `trophy-${Date.now()}`,
+      selectedLeague.trophies.push({
+        id: `${selectedLeague.id}-trophy-${Date.now()}`,
         label: "Нов трофей",
         condition: "exact",
         tier: "bronze"
@@ -1729,6 +1834,14 @@ document.addEventListener("click", async (event) => {
     } catch {
       await showInfo("Линкът не може да бъде копиран автоматично. Маркирай го и го копирай ръчно.");
     }
+    return;
+  }
+
+  const leagueSelectButton = event.target.closest("[data-admin-league-select]");
+  if (leagueSelectButton) {
+    adminConfig = collectConfig();
+    adminSelectedLeagueId = leagueSelectButton.dataset.adminLeagueSelect;
+    renderEditors();
     return;
   }
 
@@ -1821,11 +1934,13 @@ document.addEventListener("click", async (event) => {
   const type = removeButton.dataset.remove;
   const removalQuestion = type === "league-match"
     ? "Да премахна ли този мач от админ панела? Ако има въведен краен резултат, спечелените точки и статистиката ще се запазят."
-    : `Сигурен ли си, че искаш да премахнеш ${removalLabel(type)}?`;
+    : type === "league"
+      ? "Да премахна ли тази лига от админ панела? Завършените мачове и вече спечелените точки ще останат архивирани, но лигата ще бъде скрита."
+      : `Сигурен ли си, че искаш да премахнеш ${removalLabel(type)}?`;
   if (!(await askConfirmation(removalQuestion))) return;
 
   syncBeforeMutating();
-  const card = removeButton.closest(".editor-card");
+  const card = removeButton.closest(".editor-card, .admin-league-card");
   const index = Number(card.dataset.index);
   if (type === "nav") adminConfig.nav.splice(index, 1);
   if (type === "social") adminConfig.socials.splice(index, 1);
@@ -1841,8 +1956,13 @@ document.addEventListener("click", async (event) => {
   if (type === "package") adminConfig.sponsorPackages.splice(index, 1);
   if (type === "prediction") adminConfig.predictions.splice(index, 1);
   if (type === "poll") adminConfig.polls.splice(index, 1);
-  if (type === "league-match") adminConfig.predictionLeague.matches.splice(index, 1);
-  if (type === "league-trophy") adminConfig.predictionLeague.trophies.splice(index, 1);
+  if (type === "league") {
+    adminConfig.predictionLeague.leagues.splice(index, 1);
+    adminSelectedLeagueId = adminConfig.predictionLeague.leagues[Math.min(index, adminConfig.predictionLeague.leagues.length - 1)]?.id || "";
+  }
+  const selectedLeague = adminConfig.predictionLeague?.leagues?.find((league) => league.id === adminSelectedLeagueId);
+  if (type === "league-match") selectedLeague?.matches.splice(index, 1);
+  if (type === "league-trophy") selectedLeague?.trophies.splice(index, 1);
   if (type === "giveaway") adminConfig.giveaway = null;
   if (type === "footer-link") adminConfig.footer.links.splice(index, 1);
   if (type === "footer-social") adminConfig.footer.socials.splice(index, 1);

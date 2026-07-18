@@ -16,7 +16,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./client/css/styles.css?v=20260717-14" />
+    <link rel="stylesheet" href="./client/css/styles.css?v=20260718-1" />
   </head>
   <body class="admin-body">
     <main class="admin-shell">
@@ -74,8 +74,9 @@
 
         <div class="admin-page-panel" data-admin-page="fan" hidden>
           <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Фен зона</p><h2>Hero и представяне</h2></div><div class="editor-list single-editor" id="fan-page-editor"></div></section>
-          <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Лига на прогнозите</p><h2>Мачове, срокове и резултати</h2><button class="button secondary" data-add="league-match" type="button">Добави мач</button></div><div class="editor-list single-editor" id="league-settings-editor"></div><div class="editor-list" id="league-matches-editor"></div></section>
-          <section class="admin-panel"><div class="admin-panel-heading"><div><p class="section-kicker">Лига на прогнозите</p><h2>Трофеи</h2></div><button class="button secondary" data-add="league-trophy" type="button">Добави трофей</button></div><p class="admin-section-note">Името, условието и трудността могат да се редактират. Цветът се определя автоматично от нивото. Промяната или изтриването на трофей преизчислява кой го притежава, без да променя точките.</p><div class="admin-trophy-levels" aria-label="Цветове на нивата"><span class="league-badge tier-bronze"><i></i><span>Бронзово</span></span><span class="league-badge tier-silver"><i></i><span>Сребърно</span></span><span class="league-badge tier-gold"><i></i><span>Златно</span></span><span class="league-badge tier-platinum"><i></i><span>Платинено</span></span><span class="league-badge tier-legendary"><i></i><span>Легендарно</span></span></div><div class="editor-list league-trophies-editor" id="league-trophies-editor"></div></section>
+          <section class="admin-panel"><div class="admin-panel-heading"><div><p class="section-kicker">Лиги на прогнозите</p><h2>Управление на първенствата</h2></div><button class="button secondary" data-add="league" type="button">Добави лига</button></div><p class="admin-section-note">Прякорът е общ за всички лиги, но всяка има отделни мачове, точки, серии, трофеи и класация. Избери лига, за да я редактираш.</p><div class="admin-league-list" id="league-list-editor"></div></section>
+          <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Избрана лига</p><h2>Настройки, мачове и резултати</h2><button class="button secondary" data-add="league-match" type="button">Добави мач</button></div><div class="editor-list single-editor" id="league-settings-editor"></div><div class="editor-list" id="league-matches-editor"></div></section>
+          <section class="admin-panel"><div class="admin-panel-heading"><div><p class="section-kicker">Избрана лига</p><h2>Трофеи</h2></div><button class="button secondary" data-add="league-trophy" type="button">Добави трофей</button></div><p class="admin-section-note">Трофеите важат само за избраната лига. Името, условието и трудността могат да се редактират, а цветът се определя от нивото.</p><div class="admin-trophy-levels" aria-label="Цветове на нивата"><span class="league-badge tier-bronze"><i></i><span>Бронзово</span></span><span class="league-badge tier-silver"><i></i><span>Сребърно</span></span><span class="league-badge tier-gold"><i></i><span>Златно</span></span><span class="league-badge tier-platinum"><i></i><span>Платинено</span></span><span class="league-badge tier-legendary"><i></i><span>Легендарно</span></span></div><div class="editor-list league-trophies-editor" id="league-trophies-editor"></div></section>
           <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Прогнози</p><h2>Прогнози на водещите</h2><button class="button secondary" data-add="prediction" type="button">Добави прогноза</button></div><div class="editor-list" id="predictions-editor"></div></section>
           <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Voting</p><h2>Фенски гласувания</h2><button class="button secondary" data-add="poll" type="button">Добави гласуване</button></div><div class="editor-list" id="polls-editor"></div></section>
           <section class="admin-panel"><div class="admin-panel-heading"><p class="section-kicker">Giveaway</p><h2>Кампания и условия</h2><button class="button secondary" data-add="giveaway" type="button">Създай giveaway</button></div><div class="editor-list single-editor" id="giveaway-editor"></div></section>
@@ -143,6 +144,6 @@
 
     <script src="./client/js/pwa.js?v=20260717-9"></script>
     <script src="./client/js/config.js?v=20260717-5"></script>
-    <script src="./client/js/admin.js?v=20260717-6"></script>
+    <script src="./client/js/admin.js?v=20260718-1"></script>
   </body>
 </html>

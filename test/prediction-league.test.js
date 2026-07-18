@@ -3,11 +3,13 @@ const test = require("node:test");
 const {
   archiveDeletedLeagueMatches,
   buildLeagueState,
+  buildPredictionLeagueState,
   hashRecoveryCode,
   matchStatus,
   nicknameIsTaken,
   nicknameKey,
   normalizeLeagueConfig,
+  normalizeLeagueCollection,
   normalizeNickname,
   normalizePrediction,
   normalizeTrophyDefinitions,
@@ -123,6 +125,92 @@ test("normalizes trophy ids and rejects unsupported list values", () => {
   assert.equal(trophies[1].description, "Участвал си с прогноза в поне 10 мача.");
   assert.equal(normalizeLeagueConfig({ trophies: [] }).trophies.length, 0);
   assert.equal(normalizeLeagueConfig({}).trophies.length, 5);
+});
+
+test("migrates the existing single league to the general league without losing legacy predictions", () => {
+  const collection = normalizeLeagueCollection(sampleConfig());
+  assert.equal(collection.leagues.length, 1);
+  assert.equal(collection.leagues[0].id, "general");
+
+  const state = buildPredictionLeagueState(sampleConfig(), sampleStore(), "p1", "", now);
+  assert.equal(state.selectedLeagueId, "general");
+  assert.equal(state.me.nickname, "IVAN1892");
+  assert.equal(state.me.totalPoints, 13);
+  assert.equal(state.leagues[0].participating, true);
+});
+
+test("keeps points, trophies, matches, and leaderboards separate while sharing one profile", () => {
+  const collection = {
+    enabled: true,
+    title: "D.I.S Лиги",
+    leagues: [
+      { ...sampleConfig(), id: "efbet", title: "efbet Лига" },
+      {
+        id: "premier-league",
+        enabled: true,
+        title: "Висша лига",
+        seasonLabel: "2026/27",
+        matches: [{ id: "e1", homeTeam: "Arsenal", awayTeam: "Liverpool", kickoffAt: "2026-07-15T18:00:00.000Z", result: { homeScore: 1, awayScore: 0 } }]
+      }
+    ]
+  };
+  const store = sampleStore();
+  store.predictions = [
+    { playerId: "p1", leagueId: "efbet", matchId: "m1", homeScore: 2, awayScore: 1 },
+    { playerId: "p1", leagueId: "premier-league", matchId: "e1", homeScore: 0, awayScore: 1 },
+    { playerId: "p2", leagueId: "premier-league", matchId: "e1", homeScore: 1, awayScore: 0 }
+  ];
+
+  const efbet = buildPredictionLeagueState(collection, store, "p1", "efbet", now);
+  const england = buildPredictionLeagueState(collection, store, "p1", "premier-league", now);
+
+  assert.equal(efbet.me.nickname, england.me.nickname);
+  assert.equal(efbet.me.totalPoints, 10);
+  assert.equal(england.me.totalPoints, 0);
+  assert.deepEqual(efbet.matches.map((match) => match.id), ["m1", "m2", "m3"]);
+  assert.deepEqual(england.matches.map((match) => match.id), ["e1"]);
+  assert.deepEqual(efbet.leaderboards.season.map((row) => row.nickname), ["IVAN1892"]);
+  assert.deepEqual(england.leaderboards.season.map((row) => row.nickname), ["DANI", "IVAN1892"]);
+  assert.equal(england.me.badges.some((badge) => badge.id === "exact"), false);
+});
+
+test("keeps legacy untagged predictions and archived matches only in the general league", () => {
+  const collection = {
+    leagues: [
+      { id: "general", title: "Начална лига", matches: [] },
+      { id: "england", title: "Висша лига", matches: [] }
+    ]
+  };
+  const store = {
+    players: [{ id: "p1", nickname: "IVAN1892" }],
+    predictions: [{ playerId: "p1", matchId: "legacy", homeScore: 2, awayScore: 0 }],
+    archivedMatches: [{ id: "legacy", homeTeam: "A", awayTeam: "B", kickoffAt: "2026-07-14T18:00:00.000Z", result: { homeScore: 2, awayScore: 0 } }]
+  };
+
+  assert.equal(buildPredictionLeagueState(collection, store, "p1", "general", now).me.totalPoints, 10);
+  assert.equal(buildPredictionLeagueState(collection, store, "p1", "england", now).me.totalPoints, 0);
+});
+
+test("archiving a removed league match preserves only its earned points and leaves other leagues intact", () => {
+  const previous = {
+    leagues: [
+      { id: "efbet", matches: [{ id: "b1", homeTeam: "A", awayTeam: "B", kickoffAt: "2026-07-14T18:00:00.000Z", result: { homeScore: 2, awayScore: 0 } }] },
+      { id: "england", matches: [{ id: "e1", homeTeam: "C", awayTeam: "D", kickoffAt: "2026-07-14T18:00:00.000Z", result: { homeScore: 1, awayScore: 1 } }] }
+    ]
+  };
+  const next = { leagues: [previous.leagues[1]] };
+  const store = {
+    players: [{ id: "p1", nickname: "IVAN1892" }],
+    predictions: [
+      { playerId: "p1", leagueId: "efbet", matchId: "b1", homeScore: 2, awayScore: 0 },
+      { playerId: "p1", leagueId: "england", matchId: "e1", homeScore: 1, awayScore: 1 }
+    ]
+  };
+  const archived = archiveDeletedLeagueMatches(previous, next, store);
+
+  assert.equal(archived.archivedMatches.find((match) => match.id === "b1")?.leagueId, "efbet");
+  assert.equal(archived.predictions.length, 2);
+  assert.equal(buildPredictionLeagueState(next, archived, "p1", "england", now).me.totalPoints, 10);
 });
 
 test("locks matches at kickoff and keeps future matches open", () => {
