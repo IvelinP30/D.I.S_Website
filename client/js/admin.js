@@ -52,6 +52,7 @@ let giveawayEntrySearchTerm = "";
 let giveawayEntryFilters = { winnersOnly: false, ineligibleOnly: false };
 let winnerAnimationTimer = null;
 let adminSelectedLeagueId = "";
+const teamMediaSearchResults = new WeakMap();
 const leagueTrophyConditions = Object.freeze([
   ["exact", "Поне 1 точен резултат", "Познал си точния резултат в поне един мач."],
   ["voice", "Участие в поне 10 мача", "Участвал си с прогноза в поне 10 мача."],
@@ -131,6 +132,50 @@ function normalizeAdminLeagueCollection(value = {}) {
     description: isCollection ? String(value.description || "Избери първенство и участвай в отделна класация.") : "Избери първенство и участвай в отделна класация.",
     leagues
   };
+}
+
+function adminSlug(value = "") {
+  return String(value)
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9а-я]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
+}
+
+function adminNewsSlug(item = {}, index = 0) {
+  if (item.slug) return adminSlug(item.slug);
+  const dateSuffix = String(item.createdAt || "").replace(/\D/g, "").slice(0, 12);
+  return `${adminSlug(item.title || "news") || "news"}-${dateSuffix || index + 1}`;
+}
+
+function compactNewsExcerpt(value = "", maxLength = 220) {
+  const clean = String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return clean.length > maxLength ? `${clean.slice(0, maxLength - 1).trim()}…` : clean;
+}
+
+function normalizeAdminTeamMedia(value) {
+  if (!value || typeof value !== "object" || !Number.isInteger(Number(value.id)) || Number(value.id) <= 0) return null;
+  const id = Number(value.id);
+  return {
+    id,
+    name: String(value.name || ""),
+    code: String(value.code || ""),
+    country: String(value.country || ""),
+    national: Boolean(value.national),
+    logo: `https://media.api-sports.io/football/teams/${id}.png`,
+    source: "API-Football",
+    resolvedAt: String(value.resolvedAt || new Date().toISOString())
+  };
+}
+
+function readTeamMediaField(card, name) {
+  try {
+    return normalizeAdminTeamMedia(JSON.parse(value(card, name) || "null"));
+  } catch {
+    return null;
+  }
 }
 
 function normalizeGiveawayPrizes(giveaway = {}) {
@@ -339,7 +384,11 @@ function withDefaults(config) {
     ticker: config.ticker || fallback.ticker || [],
     socials: config.socials || fallback.socials || [],
     youtubePlayer: { ...fallback.youtubePlayer, ...(config.youtubePlayer || {}) },
-    news: config.news || fallback.news || [],
+    news: (config.news || fallback.news || []).map((item, index) => ({
+      ...item,
+      slug: adminNewsSlug(item, index),
+      excerpt: String(item.excerpt || compactNewsExcerpt(item.body || ""))
+    })),
     formats: config.formats || fallback.formats || [],
     adSlots: config.adSlots || fallback.adSlots || [],
     activeAds: config.activeAds || fallback.activeAds || [],
@@ -384,6 +433,51 @@ function hiddenField(name, value = "") {
   return `<input name="${name}" type="hidden" value="${escapeValue(value)}" />`;
 }
 
+function teamMediaPicker(label, nameField, mediaField, mediaValue) {
+  const media = normalizeAdminTeamMedia(mediaValue);
+  return `
+    <div class="team-media-picker wide" data-team-media-picker data-name-field="${escapeValue(nameField)}" data-media-field="${escapeValue(mediaField)}">
+      ${hiddenField(mediaField, media ? JSON.stringify(media) : "")}
+      <div class="team-media-selection" data-team-media-selection>
+        ${media ? `<img src="${escapeValue(media.logo)}" alt="" /><span><strong>${escapeValue(media.name)}</strong><small>${escapeValue([media.country, media.code].filter(Boolean).join(" · "))} · API-Football</small></span>` : `<span><strong>${escapeValue(label)}</strong><small>Няма избрано автоматично лого</small></span>`}
+      </div>
+      <div class="team-media-actions">
+        <button class="button secondary" data-team-media-search type="button">Намери лого / флаг</button>
+        <button class="button secondary" data-team-media-clear type="button" ${media ? "" : "hidden"}>Премахни</button>
+      </div>
+      <small class="team-media-note">Търсенето е в API-Football. Провери предложението и го избери ръчно преди запис.</small>
+      <div class="team-media-results" data-team-media-results hidden></div>
+    </div>`;
+}
+
+function updateTeamMediaPicker(picker, mediaValue) {
+  const media = normalizeAdminTeamMedia(mediaValue);
+  const hidden = picker.querySelector(`[name="${picker.dataset.mediaField}"]`);
+  const selection = picker.querySelector("[data-team-media-selection]");
+  const clearButton = picker.querySelector("[data-team-media-clear]");
+  if (hidden) hidden.value = media ? JSON.stringify(media) : "";
+  if (selection) {
+    selection.innerHTML = media
+      ? `<img src="${escapeValue(media.logo)}" alt="" /><span><strong>${escapeValue(media.name)}</strong><small>${escapeValue([media.country, media.code].filter(Boolean).join(" · "))} · API-Football</small></span>`
+      : `<span><strong>Автоматично лого</strong><small>Няма избрано автоматично лого</small></span>`;
+  }
+  if (clearButton) clearButton.hidden = !media;
+}
+
+function showTeamMediaResults(picker, results = [], message = "") {
+  const container = picker.querySelector("[data-team-media-results]");
+  if (!container) return;
+  teamMediaSearchResults.set(picker, results);
+  container.hidden = false;
+  container.innerHTML = results.length
+    ? results.map((team, index) => `
+      <button type="button" data-team-media-result="${index}">
+        <img src="${escapeValue(team.logo)}" alt="" />
+        <span><strong>${escapeValue(team.name)}</strong><small>${escapeValue([team.country, team.code, team.national ? "национален отбор" : "клуб"].filter(Boolean).join(" · "))}</small></span>
+      </button>`).join("")
+    : `<p>${escapeValue(message || "Няма намерени предложения. Опитай с част от името на латиница.")}</p>`;
+}
+
 function readonlyInfo(label, value = "") {
   return `
     <div class="mini-field readonly-field">
@@ -395,7 +489,7 @@ function readonlyInfo(label, value = "") {
 
 function readonlyLinkInfo(label, href = "") {
   return `
-    <div class="mini-field readonly-field">
+    <div class="mini-field readonly-field wide">
       <span>${label}</span>
       <div class="readonly-link-row">
         <a href="${escapeValue(href)}" target="_blank" rel="noopener noreferrer">${escapeValue(href)}</a>
@@ -785,7 +879,9 @@ function renderEditors() {
         ${checkboxField("Покажи този мач", "enabled", match.enabled !== false)}
         ${field("Турнир / кръг", "competition", match.competition || "D.I.S Matchday")}
         ${field("Домакин", "homeTeam", match.homeTeam || "")}
+        ${teamMediaPicker("Лого на домакина", "homeTeam", "homeTeamMedia", match.homeTeamMedia)}
         ${field("Гост", "awayTeam", match.awayTeam || "")}
+        ${teamMediaPicker("Лого на госта", "awayTeam", "awayTeamMedia", match.awayTeamMedia)}
         ${field("Начало на мача / край за прогнози", "kickoffAt", dateTimeLocalValue(match.kickoffAt), "datetime-local")}
         ${checkboxField("Дерби мач", "isDerby", Boolean(match.isDerby))}
         ${numberField("Краен резултат – домакин", "resultHome", resultHome)}
@@ -848,13 +944,19 @@ function renderEditors() {
 
   newsEditor.innerHTML = (adminConfig.news || [])
     .map(
-      (item, index) => `
+      (item, index) => {
+        const slug = adminNewsSlug(item, index);
+        return `
         <article class="editor-card" data-index="${index}">
           <button class="remove-card" data-remove="news" type="button" aria-label="Премахни">x</button>
           <h3>${escapeValue(item.title || "Новина")}</h3>
+          ${hiddenField("slug", slug)}
           ${field("Заглавие", "title", item.title || "")}
           ${readonlyInfo("Дата - автоматично", formatAdminDate(item.createdAt))}
-          ${textarea("Текст", "body", item.body || "", 5)}
+          ${readonlyLinkInfo("Публична detail страница", `${window.location.origin}/news/${slug}`)}
+          ${textarea("Кратко резюме за картата и Story share", "excerpt", item.excerpt || compactNewsExcerpt(item.body || ""), 4)}
+          ${textarea("Пълен текст на новината", "body", item.body || "", 10)}
+          ${field("Надпис под снимката (по желание)", "imageCaption", item.imageCaption || "")}
           ${hiddenField("imageUrl", item.imageUrl || "")}
           ${fileField("Качи снимка", "image/*", `news.${index}.image`)}
           <div class="wide">
@@ -862,7 +964,8 @@ function renderEditors() {
             ${mediaPreview(item.imageUrl || "", "image")}
           </div>
         </article>
-      `
+      `;
+      }
     )
     .join("");
 
@@ -907,7 +1010,16 @@ function renderEditors() {
         ${selectField("Статус", "status", poll.status || "active", [["active", "Активно"], ["closed", "Приключило"]])}
         ${checkboxField("Показвай резултатите преди гласуване", "resultsVisible", Boolean(poll.resultsVisible))}
         ${field("Краен срок (по желание)", "closesAt", dateTimeLocalValue(poll.closesAt), "datetime-local")}
-        ${textarea("Опции - една на ред", "options", (poll.options || []).map((option) => option.label).join("\n"), 5)}
+        <div class="admin-poll-options wide">
+          <div class="admin-poll-options-heading"><span class="upload-title">Опции и лога</span><button class="button secondary" data-add-poll-option type="button">Добави опция</button></div>
+          ${(poll.options || []).map((option, optionIndex) => `
+            <article class="admin-poll-option" data-poll-option-index="${optionIndex}">
+              <button class="remove-card" data-remove-poll-option type="button" aria-label="Премахни опция">x</button>
+              ${hiddenField("optionId", option.id || `option-${Date.now()}-${optionIndex}`)}
+              ${field("Текст на опцията", "optionLabel", option.label || "")}
+              ${teamMediaPicker("Лого / флаг на опцията", "optionLabel", "optionMedia", option.media)}
+            </article>`).join("")}
+        </div>
       </article>`)
     .join("");
 
@@ -1384,6 +1496,8 @@ function collectConfig() {
           competition: value(card, "competition") || previousLeague.title,
           homeTeam: value(card, "homeTeam"),
           awayTeam: value(card, "awayTeam"),
+          homeTeamMedia: readTeamMediaField(card, "homeTeamMedia"),
+          awayTeamMedia: readTeamMediaField(card, "awayTeamMedia"),
           kickoffAt: value(card, "kickoffAt") ? new Date(value(card, "kickoffAt")).toISOString() : "",
           isDerby: Boolean(card.querySelector('[name="isDerby"]')?.checked),
           result: hasResult ? { homeScore: Number(resultHome), awayScore: Number(resultAway) } : null,
@@ -1475,8 +1589,11 @@ function collectConfig() {
     news: collectCards(newsEditor, (card) => {
       const index = Number(card.dataset.index);
       return {
+        slug: value(card, "slug") || adminNewsSlug(adminConfig.news?.[index] || {}, index),
         title: value(card, "title"),
+        excerpt: compactNewsExcerpt(value(card, "excerpt"), 320),
         body: value(card, "body"),
+        imageCaption: value(card, "imageCaption"),
         imageUrl: value(card, "imageUrl"),
         createdAt: adminConfig.news?.[index]?.createdAt || new Date().toISOString()
       };
@@ -1510,7 +1627,6 @@ function collectConfig() {
     }),
     polls: collectCards(pollsEditor, (card) => {
       const index = Number(card.dataset.index);
-      const previousOptions = adminConfig.polls?.[index]?.options || [];
       return {
         id: value(card, "id") || `poll-${Date.now()}-${index}`,
         title: value(card, "title"),
@@ -1519,10 +1635,11 @@ function collectConfig() {
         status: value(card, "status") || "active",
         resultsVisible: Boolean(card.querySelector('[name="resultsVisible"]')?.checked),
         closesAt: value(card, "closesAt") ? new Date(value(card, "closesAt")).toISOString() : "",
-        options: lines(value(card, "options")).map((label, optionIndex) => ({
-          id: previousOptions[optionIndex]?.id || `option-${Date.now()}-${optionIndex}`,
-          label
-        }))
+        options: [...card.querySelectorAll(".admin-poll-option")].map((optionCard, optionIndex) => ({
+          id: value(optionCard, "optionId") || `option-${Date.now()}-${optionIndex}`,
+          label: value(optionCard, "optionLabel"),
+          media: readTeamMediaField(optionCard, "optionMedia")
+        })).filter((option) => option.label)
       };
     }),
     predictionLeague: currentLeagueCollection,
@@ -1730,7 +1847,16 @@ document.querySelectorAll("[data-add]").forEach((button) => {
       adminConfig.formats.push({ number: "05", title: "Нов формат", description: "Описание на формата", items: ["Ключов акцент"] });
     }
     if (type === "news") {
-      adminConfig.news.unshift({ title: "Нова новина", body: "Кратък текст към новината.", imageUrl: "", createdAt: new Date().toISOString() });
+      const createdAt = new Date().toISOString();
+      adminConfig.news.unshift({
+        slug: `nova-novina-${createdAt.replace(/\D/g, "").slice(0, 12)}`,
+        title: "Нова новина",
+        excerpt: "Кратко резюме за картата и споделянето.",
+        body: "Пълен текст на новината.",
+        imageCaption: "",
+        imageUrl: "",
+        createdAt
+      });
     }
     if (type === "ad") {
       adminConfig.adSlots.push({ format: "Нов формат", title: "Заглавие", description: "Описание" });
@@ -1782,6 +1908,8 @@ document.querySelectorAll("[data-add]").forEach((button) => {
         competition: selectedLeague.title,
         homeTeam: "Отбор A",
         awayTeam: "Отбор B",
+        homeTeamMedia: null,
+        awayTeamMedia: null,
         kickoffAt: "",
         isDerby: false,
         result: null,
@@ -1824,6 +1952,79 @@ document.querySelectorAll("[data-add]").forEach((button) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const teamMediaResultButton = event.target.closest("[data-team-media-result]");
+  if (teamMediaResultButton) {
+    const picker = teamMediaResultButton.closest("[data-team-media-picker]");
+    const result = teamMediaSearchResults.get(picker)?.[Number(teamMediaResultButton.dataset.teamMediaResult)];
+    if (result) {
+      updateTeamMediaPicker(picker, result);
+      const results = picker.querySelector("[data-team-media-results]");
+      if (results) results.hidden = true;
+      setStatus(`Избрано е логото на ${result.name}. Запази страницата, за да кешираш избора.`);
+    }
+    return;
+  }
+
+  const teamMediaSearchButton = event.target.closest("[data-team-media-search]");
+  if (teamMediaSearchButton) {
+    const picker = teamMediaSearchButton.closest("[data-team-media-picker]");
+    const scope = picker.closest(".admin-poll-option") || picker.closest(".editor-card");
+    const query = scope?.querySelector(`[name="${picker.dataset.nameField}"]`)?.value.trim() || "";
+    if (query.length < 3) {
+      showTeamMediaResults(picker, [], "Въведи поне 3 символа в името на отбора или държавата.");
+      return;
+    }
+    teamMediaSearchButton.disabled = true;
+    teamMediaSearchButton.textContent = "Търсене…";
+    try {
+      const response = await fetch(`/api/team-media/search?q=${encodeURIComponent(query)}`, { headers: { Accept: "application/json" }, cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Търсенето не успя.");
+      showTeamMediaResults(picker, payload.results || []);
+    } catch (error) {
+      showTeamMediaResults(picker, [], error.message);
+    } finally {
+      teamMediaSearchButton.disabled = false;
+      teamMediaSearchButton.textContent = "Намери лого / флаг";
+    }
+    return;
+  }
+
+  const teamMediaClearButton = event.target.closest("[data-team-media-clear]");
+  if (teamMediaClearButton) {
+    updateTeamMediaPicker(teamMediaClearButton.closest("[data-team-media-picker]"), null);
+    setStatus("Автоматичното лого е премахнато от черновата.");
+    return;
+  }
+
+  const addPollOptionButton = event.target.closest("[data-add-poll-option]");
+  if (addPollOptionButton) {
+    syncBeforeMutating();
+    const pollIndex = Number(addPollOptionButton.closest(".editor-card")?.dataset.index);
+    const poll = adminConfig.polls?.[pollIndex];
+    if (poll) {
+      poll.options ||= [];
+      poll.options.push({ id: `option-${Date.now()}-${poll.options.length}`, label: "Нова опция", media: null });
+      renderEditors();
+    }
+    return;
+  }
+
+  const removePollOptionButton = event.target.closest("[data-remove-poll-option]");
+  if (removePollOptionButton) {
+    const pollCard = removePollOptionButton.closest(".editor-card");
+    if (pollCard?.querySelectorAll(".admin-poll-option").length <= 2) {
+      await showInfo("Гласуването трябва да има поне две опции.");
+      return;
+    }
+    syncBeforeMutating();
+    const pollIndex = Number(pollCard.dataset.index);
+    const optionIndex = Number(removePollOptionButton.closest(".admin-poll-option")?.dataset.pollOptionIndex);
+    adminConfig.polls?.[pollIndex]?.options?.splice(optionIndex, 1);
+    renderEditors();
+    return;
+  }
+
   const copyLinkButton = event.target.closest("[data-copy-link]");
   if (copyLinkButton) {
     try {

@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { normalizeTeamMedia } = require("./team-media");
 
 const POINTS = Object.freeze({ outcome: 3, exactScore: 7, streakEvery: 3, streakBonus: 2 });
 const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -227,6 +228,8 @@ function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
         competition: String(match.competition || "D.I.S Matchday").trim(),
         homeTeam: String(match.homeTeam || "Отбор A").trim(),
         awayTeam: String(match.awayTeam || "Отбор B").trim(),
+        homeTeamMedia: normalizeTeamMedia(match.homeTeamMedia),
+        awayTeamMedia: normalizeTeamMedia(match.awayTeamMedia),
         kickoffAt: String(match.kickoffAt || ""),
         isDerby: Boolean(match.isDerby),
         result: resultForMatch(match),
@@ -440,6 +443,8 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
         competition: match.competition,
         homeTeam: match.homeTeam,
         awayTeam: match.awayTeam,
+        homeTeamMedia: match.homeTeamMedia,
+        awayTeamMedia: match.awayTeamMedia,
         kickoffAt: match.kickoffAt,
         isDerby: match.isDerby,
         status: matchStatus(match, now),

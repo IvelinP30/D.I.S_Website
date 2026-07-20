@@ -25,5 +25,7 @@ services:
         sync: false
       - key: MESSAGE_EMAIL_FROM
         sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
       - key: GA_MEASUREMENT_ID
         value: G-G21K94TW2T

@@ -8,4 +8,5 @@ data/messages.json
 data/votes.json
 data/giveaway-entries.json
 data/prediction-league.json
+data/team-media-cache.json
 npm-debug.log*

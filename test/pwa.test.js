@@ -51,6 +51,7 @@ test("every public page loads the public PWA metadata and installer", () => {
   const publicPages = [
     "index.html",
     "news.html",
+    "news-detail.html",
     "fan-zone.html",
     "hosts.html",
     "partners.html",
@@ -103,7 +104,7 @@ test("public policies disclose PWA storage and its exclusions", () => {
 
   for (const policy of [privacy, cookies]) {
     assert.match(policy, /Cache Storage/);
-    assert.match(policy, /2026-07-17/);
+    assert.match(policy, /2026-07-20/);
     assert.match(policy, /админ/i);
     assert.match(policy, /Google Analytics/);
   }
@@ -196,6 +197,134 @@ test("prediction leagues share one profile but expose separate league selectors 
   assert.match(adminScript, /normalizeAdminLeagueCollection/);
   assert.match(adminScript, /data-admin-league-select/);
   assert.match(server, /normalizeLeagueCollection\(content\.predictionLeague\)/);
+});
+
+test("league leaderboard exports a story card with rank, points, and the latest successful prediction", () => {
+  const publicScript = read("client/js/script.js");
+  const styles = read("client/css/styles.css");
+  const fanZone = read("fan-zone.html");
+
+  assert.match(publicScript, /data-league-share-achievement/);
+  assert.match(publicScript, /shareLeagueAchievement\(predictionLeagueState, predictionLeaguePeriod\)/);
+  assert.match(publicScript, /canvas\.width = 1080/);
+  assert.match(publicScript, /canvas\.height = 1920/);
+  assert.match(publicScript, /latestSuccessfulLeagueMatch/);
+  assert.match(publicScript, /myPrediction\?\.scoring\?\.correctOutcome/);
+  assert.match(publicScript, /МОЯТА ПОЗИЦИЯ/);
+  assert.match(publicScript, /ПОСЛЕДЕН УСПЕХ/);
+  assert.match(publicScript, /navigator\.canShare\?\.\(\{ files: \[file\] \}\)/);
+  assert.match(styles, /\.league-leaderboard-share/);
+  assert.match(publicScript, /leagueSelectedPeriod/);
+  assert.match(publicScript, /selectedPeriod\.label/);
+  assert.match(fanZone, /script\.js\?v=20260720-6/);
+});
+
+test("every news card exports a story-ready image with the article photo and a branded fallback", () => {
+  const publicScript = read("client/js/script.js");
+  const styles = read("client/css/styles.css");
+  const news = read("news.html");
+
+  assert.match(publicScript, /data-news-share/);
+  assert.match(publicScript, /shareNewsItem\(item\)/);
+  assert.match(publicScript, /newsExcerpt\(item, 180\)/);
+  assert.match(publicScript, /new URL\("\/news", officialHomepageUrl\)/);
+  assert.match(publicScript, /function createNewsStoryCanvas/);
+  assert.match(publicScript, /function loadCanvasImage/);
+  assert.match(publicScript, /drawCanvasCoverImage\(context, image/);
+  assert.match(publicScript, /canvas\.width = 1080/);
+  assert.match(publicScript, /canvas\.height = 1920/);
+  assert.match(publicScript, /sharePngBlob\(blob/);
+  assert.match(publicScript, /dis-news-\$\{filenamePart\}\.png/);
+  assert.match(publicScript, /Story картата е свалена/);
+  assert.match(publicScript, /focusSharedNewsCard\(newsGrid\)/);
+  assert.match(publicScript, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
+  assert.match(styles, /\.news-share-button/);
+  assert.match(styles, /\.news-card\.is-shared-target/);
+  assert.match(news, /script\.js\?v=20260720-6/);
+});
+
+test("news listing stays compact and every article has a dedicated detail page", () => {
+  const publicScript = read("client/js/script.js");
+  const adminScript = read("client/js/admin.js");
+  const styles = read("client/css/styles.css");
+  const detailPage = read("news-detail.html");
+  const server = read("server.js");
+
+  assert.match(publicScript, /function newsDetailUrl/);
+  assert.match(publicScript, /function renderNewsDetail/);
+  assert.match(publicScript, /class="[^"]*news-read-button[^"]*"/);
+  assert.match(publicScript, /item\.imageCaption/);
+  assert.match(styles, /-webkit-line-clamp: 4/);
+  assert.match(styles, /\.news-detail-article/);
+  assert.match(adminScript, /Кратко резюме за картата и Story share/);
+  assert.match(adminScript, /Пълен текст на новината/);
+  assert.match(adminScript, /class="mini-field readonly-field wide"/);
+  assert.match(detailPage, /id="news-detail"/);
+  assert.match(server, /newsDetailMatch/);
+  assert.match(server, /renderNewsDetailHtml/);
+  assert.match(server, /renderSitemap/);
+});
+
+test("API-Football logo search is protected, cached, selectable, and visible in league and poll UI", () => {
+  const publicScript = read("client/js/script.js");
+  const adminScript = read("client/js/admin.js");
+  const predictionLeague = read("server/prediction-league.js");
+  const server = read("server.js");
+  const privacy = read("privacy.html");
+  const cookies = read("cookies.html");
+
+  assert.match(server, /\/api\/team-media\/search/);
+  assert.match(server, /if \(!isAuthenticated\(request\)\)/);
+  assert.match(server, /API_FOOTBALL_KEY/);
+  assert.match(adminScript, /data-team-media-search/);
+  assert.match(adminScript, /homeTeamMedia/);
+  assert.match(adminScript, /optionMedia/);
+  assert.match(predictionLeague, /homeTeamMedia: normalizeTeamMedia/);
+  assert.match(publicScript, /teamIdentityMarkup\(match\.homeTeam, match\.homeTeamMedia/);
+  assert.match(publicScript, /teamIdentityMarkup\(option\.label, option\.media\)/);
+  assert.match(privacy, /API-Football/);
+  assert.match(cookies, /media\.api-sports\.io/);
+});
+
+test("share images include branded dynamic QR codes for the exact intended destination", () => {
+  const publicScript = read("client/js/script.js");
+  const server = read("server.js");
+  const packageJson = read("package.json");
+
+  assert.match(publicScript, /officialHomepageUrl = "https:\/\/dis-podcast\.onrender\.com\/"/);
+  assert.match(publicScript, /shareLogoAssetUrl = "\/assets\/dis-logo\.png"/);
+  assert.match(publicScript, /\/api\/share-qr\?path=/);
+  assert.match(publicScript, /loadShareQrAssets\("\/fan-zone"\)/);
+  assert.match(publicScript, /loadShareQrAssets\(newsDetailUrl\(item\)\)/);
+  assert.match(publicScript, /QR кодът не се зареди/);
+  assert.match(server, /QRCode\.toBuffer/);
+  assert.match(server, /Access-Control-Allow-Origin/);
+  assert.match(server, /function shareQrTarget/);
+  assert.match(packageJson, /"qrcode"/);
+  assert.match(publicScript, /function drawShareQrBadge/);
+  assert.match(publicScript, /context\.fillText\("SCAN ME"/);
+  assert.match(publicScript, /drawShareQrBadge\(context, shareQrAssets, 770, 1570, 245\)/);
+  assert.match(publicScript, /drawShareQrBadge\(context, shareQrAssets, 805, 1020, 210\)/);
+  assert.match(publicScript, /drawShareQrBadge\(context, qrAssets, 770, 1568, 245\)/);
+});
+
+test("social previews are crawler-readable and nested news pages use root-relative assets", () => {
+  const homepage = read("index.html");
+  const news = read("news.html");
+  const detail = read("news-detail.html");
+  const publicScript = read("client/js/script.js");
+
+  [homepage, news].forEach((page) => {
+    assert.match(page, /property="og:image" content="https:\/\//);
+    assert.match(page, /property="og:image:secure_url" content="https:\/\//);
+    assert.match(page, /property="og:image:type" content="image\/png"/);
+    assert.match(page, /name="twitter:card" content="summary_large_image"/);
+  });
+  assert.match(detail, /property="og:type" content="article"/);
+  assert.match(detail, /__NEWS_IMAGE_TYPE__/);
+  assert.match(detail, /assets\/news-football-hero\.png/);
+  assert.match(publicScript, /`\/\$\{value\.replace\(\/\^\\\.\\\//);
+  assert.match(publicScript, /dis-podcast\.onrender\.com\/news"/);
 });
 
 test("shared PWA script exposes an automatic offline status bar", () => {

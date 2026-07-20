@@ -7,10 +7,11 @@ Live site: https://dis-podcast.onrender.com
 ## What It Is
 
 - Public brand website for Instagram/TikTok/YouTube/Facebook
-- Separate news page with manually managed posts
+- Separate news listing plus dedicated detail pages with manually managed title, compact excerpt, full article, photo and caption
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
-- Multiple D.I.S Prediction Leagues with one shared nickname-only profile, separate matches, points, streaks, trophies and standings, plus recovery codes
+- Multiple D.I.S Prediction Leagues with one shared nickname-only profile, period-aware positions, separate matches, points, streaks, trophies and standings, plus recovery codes
+- Optional API-Football team/association logo lookup for league matches and voting options, with server-side search caching and an explicit admin selection step
 - Optional Fan Zone giveaway registration with protected participants, CSV export, and random winner drawing
 - Contact, partnership, and fan-idea forms stored in a protected admin inbox, with production email notifications
 - Presents the channel as a football media brand
@@ -46,6 +47,7 @@ Then open:
 ```text
 http://127.0.0.1:4177/
 http://127.0.0.1:4177/news
+http://127.0.0.1:4177/news/<article-slug>
 http://127.0.0.1:4177/fan-zone
 http://127.0.0.1:4177/hosts
 http://127.0.0.1:4177/partners
@@ -78,6 +80,7 @@ Create a local `.env` file:
 ```bash
 ADMIN_PASSWORD="choose-a-strong-password"
 SESSION_SECRET="choose-a-long-random-secret"
+API_FOOTBALL_KEY="optional-api-football-key"
 ```
 
 Then run:
@@ -145,12 +148,12 @@ Most public content is editable from the admin panel, including:
 - contact email
 - news page hero text/image
 - direct news hero image upload from the News admin tab
-- news posts with title, text, image, and automatic local date
+- news posts with a stable detail URL, title, compact card/share excerpt, full article text, image, optional caption, and automatic local date
 - page hero content and images for Fan Zone, Hosts, Partnerships, and Contact
 - host profiles and optional profile photos
 - host predictions
-- fan polls, options, status, deadline, and result visibility
-- Prediction League catalogue and each league's title, season, matches, kickoff times, derby flags, final scores and trophies
+- fan polls, individual options, optional API-Football logo/flag selection, status, deadline, and result visibility
+- Prediction League catalogue and each league's title, season, matches, optional API-Football team logos, kickoff times, derby flags, final scores and trophies
 - giveaway title, multiple prizes, prize quantities/images, dates, eligibility, rules, privacy notice, image, and active state
 - giveaway participant search/review, eligibility control, CSV export, secure winner/prize draw, and result reset
 - inbox message statuses and deletion
@@ -166,6 +169,7 @@ Each upload field displays its own loading spinner and progress message while op
 
 - `/` - main website
 - `/news` - news page
+- `/news/:slug` - dedicated article page with full text, image, SEO metadata, and Story-image sharing
 - `/fan-zone` - D.I.S Prediction Leagues, host predictions, polls, and fan idea form
 - `/fan-zone#giveaway` - direct link to the active giveaway; hidden when no campaign is active
 - `/hosts` - editable host profiles
@@ -180,7 +184,11 @@ Each upload field displays its own loading spinner and progress message while op
 
 Every public page has its own search title, description, canonical production URL, Open Graph metadata, and large-image sharing preview for Facebook, Messenger, Viber, Discord, and other compatible apps. The homepage also includes Schema.org `Organization` and `WebSite` JSON-LD with the official brand name, logo, description, and social profiles.
 
-- `sitemap.xml` lists only the eight public canonical pages.
+Social metadata is included in the server's initial HTML response and does not depend on JavaScript. News detail pages receive their own article title, excerpt, canonical URL and uploaded image. Story images show the short `/news` address to avoid visual overlap, while their generated QR opens the exact article. Prediction-result and leaderboard Story images use `/fan-zone` both for the visible address and QR destination. The public `GET /api/share-qr?path=...` endpoint generates only allowlisted D.I.S destinations and cannot be used as a general external-URL QR service.
+
+QR generation is server-side. After installing dependencies or updating this endpoint locally, fully stop and restart `npm start`; refreshing an older running process is not enough. The frontend refuses to download a QR-less Story card and shows a short reload/deploy message instead.
+
+- `/sitemap.xml` is generated from the eight core public pages plus every current news detail URL.
 - `robots.txt` links to the sitemap and prevents crawling of `/admin`, `/login`, and `/api/`.
 - The canonical SEO origin is `https://dis-podcast.onrender.com`. Update every absolute SEO URL, the sitemap, and `robots.txt` before switching to a custom domain.
 - Admin-edited page content remains dynamic, while the core search titles and social previews are intentionally present in the initial HTML so crawlers can read them immediately.
@@ -194,6 +202,22 @@ Every public page has its own search title, description, canonical production UR
 5. Use **URL inspection** to request indexing of the homepage and the most important public pages after major content updates.
 
 Search Console access and verification require the owner's Google account, so this final registration step cannot be completed from the codebase alone.
+
+## API-Football Team Logos
+
+`API_FOOTBALL_KEY` enables the protected admin endpoint `GET /api/team-media/search?q=...`. The key is used only by the Node server in the `x-apisports-key` header and is never returned to public or admin JavaScript. The integration uses API-Football's `/teams?search=` endpoint, which requires at least three characters. Bulgarian input is transliterated, several common country/team names have explicit aliases, and a short prefix fallback helps with small spelling differences. Admins must still verify and select the right result; the system never publishes the first match automatically.
+
+Search results are stored under the protected `teamMediaCache` state for 30 days to reduce quota usage. Local development uses ignored `data/team-media-cache.json`; production uses the existing Supabase `app_state` abstraction. Once an administrator selects a result, its API team ID, official name, country, national-team flag, logo URL and resolution time are stored directly on that match or poll option. Public rendering derives the media URL from the numeric API team ID, and share images include available home/away logos with a text-only fallback when an image cannot load.
+
+API-Football documents `/teams` as data updated several times per week and recommends caching/reference-style use rather than repeated calls. See the [official API-Football documentation](https://www.api-football.com/documentation-beta). Their [terms](https://www.api-football.com/terms) state that delivered logos and trademarks are for identification/descriptive use, may belong to third parties, and can require separate permission. D.I.S administrators remain responsible for confirming the intended public use and must remove a selected logo if rights or accuracy are uncertain.
+
+### Adding the API-Football key
+
+1. Create or sign in to an account at [dashboard.api-football.com](https://dashboard.api-football.com/), enable an API-Football plan, then open **Account → My Access** and copy the API key.
+2. In the Render Dashboard, select the D.I.S web service, open **Environment**, click **Add Environment Variable**, set the key to `API_FOOTBALL_KEY`, paste the API key as the value, and choose **Save and deploy**.
+3. Never paste the key into `client/js/config.js`, an HTML file, or Git. It is a server secret and is already declared with `sync: false` in `render.yaml`.
+4. For local testing only, add `API_FOOTBALL_KEY=...` to the ignored `.env` file and restart `npm start`.
+5. After deployment, open the protected admin Fan Zone editor, enter a team/country name, use **Намери лого / флаг**, select the intended result, and save the page.
 
 Google Search Console is used for indexing and search-performance reporting. This integration does not add a browser tracking script or a new site cookie, so it does not change the current Privacy or Cookie policy disclosures. Adding Google Analytics, Meta Pixel, advertising trackers, a new external embed, or any new form field requires a fresh review of both legal pages before deployment.
 
@@ -231,6 +255,7 @@ Production analytics uses the GA4 web data stream `G-G21K94TW2T` for `https://di
 - Google Analytics 4 is optional and loads only after explicit analytics consent; Meta Pixel and advertising-profile trackers are not used.
 - The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
 - Google Fonts is also loaded from Google and is disclosed as an external service.
+- Optional API-Football searches are server-to-server from the authenticated admin only. Selected public logos load from `media.api-sports.io`; the Privacy and Cookie policies disclose the resulting technical request, the 30-day search cache, selected-result storage, lack of a new D.I.S cookie, and third-party trademark responsibility.
 - Treat `README.md`, `/privacy`, and `/cookies` as part of every feature change: update the relevant documentation and displayed last-updated date whenever data collection, cookies, retention, external providers, tracking, user forms, or campaign rules change.
 
 Operational responsibility remains with the administrators: resolve and remove inbox messages when no longer needed, normally within 12 months, and remove giveaway participant data after the campaign, prize delivery, and any short complaint period, normally within 90 days. Before using uploaded media publicly, confirm that D.I.S has permission to use the image, logo, person, music, video, or sponsor material. AI generation alone does not guarantee rights over real people, club marks, or third-party brands.
@@ -252,6 +277,7 @@ The policy text is a practical transparency baseline and not a substitute for ad
 - Runtime inbox messages, vote records, Prediction League participants/predictions, and uploaded files are ignored by Git.
 - Production requires explicit `ADMIN_PASSWORD` and `SESSION_SECRET` environment variables.
 - Production requires `RESEND_API_KEY` and `MESSAGE_EMAIL_FROM`; local development does not send message emails even if they exist in `.env`.
+- `API_FOOTBALL_KEY` is optional. Without it, the site and existing text-only teams continue to work, while the admin logo-search control returns a clear configuration message.
 - `GET /health` is available for hosting health checks.
 - Do not commit real inbox messages, voter identifiers, passwords, or API keys.
 

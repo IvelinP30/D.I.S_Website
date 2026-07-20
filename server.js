@@ -2,8 +2,10 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const QRCode = require("qrcode");
 const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
+const { searchApiFootballTeams } = require("./server/team-media");
 const {
   archiveDeletedLeagueMatches,
   buildPredictionLeagueState,
@@ -40,6 +42,7 @@ const votesFile = path.join(root, "data", "votes.json");
 const messagesFile = path.join(root, "data", "messages.json");
 const giveawayEntriesFile = path.join(root, "data", "giveaway-entries.json");
 const predictionLeagueFile = path.join(root, "data", "prediction-league.json");
+const teamMediaCacheFile = path.join(root, "data", "team-media-cache.json");
 const uploadsDir = path.join(root, "uploads");
 const port = Number(process.env.PORT || 4177);
 const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
@@ -52,6 +55,7 @@ const resendApiKey = String(process.env.RESEND_API_KEY || "").trim();
 const messageEmailFrom = String(process.env.MESSAGE_EMAIL_FROM || "").trim();
 const configuredGaMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim().toUpperCase();
 const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? configuredGaMeasurementId : "";
+const apiFootballKey = String(process.env.API_FOOTBALL_KEY || "").trim();
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
@@ -116,6 +120,7 @@ if (!fs.existsSync(votesFile)) fs.writeFileSync(votesFile, '{"polls":{}}\n');
 if (!fs.existsSync(messagesFile)) fs.writeFileSync(messagesFile, "[]\n");
 if (!fs.existsSync(giveawayEntriesFile)) fs.writeFileSync(giveawayEntriesFile, "[]\n");
 if (!fs.existsSync(predictionLeagueFile)) fs.writeFileSync(predictionLeagueFile, '{"players":[],"predictions":[]}\n');
+if (!fs.existsSync(teamMediaCacheFile)) fs.writeFileSync(teamMediaCacheFile, '{"searches":{}}\n');
 
 function supabaseHeaders(extra = {}) {
   const headers = { apikey: supabaseKey, ...extra };
@@ -577,6 +582,94 @@ function safePath(urlPath) {
   return filePath;
 }
 
+function newsItemSlug(item = {}, index = 0) {
+  const explicit = String(item.slug || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9а-я]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
+  if (explicit) return explicit;
+  const title = String(item.title || "news")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9а-я]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 52) || "news";
+  const dateSuffix = String(item.createdAt || "").replace(/\D/g, "").slice(0, 12) || index + 1;
+  return `${title}-${dateSuffix}`;
+}
+
+function compactPlainText(value = "", maxLength = 180) {
+  const clean = String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  return clean.length > maxLength ? `${clean.slice(0, maxLength - 1).trim()}…` : clean;
+}
+
+function escapeHtmlAttribute(value = "") {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function absolutePublicUrl(value = "", fallback = "/assets/news-football-hero.png") {
+  try {
+    return new URL(value || fallback, "https://dis-podcast.onrender.com").href;
+  } catch {
+    return new URL(fallback, "https://dis-podcast.onrender.com").href;
+  }
+}
+
+function publicImageMimeType(value = "") {
+  const extension = path.extname(String(value).split(/[?#]/)[0]).toLowerCase();
+  return ({ ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp" })[extension] || "image/png";
+}
+
+function shareQrTarget(value = "") {
+  try {
+    const target = new URL(String(value || "/"), "https://dis-podcast.onrender.com");
+    const allowed = target.origin === "https://dis-podcast.onrender.com" && (
+      target.pathname === "/" ||
+      target.pathname === "/news" ||
+      target.pathname.startsWith("/news/") ||
+      target.pathname === "/fan-zone"
+    );
+    return allowed ? target.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function renderNewsDetailHtml(item, index = 0) {
+  const template = fs.readFileSync(path.join(root, "news-detail.html"), "utf8");
+  const title = compactPlainText(item?.title || "Новина от D.I.S Подкаст", 120);
+  const description = compactPlainText(item?.excerpt || item?.body || "Футболна новина от D.I.S Подкаст.", 180);
+  const canonical = `https://dis-podcast.onrender.com/news/${encodeURIComponent(newsItemSlug(item, index))}`;
+  const image = absolutePublicUrl(item?.imageUrl);
+  const imageType = publicImageMimeType(image);
+  return template
+    .replaceAll("__NEWS_TITLE__", escapeHtmlAttribute(title))
+    .replaceAll("__NEWS_DESCRIPTION__", escapeHtmlAttribute(description))
+    .replaceAll("__NEWS_CANONICAL__", escapeHtmlAttribute(canonical))
+    .replaceAll("__NEWS_IMAGE__", escapeHtmlAttribute(image))
+    .replaceAll("__NEWS_IMAGE_TYPE__", escapeHtmlAttribute(imageType));
+}
+
+function renderSitemap(content = {}) {
+  const staticPaths = ["/", "/news", "/fan-zone", "/hosts", "/partners", "/contact", "/privacy", "/cookies"];
+  const urls = staticPaths.map((pathname) => ({ pathname, lastmod: "2026-07-20" }));
+  (content.news || []).forEach((item, index) => {
+    urls.push({
+      pathname: `/news/${encodeURIComponent(newsItemSlug(item, index))}`,
+      lastmod: /^\d{4}-\d{2}-\d{2}/.test(item.createdAt || "") ? item.createdAt.slice(0, 10) : "2026-07-20"
+    });
+  });
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.map((item) => `  <url><loc>${escapeHtmlAttribute(`https://dis-podcast.onrender.com${item.pathname}`)}</loc><lastmod>${item.lastmod}</lastmod></url>`).join("\n")}\n</urlset>\n`;
+}
+
 function loginPage(error = "") {
   return `<!doctype html>
     <html lang="bg">
@@ -627,11 +720,47 @@ async function handleRequest(request, response) {
     return sendJson(response, 200, await readContent());
   }
 
+  if (url.pathname === "/api/share-qr" && request.method === "GET") {
+    const target = shareQrTarget(url.searchParams.get("path"));
+    if (!target) return sendJson(response, 400, { error: "Invalid share target" });
+    const png = await QRCode.toBuffer(target, {
+      type: "png",
+      width: 512,
+      margin: 2,
+      errorCorrectionLevel: "H",
+      color: { dark: "#050608", light: "#ffffff" }
+    });
+    return send(response, 200, png, {
+      "Content-Type": "image/png",
+      "Cache-Control": "public, max-age=86400",
+      "Access-Control-Allow-Origin": "*",
+      "X-Content-Type-Options": "nosniff"
+    });
+  }
+
   if (url.pathname === "/api/content" && request.method === "PUT") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const nextContent = JSON.parse(await readBody(request));
     await writeContent(nextContent);
     return sendJson(response, 200, nextContent);
+  }
+
+  if (url.pathname === "/api/team-media/search" && request.method === "GET") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const query = String(url.searchParams.get("q") || "").trim();
+    try {
+      const cache = await readJsonFile(teamMediaCacheFile, { searches: {} }, "teamMediaCache");
+      const result = await searchApiFootballTeams(query, { apiKey: apiFootballKey, cache });
+      if (!result.cacheHit) await writeJsonFile(teamMediaCacheFile, result.cache, "teamMediaCache");
+      return sendJson(response, 200, {
+        results: result.results,
+        cached: Boolean(result.cacheHit),
+        stale: Boolean(result.stale)
+      }, { "Cache-Control": "no-store, max-age=0" });
+    } catch (error) {
+      const statusCode = error.code === "API_FOOTBALL_NOT_CONFIGURED" ? 503 : /поне 3/.test(error.message) ? 400 : 502;
+      return sendJson(response, statusCode, { error: error.message }, { "Cache-Control": "no-store, max-age=0" });
+    }
   }
 
   if (url.pathname === "/api/league" && request.method === "GET") {
@@ -1081,6 +1210,28 @@ async function handleRequest(request, response) {
 
   if (url.pathname === "/admin.html" && !isAuthenticated(request)) {
     return send(response, 302, "", { Location: "/login" });
+  }
+
+  if (url.pathname === "/sitemap.xml" && request.method === "GET") {
+    return send(response, 200, renderSitemap(await readContent()), { "Content-Type": "application/xml; charset=utf-8", "Cache-Control": "no-cache" });
+  }
+
+  const newsDetailMatch = url.pathname.match(/^\/news\/([^/]+)$/);
+  if (newsDetailMatch && request.method === "GET") {
+    const content = await readContent();
+    let slug = "";
+    try {
+      slug = decodeURIComponent(newsDetailMatch[1]);
+    } catch {
+      slug = "";
+    }
+    const newsItems = Array.isArray(content.news) ? content.news : [];
+    const newsIndex = newsItems.findIndex((item, index) => newsItemSlug(item, index) === slug);
+    if (newsIndex < 0) {
+      const missing = { slug: slug || "not-found", title: "Новината не е намерена", excerpt: "Тази публикация не е налична.", imageUrl: "" };
+      return send(response, 404, renderNewsDetailHtml(missing), { "Content-Type": "text/html; charset=utf-8" });
+    }
+    return send(response, 200, renderNewsDetailHtml(newsItems[newsIndex], newsIndex), { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-cache" });
   }
 
   if (url.pathname === "/news") {

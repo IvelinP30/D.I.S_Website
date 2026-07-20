@@ -64,8 +64,12 @@ function optimizeStaticAssetUrls(value) {
   if (value && typeof value === "object") {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, optimizeStaticAssetUrls(item)]));
   }
-  if (typeof value !== "string" || !value.includes("assets/") || value.endsWith("dis-logo.png")) return value;
-  return value.replace(/\.png$/, ".webp");
+  if (typeof value !== "string") return value;
+  const normalized = /^(?:\.\/)?(?:assets|uploads|client)\//.test(value)
+    ? `/${value.replace(/^\.\//, "")}`
+    : value;
+  if (!normalized.includes("assets/") || normalized.endsWith("dis-logo.png")) return normalized;
+  return normalized.replace(/\.png$/, ".webp");
 }
 
 async function loadContent({ allowFallback = true } = {}) {
@@ -146,6 +150,7 @@ function renderPage() {
   const contactActions = document.querySelector("#contact-actions");
   const heroStack = document.querySelector("#hero-stack");
   const newsGrid = document.querySelector("#news-grid");
+  const newsDetail = document.querySelector("#news-detail");
   const footerNav = document.querySelector("[data-footer-nav]");
   const footerSocials = document.querySelector("[data-footer-socials]");
   const footerEmail = document.querySelector("[data-footer-email]");
@@ -335,9 +340,12 @@ function renderPage() {
   if (newsGrid) {
     const newsItems = [...(config.news || [])].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
     newsGrid.innerHTML = newsItems.length
-      ? newsItems.map(renderNewsCard).join("")
+      ? newsItems.map((item, index) => renderNewsCard(item, index)).join("")
       : `<article class="empty-state">Все още няма добавени новини.</article>`;
+    bindNewsShareActions(newsGrid, newsItems);
+    focusSharedNewsCard(newsGrid);
   }
+  if (newsDetail) renderNewsDetail(newsDetail);
 
   if (statGrid) {
     statGrid.innerHTML = (config.stats || [])
@@ -583,8 +591,25 @@ function leagueIdentityMarkup() {
     </article>`;
 }
 
+function teamMediaLogoUrl(media) {
+  const id = Number(media?.id);
+  return Number.isInteger(id) && id > 0 ? `https://media.api-sports.io/football/teams/${id}.png` : "";
+}
+
+function teamIdentityMarkup(name, media, className = "") {
+  const logo = teamMediaLogoUrl(media);
+  return `<span class="team-identity ${className}">${logo ? `<img src="${escapeAttribute(logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ""}<span>${escapeHTML(name || "Отбор")}</span></span>`;
+}
+
+function leagueSelectedPeriod(state) {
+  const period = ["week", "month", "season"].includes(predictionLeaguePeriod) ? predictionLeaguePeriod : "week";
+  const labels = { week: "тази седмица", month: "този месец", season: "за сезона" };
+  return { period, label: labels[period], rank: state.me?.ranks?.[period] || null };
+}
+
 function leagueProfileMarkup(state) {
   const me = state.me;
+  const selectedPeriod = leagueSelectedPeriod(state);
   const badges = me.badges?.length
     ? me.badges.map((badge) => leagueBadgeMarkup(badge)).join("")
     : `<span class="league-badge-empty">Първият трофей те чака.</span>`;
@@ -595,7 +620,7 @@ function leagueProfileMarkup(state) {
         <strong>${me.totalPoints}<small>точки</small></strong>
       </div>
       <div class="league-profile-stats">
-        <div><strong>${me.ranks.week ? `#${me.ranks.week}` : "—"}</strong><span>тази седмица</span></div>
+        <div><strong>${selectedPeriod.rank ? `#${selectedPeriod.rank}` : "—"}</strong><span>${selectedPeriod.label}</span></div>
         <div><strong>${me.currentStreak}</strong><span>текуща серия</span></div>
         <div><strong>${me.exactScores}</strong><span>точни резултати</span></div>
       </div>
@@ -673,6 +698,7 @@ function leagueLeaderboardMarkup(state) {
   const rows = state.leaderboards?.[period] || [];
   const labels = { week: "Тази седмица", month: "Този месец", season: "D.I.S сезон" };
   const periodLabel = period === "season" ? state.seasonLabel : state.periods?.[period] || "";
+  const myRank = state.me?.ranks?.[period] || null;
   return `
     <article class="league-table-card">
       <div class="league-table-heading"><div><span>Класация</span><h3>${labels[period]}</h3></div><small>${escapeHTML(periodLabel)}</small></div>
@@ -687,6 +713,7 @@ function leagueLeaderboardMarkup(state) {
             <em>${row.points} т.</em>
           </div>`).join("") : `<div class="league-table-empty">Класацията чака първите прогнози.</div>`}
       </div>
+      ${state.me ? `<button class="button secondary league-leaderboard-share" type="button" data-league-share-achievement ${myRank ? "" : "disabled"}>${myRank ? "Сподели позицията и точките" : "Позиция след първия резултат"}</button>` : ""}
     </article>`;
 }
 
@@ -704,9 +731,9 @@ function leagueMatchMarkup(match, state) {
     action = me ? `
       <form class="league-prediction-form" data-league-prediction="${escapeAttribute(match.id)}">
         <div class="league-score-inputs">
-          <label><span>${escapeHTML(match.homeTeam)}</span><input name="homeScore" type="number" min="0" max="30" inputmode="numeric" required value="${prediction?.homeScore ?? ""}" aria-label="Голове за ${escapeAttribute(match.homeTeam)}" /></label>
+          <label>${teamIdentityMarkup(match.homeTeam, match.homeTeamMedia)}<input name="homeScore" type="number" min="0" max="30" inputmode="numeric" required value="${prediction?.homeScore ?? ""}" aria-label="Голове за ${escapeAttribute(match.homeTeam)}" /></label>
           <b>:</b>
-          <label><span>${escapeHTML(match.awayTeam)}</span><input name="awayScore" type="number" min="0" max="30" inputmode="numeric" required value="${prediction?.awayScore ?? ""}" aria-label="Голове за ${escapeAttribute(match.awayTeam)}" /></label>
+          <label>${teamIdentityMarkup(match.awayTeam, match.awayTeamMedia)}<input name="awayScore" type="number" min="0" max="30" inputmode="numeric" required value="${prediction?.awayScore ?? ""}" aria-label="Голове за ${escapeAttribute(match.awayTeam)}" /></label>
         </div>
         <button class="button ${prediction ? "league-update-button" : "primary"} ${justSaved ? "is-confirmed" : ""}" type="submit">${justSaved ? "Прогнозата е записана ✓" : prediction ? "Промени прогнозата" : "Запиши прогнозата"}</button>
         <p class="league-form-feedback" data-league-feedback role="status">${prediction ? `Записана прогноза: ${predictionCopy} · Можеш да я промениш до ${kickoff}.` : `Край за прогнози: ${kickoff} — началото на мача.`}</p>
@@ -725,7 +752,7 @@ function leagueMatchMarkup(match, state) {
     <article class="league-match-card ${match.status === "settled" ? "is-settled" : ""} ${justSaved ? "is-just-saved" : ""}">
       <div class="league-match-top"><span class="league-match-status status-${match.status}"><i></i>${statusLabel}</span><small>${escapeHTML(match.competition)}${match.isDerby ? " · Дерби" : ""}</small></div>
       <time datetime="${escapeAttribute(match.kickoffAt || "")}"><span>Начало на мача и край за прогнози</span>${escapeHTML(kickoff)}</time>
-      <div class="league-fixture"><strong>${escapeHTML(match.homeTeam)}</strong><span>${result || "VS"}</span><strong>${escapeHTML(match.awayTeam)}</strong></div>
+      <div class="league-fixture"><strong>${teamIdentityMarkup(match.homeTeam, match.homeTeamMedia, "is-home")}</strong><span>${result || "VS"}</span><strong>${teamIdentityMarkup(match.awayTeam, match.awayTeamMedia, "is-away")}</strong></div>
       ${action}
     </article>`;
 }
@@ -975,7 +1002,35 @@ function bindPredictionLeagueActions() {
   app.querySelectorAll("[data-league-share]").forEach((button) => {
     button.addEventListener("click", async () => {
       const match = predictionLeagueState.matches.find((item) => item.id === button.dataset.leagueShare);
-      if (match) await shareLeagueResult(match, predictionLeagueState.me);
+      if (!match) return;
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "Подготвям…";
+      try {
+        const outcome = await shareLeagueResult(match, predictionLeagueState, predictionLeaguePeriod);
+        button.textContent = outcome === "downloaded" ? "Картата е свалена ✓" : originalLabel;
+      } catch (error) {
+        button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
+      }
+      window.setTimeout(() => { button.textContent = originalLabel; button.disabled = false; }, 1600);
+    });
+  });
+  app.querySelectorAll("[data-league-share-achievement]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const originalLabel = button.textContent;
+      button.disabled = true;
+      button.textContent = "Подготвям…";
+      try {
+        const outcome = await shareLeagueAchievement(predictionLeagueState, predictionLeaguePeriod);
+        if (outcome === "downloaded") button.textContent = "Картата е свалена ✓";
+        else button.textContent = originalLabel;
+      } catch (error) {
+        button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
+      }
+      window.setTimeout(() => {
+        button.textContent = originalLabel;
+        button.disabled = false;
+      }, 1600);
     });
   });
 }
@@ -994,7 +1049,367 @@ async function renderPredictionLeague() {
   }
 }
 
-async function shareLeagueResult(match, me) {
+function drawCanvasRoundRect(context, x, y, width, height, radius, fill, stroke = "") {
+  const corner = Math.min(radius, width / 2, height / 2);
+  context.beginPath();
+  context.moveTo(x + corner, y);
+  context.lineTo(x + width - corner, y);
+  context.quadraticCurveTo(x + width, y, x + width, y + corner);
+  context.lineTo(x + width, y + height - corner);
+  context.quadraticCurveTo(x + width, y + height, x + width - corner, y + height);
+  context.lineTo(x + corner, y + height);
+  context.quadraticCurveTo(x, y + height, x, y + height - corner);
+  context.lineTo(x, y + corner);
+  context.quadraticCurveTo(x, y, x + corner, y);
+  context.closePath();
+  if (fill) {
+    context.fillStyle = fill;
+    context.fill();
+  }
+  if (stroke) {
+    context.strokeStyle = stroke;
+    context.stroke();
+  }
+}
+
+function fitCanvasText(context, text, maxWidth, { weight = 900, maxSize = 82, minSize = 28 } = {}) {
+  const copy = String(text || "");
+  let size = maxSize;
+  while (size > minSize) {
+    context.font = `${weight} ${size}px Inter, Arial, sans-serif`;
+    if (context.measureText(copy).width <= maxWidth) break;
+    size -= 2;
+  }
+  return size;
+}
+
+function drawCanvasFittedText(context, text, x, y, maxWidth, options = {}) {
+  const size = fitCanvasText(context, text, maxWidth, options);
+  context.font = `${options.weight || 900} ${size}px Inter, Arial, sans-serif`;
+  context.fillText(String(text || ""), x, y);
+  return size;
+}
+
+function wrapCanvasText(context, text, maxWidth, maxLines = 4) {
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean).flatMap((word) => {
+    if (context.measureText(word).width <= maxWidth) return [word];
+    const chunks = [];
+    let chunk = "";
+    [...word].forEach((character) => {
+      const candidate = `${chunk}${character}`;
+      if (chunk && context.measureText(candidate).width > maxWidth) {
+        chunks.push(chunk);
+        chunk = character;
+      } else {
+        chunk = candidate;
+      }
+    });
+    if (chunk) chunks.push(chunk);
+    return chunks;
+  });
+  const lines = [];
+  let line = "";
+  for (let index = 0; index < words.length; index += 1) {
+    const candidate = line ? `${line} ${words[index]}` : words[index];
+    if (context.measureText(candidate).width <= maxWidth) {
+      line = candidate;
+      continue;
+    }
+    lines.push(line);
+    line = words[index];
+    if (lines.length === maxLines - 1) {
+      const remaining = [line, ...words.slice(index + 1)].join(" ");
+      let finalLine = remaining;
+      while (finalLine.length > 1 && context.measureText(`${finalLine}…`).width > maxWidth) finalLine = finalLine.slice(0, -1);
+      lines.push(`${finalLine.trim()}…`);
+      return lines;
+    }
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  return lines;
+}
+
+function drawCanvasWrappedText(context, text, x, y, maxWidth, lineHeight, maxLines = 4) {
+  const lines = wrapCanvasText(context, text, maxWidth, maxLines);
+  lines.forEach((line, index) => context.fillText(line, x, y + index * lineHeight));
+  return y + Math.max(0, lines.length - 1) * lineHeight;
+}
+
+const officialHomepageUrl = "https://dis-podcast.onrender.com/";
+const shareLogoAssetUrl = "/assets/dis-logo.png";
+const shareQrAssets = new Map();
+
+function loadShareQrAssets(targetPath = "/") {
+  const cacheKey = String(targetPath || "/");
+  if (!shareQrAssets.has(cacheKey)) {
+    const qrUrl = `/api/share-qr?path=${encodeURIComponent(cacheKey)}`;
+    shareQrAssets.set(
+      cacheKey,
+      Promise.all([loadCanvasImage(qrUrl), loadCanvasImage(shareLogoAssetUrl)])
+        .then(([qrImage, logoImage]) => {
+          if (!qrImage) throw new Error("QR кодът не се зареди. Обнови страницата след рестарт или deploy.");
+          return { qrImage, logoImage };
+        })
+        .catch((error) => {
+          shareQrAssets.delete(cacheKey);
+          throw error;
+        })
+    );
+  }
+  return shareQrAssets.get(cacheKey);
+}
+
+function drawShareQrBadge(context, assets, x, y, width) {
+  const qrImage = assets?.qrImage;
+  if (!qrImage) return 0;
+  const height = width * 1.23;
+  const inset = width * 0.065;
+  const qrSize = width - inset * 2;
+  const green = "#38f27f";
+  context.save();
+  context.lineWidth = Math.max(4, width * 0.022);
+  drawCanvasRoundRect(context, x, y, width, height, width * 0.12, "rgba(2,7,5,0.98)", green);
+  drawCanvasRoundRect(context, x + inset, y + inset, qrSize, qrSize, width * 0.055, "#ffffff");
+  context.imageSmoothingEnabled = false;
+  context.drawImage(qrImage, x + inset, y + inset, qrSize, qrSize);
+  context.imageSmoothingEnabled = true;
+
+  const logoTileSize = qrSize * 0.2;
+  const logoX = x + width / 2 - logoTileSize / 2;
+  const logoY = y + inset + qrSize / 2 - logoTileSize / 2;
+  context.lineWidth = Math.max(3, width * 0.016);
+  drawCanvasRoundRect(context, logoX - 4, logoY - 4, logoTileSize + 8, logoTileSize + 8, width * 0.035, "#ffffff", green);
+  drawCanvasRoundRect(context, logoX, logoY, logoTileSize, logoTileSize, width * 0.025, "#07120d");
+  if (assets.logoImage) {
+    context.drawImage(assets.logoImage, logoX + 2, logoY + 2, logoTileSize - 4, logoTileSize - 4);
+  } else {
+    context.fillStyle = "#f7f8fb";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.font = `900 ${Math.round(logoTileSize * 0.37)}px Inter, Arial, sans-serif`;
+    context.fillText("D.I.S", x + width / 2, logoY + logoTileSize / 2);
+  }
+
+  const labelY = y + height - width * 0.11;
+  context.fillStyle = green;
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.font = `900 ${Math.round(width * 0.13)}px Inter, Arial, sans-serif`;
+  context.fillText("SCAN ME", x + width * 0.43, labelY);
+
+  context.strokeStyle = "#f4d44d";
+  context.lineWidth = Math.max(4, width * 0.024);
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.beginPath();
+  context.moveTo(x + width * 0.74, labelY + width * 0.015);
+  context.bezierCurveTo(
+    x + width * 0.86,
+    labelY,
+    x + width * 0.9,
+    y + inset + qrSize + width * 0.045,
+    x + width * 0.88,
+    y + inset + qrSize - width * 0.015
+  );
+  context.stroke();
+  context.beginPath();
+  context.moveTo(x + width * 0.82, y + inset + qrSize + width * 0.025);
+  context.lineTo(x + width * 0.88, y + inset + qrSize - width * 0.015);
+  context.lineTo(x + width * 0.92, y + inset + qrSize + width * 0.05);
+  context.stroke();
+  context.restore();
+  return height;
+}
+
+function drawCanvasTeamLogo(context, image, x, y, size) {
+  if (!image) return;
+  context.save();
+  context.lineWidth = Math.max(3, size * 0.055);
+  drawCanvasRoundRect(context, x, y, size, size, size * 0.24, "#f7f8fb", "rgba(56,242,127,0.72)");
+  context.drawImage(image, x + size * 0.12, y + size * 0.12, size * 0.76, size * 0.76);
+  context.restore();
+}
+
+function canvasToPngBlob(canvas) {
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
+function downloadShareImage(blob, filename) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = filename;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+async function sharePngBlob(blob, { filename, title, text }) {
+  if (!blob) throw new Error("Картата не може да бъде генерирана.");
+  const file = new File([blob], filename, { type: "image/png" });
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ title, text, files: [file] });
+      return "shared";
+    } catch (error) {
+      if (error?.name === "AbortError") return "cancelled";
+    }
+  }
+  downloadShareImage(blob, filename);
+  return "downloaded";
+}
+
+function leagueSharePeriod(state, period) {
+  const labels = { week: "ТАЗИ СЕДМИЦА", month: "ТОЗИ МЕСЕЦ", season: "D.I.S СЕЗОН" };
+  const rows = state.leaderboards?.[period] || [];
+  const row = rows.find((item) => item.nickname === state.me?.nickname);
+  const fallbackPoints = period === "week"
+    ? state.me?.weeklyPoints
+    : period === "month"
+      ? state.me?.monthlyPoints
+      : state.me?.totalPoints;
+  return {
+    label: labels[period] || labels.week,
+    rank: state.me?.ranks?.[period] || row?.rank || null,
+    points: Number(row?.points ?? fallbackPoints) || 0
+  };
+}
+
+function latestSuccessfulLeagueMatch(state) {
+  return [...(state.matches || [])]
+    .filter((match) => match.status === "settled" && match.myPrediction?.scoring?.correctOutcome)
+    .sort((left, right) => new Date(right.kickoffAt || 0) - new Date(left.kickoffAt || 0))[0] || null;
+}
+
+async function shareLeagueAchievement(state, period = "week") {
+  if (!state?.me) throw new Error("Липсва профил за споделяне.");
+  const standing = leagueSharePeriod(state, period);
+  if (!standing.rank) throw new Error("Все още няма позиция за този период.");
+  const latestSuccess = latestSuccessfulLeagueMatch(state);
+  const [shareQrAssets, latestHomeLogo, latestAwayLogo] = await Promise.all([
+    loadShareQrAssets("/fan-zone"),
+    loadCanvasImage(teamMediaLogoUrl(latestSuccess?.homeTeamMedia)),
+    loadCanvasImage(teamMediaLogoUrl(latestSuccess?.awayTeamMedia))
+  ]);
+  const shareUrl = `${officialHomepageUrl.replace(/\/$/, "")}/fan-zone`;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const context = canvas.getContext("2d");
+  const background = context.createLinearGradient(0, 0, 1080, 1920);
+  background.addColorStop(0, "#07150e");
+  background.addColorStop(0.45, "#09121a");
+  background.addColorStop(1, "#030506");
+  context.fillStyle = background;
+  context.fillRect(0, 0, 1080, 1920);
+
+  context.globalAlpha = 0.16;
+  context.strokeStyle = "#38f27f";
+  context.lineWidth = 3;
+  context.beginPath();
+  context.arc(980, 180, 280, 0, Math.PI * 2);
+  context.stroke();
+  context.beginPath();
+  context.arc(90, 1660, 360, 0, Math.PI * 2);
+  context.stroke();
+  context.globalAlpha = 1;
+  context.lineWidth = 7;
+  context.strokeStyle = "#38f27f";
+  context.strokeRect(38, 38, 1004, 1844);
+
+  context.fillStyle = "#38f27f";
+  context.font = "900 42px Inter, Arial, sans-serif";
+  context.fillText("D.I.S ЛИГА НА ПРОГНОЗИТЕ", 82, 125);
+  context.fillStyle = "#9ba6b5";
+  context.font = "700 28px Inter, Arial, sans-serif";
+  drawCanvasFittedText(context, `${state.title} · ${state.seasonLabel}`, 82, 182, 870, { weight: 700, maxSize: 30, minSize: 22 });
+  context.fillStyle = "#f7f8fb";
+  drawCanvasFittedText(context, state.me.nickname, 82, 324, 916, { weight: 900, maxSize: 94, minSize: 42 });
+  context.fillStyle = "#38f27f";
+  context.fillRect(82, 360, 230, 10);
+
+  context.lineWidth = 2;
+  drawCanvasRoundRect(context, 70, 420, 940, 540, 34, "rgba(255,255,255,0.045)", "rgba(56,242,127,0.32)");
+  context.fillStyle = "#aab2c0";
+  context.font = "800 29px Inter, Arial, sans-serif";
+  context.fillText("МОЯТА ПОЗИЦИЯ", 112, 500);
+  context.fillStyle = standing.rank === 1 ? "#f4d44d" : "#38f27f";
+  drawCanvasFittedText(context, `#${standing.rank}`, 105, 800, 500, { weight: 900, maxSize: 290, minSize: 170 });
+  context.fillStyle = "#f7f8fb";
+  context.font = "900 34px Inter, Arial, sans-serif";
+  context.fillText(standing.label, 115, 895);
+
+  drawCanvasRoundRect(context, 620, 555, 330, 250, 28, "rgba(244,212,77,0.08)", "rgba(244,212,77,0.34)");
+  context.fillStyle = "#f4d44d";
+  context.textAlign = "center";
+  drawCanvasFittedText(context, String(standing.points), 785, 705, 270, { weight: 900, maxSize: 126, minSize: 76 });
+  context.fillStyle = "#f7f8fb";
+  context.font = "900 31px Inter, Arial, sans-serif";
+  context.fillText("ТОЧКИ", 785, 760);
+  context.textAlign = "left";
+
+  if (latestSuccess) {
+    const prediction = latestSuccess.myPrediction;
+    const scoring = prediction.scoring || {};
+    drawCanvasRoundRect(context, 70, 1025, 940, 570, 34, "rgba(255,255,255,0.035)", "rgba(244,212,77,0.24)");
+    context.fillStyle = "#f4d44d";
+    context.font = "900 27px Inter, Arial, sans-serif";
+    context.fillText(scoring.exactScore ? "ПОСЛЕДЕН УСПЕХ · ТОЧЕН РЕЗУЛТАТ" : "ПОСЛЕДЕН УСПЕХ · ПОЗНАТ ИЗХОД", 112, 1100);
+    context.fillStyle = "#f7f8fb";
+    context.textAlign = "center";
+    drawCanvasFittedText(context, `${latestSuccess.homeTeam} — ${latestSuccess.awayTeam}`, 540, 1210, 830, { weight: 800, maxSize: 50, minSize: 28 });
+    drawCanvasTeamLogo(context, latestHomeLogo, 112, 1145, 82);
+    drawCanvasTeamLogo(context, latestAwayLogo, 886, 1145, 82);
+    context.fillStyle = "#38f27f";
+    context.font = "900 152px Inter, Arial, sans-serif";
+    context.fillText(`${prediction.homeScore}:${prediction.awayScore}`, 390, 1425);
+    context.textAlign = "left";
+    context.fillStyle = "#aab2c0";
+    context.font = "700 26px Inter, Arial, sans-serif";
+    context.fillText("МОЯТА ПРОГНОЗА", 180, 1490);
+    context.fillText(`КРАЕН: ${latestSuccess.result.homeScore}:${latestSuccess.result.awayScore}`, 510, 1490);
+    drawCanvasRoundRect(context, 755, 1300, 190, 145, 24, "rgba(56,242,127,0.1)", "rgba(56,242,127,0.3)");
+    context.fillStyle = "#38f27f";
+    context.textAlign = "center";
+    context.font = "900 70px Inter, Arial, sans-serif";
+    context.fillText(`+${scoring.points || 0}`, 850, 1390);
+    context.fillStyle = "#f7f8fb";
+    context.font = "800 22px Inter, Arial, sans-serif";
+    context.fillText("ТОЧКИ", 850, 1425);
+    context.textAlign = "left";
+  } else {
+    drawCanvasRoundRect(context, 70, 1025, 940, 400, 34, "rgba(255,255,255,0.035)", "rgba(56,242,127,0.2)");
+    context.fillStyle = "#38f27f";
+    context.font = "900 29px Inter, Arial, sans-serif";
+    context.fillText("ФОРМАТА Е ВРЕМЕННА. КЛАСАТА Е ПОСТОЯННА.", 112, 1120);
+    context.fillStyle = "#f7f8fb";
+    context.font = "800 54px Inter, Arial, sans-serif";
+    context.fillText("Следващата прогноза", 112, 1240);
+    context.fillText("вече те чака.", 112, 1310);
+  }
+
+  context.fillStyle = "#f7f8fb";
+  context.font = "800 34px Inter, Arial, sans-serif";
+  context.fillText("Прогнозирай. Познай. Изкачи се.", 82, 1705);
+  context.fillStyle = "#38f27f";
+  drawCanvasFittedText(context, shareUrl.replace(/^https:\/\//, ""), 82, 1770, 630, { weight: 900, maxSize: 28, minSize: 20 });
+  drawShareQrBadge(context, shareQrAssets, 770, 1570, 245);
+
+  const blob = await canvasToPngBlob(canvas);
+  const safeNickname = String(state.me.nickname).replace(/[^a-z0-9а-я_-]+/gi, "-");
+  return sharePngBlob(blob, {
+    filename: `dis-leaderboard-${safeNickname}.png`,
+    title: "D.I.S Лига на прогнозите",
+    text: `Аз съм #${standing.rank} с ${standing.points} точки в ${state.title}! ${shareUrl}`
+  });
+}
+
+async function shareLeagueResult(match, state, period = "week") {
+  const me = state.me;
+  const standing = leagueSharePeriod(state, period);
+  const [shareQrAssets, homeLogo, awayLogo] = await Promise.all([
+    loadShareQrAssets("/fan-zone"),
+    loadCanvasImage(teamMediaLogoUrl(match.homeTeamMedia)),
+    loadCanvasImage(teamMediaLogoUrl(match.awayTeamMedia))
+  ]);
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
   canvas.height = 1350;
@@ -1019,8 +1434,10 @@ async function shareLeagueResult(match, me) {
   context.fillText(match.competition, 84, 350);
   context.fillStyle = "#f7f8fb";
   context.font = "800 54px Inter, sans-serif";
-  context.fillText(match.homeTeam, 84, 500);
-  context.fillText(match.awayTeam, 84, 720);
+  drawCanvasFittedText(context, match.homeTeam, 180, 500, 720, { weight: 800, maxSize: 54, minSize: 34 });
+  drawCanvasFittedText(context, match.awayTeam, 180, 720, 720, { weight: 800, maxSize: 54, minSize: 34 });
+  drawCanvasTeamLogo(context, homeLogo, 84, 425, 78);
+  drawCanvasTeamLogo(context, awayLogo, 84, 645, 78);
   context.fillStyle = "#38f27f";
   context.font = "900 150px Inter, sans-serif";
   context.fillText(`${match.myPrediction.homeScore}:${match.myPrediction.awayScore}`, 84, 640);
@@ -1031,25 +1448,18 @@ async function shareLeagueResult(match, me) {
   context.font = "800 48px Inter, sans-serif";
   context.fillText("ТОЧКИ", 420, 970);
   context.fillStyle = "#aab2c0";
-  context.font = "600 36px Inter, sans-serif";
-  context.fillText(`Краен резултат: ${match.result.homeScore}:${match.result.awayScore}`, 84, 1080);
-  context.fillText(`Позиция за седмицата: ${me.ranks.week ? `#${me.ranks.week}` : "—"}`, 84, 1140);
+  drawCanvasFittedText(context, `Краен резултат: ${match.result.homeScore}:${match.result.awayScore}`, 84, 1080, 665, { weight: 600, maxSize: 36, minSize: 28 });
+  drawCanvasFittedText(context, `Позиция ${standing.label.toLowerCase()}: ${standing.rank ? `#${standing.rank}` : "—"}`, 84, 1140, 665, { weight: 600, maxSize: 36, minSize: 26 });
   context.fillStyle = "#38f27f";
-  context.font = "800 36px Inter, sans-serif";
-  context.fillText("dis-podcast.onrender.com/fan-zone", 84, 1240);
-  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
-  if (!blob) return;
+  drawCanvasFittedText(context, "dis-podcast.onrender.com/fan-zone", 84, 1240, 665, { weight: 800, maxSize: 34, minSize: 25 });
+  drawShareQrBadge(context, shareQrAssets, 805, 1020, 210);
+  const blob = await canvasToPngBlob(canvas);
   const filename = `dis-prediction-${String(me.nickname).replace(/[^a-z0-9а-я_-]+/gi, "-")}.png`;
-  const file = new File([blob], filename, { type: "image/png" });
-  if (navigator.share && navigator.canShare?.({ files: [file] })) {
-    await navigator.share({ title: "D.I.S Лига на прогнозите", text: `Моята прогноза донесе +${match.myPrediction.scoring?.points || 0} точки!`, files: [file] });
-    return;
-  }
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = filename;
-  link.click();
-  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+  return sharePngBlob(blob, {
+    filename,
+    title: "D.I.S Лига на прогнозите",
+    text: `Моята прогноза донесе +${match.myPrediction.scoring?.points || 0} точки! ${officialHomepageUrl.replace(/\/$/, "")}/fan-zone`
+  });
 }
 
 async function renderFanVoting() {
@@ -1397,7 +1807,7 @@ function renderPollCard(poll = {}, state = {}, celebrate = false) {
           const selected = votedOption === option.id;
           return `
             <button class="poll-option ${selected ? "is-selected" : ""}" type="button" data-vote-option="${escapeAttribute(option.id)}" ${votedOption || isClosed ? "disabled" : ""}>
-              <span class="poll-option-label">${escapeHTML(option.label)}</span>
+              <span class="poll-option-label">${teamIdentityMarkup(option.label, option.media)}</span>
               ${showResults ? `<span class="poll-percent">${percent}%</span><i style="--vote-width:${percent}%"></i>` : `<span class="poll-ball" aria-hidden="true"></span>`}
             </button>`;
         }).join("")}
@@ -1591,21 +2001,280 @@ function renderActiveAdMarquee(items = []) {
   return `<div class="ad-marquee-track">${cards}${cards}</div>`;
 }
 
-function renderNewsCard(item = {}) {
+function newsItemSlug(item = {}, index = 0) {
+  const explicit = String(item.slug || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9а-я]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 72);
+  if (explicit) return explicit;
+  const title = String(item.title || "news")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9а-я]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 52) || "news";
+  const dateSuffix = String(item.createdAt || "").replace(/\D/g, "").slice(0, 12) || index + 1;
+  return `${title}-${dateSuffix}`;
+}
+
+function newsAnchorId(item = {}, index = 0) {
+  return `news-${newsItemSlug(item, index)}`;
+}
+
+function newsDetailUrl(item = {}, index = 0) {
+  return `/news/${encodeURIComponent(newsItemSlug(item, index))}`;
+}
+
+function newsExcerpt(item = {}, maxLength = 220) {
+  const clean = plainShareText(item.excerpt || item.body || "");
+  return clean.length > maxLength ? `${clean.slice(0, maxLength - 1).trim()}…` : clean;
+}
+
+function plainShareText(value = "") {
+  return String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function loadCanvasImage(url) {
+  if (!url) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const image = new Image();
+    let finished = false;
+    const finish = (value) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timeout);
+      resolve(value);
+    };
+    const timeout = window.setTimeout(() => finish(null), 4000);
+    image.crossOrigin = "anonymous";
+    image.onload = () => finish(image);
+    image.onerror = () => finish(null);
+    image.src = url;
+  });
+}
+
+function drawCanvasCoverImage(context, image, x, y, width, height) {
+  const imageWidth = image.naturalWidth || image.width;
+  const imageHeight = image.naturalHeight || image.height;
+  const scale = Math.max(width / imageWidth, height / imageHeight);
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+  const sourceX = Math.max(0, (imageWidth - sourceWidth) / 2);
+  const sourceY = Math.max(0, (imageHeight - sourceHeight) / 2);
+  context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+}
+
+function createNewsStoryCanvas(item, image = null, qrAssets = null) {
+  const title = plainShareText(item.title || "Новина от D.I.S Подкаст");
+  const summary = newsExcerpt(item, 180);
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const context = canvas.getContext("2d");
+  const background = context.createLinearGradient(0, 0, 1080, 1920);
+  background.addColorStop(0, "#0a1811");
+  background.addColorStop(0.52, "#091019");
+  background.addColorStop(1, "#030506");
+  context.fillStyle = background;
+  context.fillRect(0, 0, 1080, 1920);
+
+  if (image) {
+    drawCanvasCoverImage(context, image, 0, 0, 1080, 880);
+    const imageShade = context.createLinearGradient(0, 0, 0, 900);
+    imageShade.addColorStop(0, "rgba(3,5,6,0.22)");
+    imageShade.addColorStop(0.55, "rgba(3,5,6,0.12)");
+    imageShade.addColorStop(1, "#07100f");
+    context.fillStyle = imageShade;
+    context.fillRect(0, 0, 1080, 910);
+  } else {
+    context.fillStyle = "rgba(56,242,127,0.055)";
+    context.beginPath();
+    context.arc(930, 310, 360, 0, Math.PI * 2);
+    context.fill();
+    context.fillStyle = "rgba(255,255,255,0.035)";
+    context.font = "900 250px Inter, Arial, sans-serif";
+    context.fillText("D.I.S", 80, 650);
+  }
+
+  context.lineWidth = 7;
+  context.strokeStyle = "#38f27f";
+  context.strokeRect(38, 38, 1004, 1844);
+  drawCanvasRoundRect(context, 74, 72, 310, 66, 33, "rgba(3,5,6,0.82)", "rgba(56,242,127,0.42)");
+  context.fillStyle = "#38f27f";
+  context.font = "900 28px Inter, Arial, sans-serif";
+  context.fillText("D.I.S НОВИНИ", 112, 116);
+
+  const contentTop = image ? 820 : 760;
+  drawCanvasRoundRect(context, 62, contentTop, 956, 930, 38, "rgba(4,8,10,0.95)", "rgba(255,255,255,0.1)");
+  context.fillStyle = "#f4d44d";
+  drawCanvasFittedText(context, formatLocalDate(item.createdAt).toUpperCase(), 112, contentTop + 92, 820, { weight: 900, maxSize: 27, minSize: 20 });
+  context.fillStyle = "#f7f8fb";
+  const titleSize = title.length > 75 ? 64 : title.length > 42 ? 72 : 82;
+  context.font = `900 ${titleSize}px Inter, Arial, sans-serif`;
+  const titleBottom = drawCanvasWrappedText(context, title, 112, contentTop + 205, 850, titleSize * 1.08, 4);
+  context.fillStyle = "#38f27f";
+  context.fillRect(112, titleBottom + 42, 210, 9);
+  if (summary) {
+    context.fillStyle = "#b3bdca";
+    context.font = "600 35px Inter, Arial, sans-serif";
+    drawCanvasWrappedText(context, summary, 112, titleBottom + 120, 850, 52, 5);
+  }
+
+  context.fillStyle = "#f7f8fb";
+  context.font = "900 31px Inter, Arial, sans-serif";
+  context.fillText("ЦЯЛАТА НОВИНА Е В D.I.S", 112, 1760);
+  context.fillStyle = "#38f27f";
+  drawCanvasFittedText(context, "dis-podcast.onrender.com/news", 112, 1820, 620, { weight: 800, maxSize: 28, minSize: 18 });
+  drawShareQrBadge(context, qrAssets, 770, 1568, 245);
+  return canvas;
+}
+
+async function shareNewsItem(item) {
+  const title = plainShareText(item.title || "Новина от D.I.S Подкаст");
+  const newsUrl = new URL("/news", officialHomepageUrl);
+  const [image, qrAssets] = await Promise.all([loadCanvasImage(item.imageUrl), loadShareQrAssets(newsDetailUrl(item))]);
+  let canvas = createNewsStoryCanvas(item, image, qrAssets);
+  let blob;
+  try {
+    blob = await canvasToPngBlob(canvas);
+  } catch {
+    canvas = createNewsStoryCanvas(item, null, qrAssets);
+    blob = await canvasToPngBlob(canvas);
+  }
+  const filenamePart = newsAnchorId(item).replace(/^news-/, "") || "news";
+  return sharePngBlob(blob, {
+    filename: `dis-news-${filenamePart}.png`,
+    title,
+    text: `${title} ${newsUrl.href}`
+  });
+}
+
+function bindNewsShareActions(newsGrid, newsItems) {
+  newsGrid.querySelectorAll("[data-news-share]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const index = Number(button.dataset.newsShare);
+      const item = newsItems[index];
+      if (!item) return;
+      const originalMarkup = button.innerHTML;
+      button.disabled = true;
+      button.textContent = "Споделяне…";
+      try {
+        const outcome = await shareNewsItem(item);
+        if (outcome === "downloaded") button.textContent = "Story картата е свалена ✓";
+        else button.innerHTML = originalMarkup;
+      } catch (error) {
+        button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
+      }
+      window.setTimeout(() => {
+        button.innerHTML = originalMarkup;
+        button.disabled = false;
+      }, 1600);
+    });
+  });
+}
+
+function focusSharedNewsCard(newsGrid) {
+  if (!window.location.hash.startsWith("#news-")) return;
+  let targetId = "";
+  try {
+    targetId = decodeURIComponent(window.location.hash.slice(1));
+  } catch {
+    return;
+  }
+  const target = document.getElementById(targetId);
+  if (!target || !newsGrid.contains(target) || target.dataset.sharedTargetHandled) return;
+  target.dataset.sharedTargetHandled = "true";
+  target.classList.add("is-shared-target");
+  window.requestAnimationFrame(() => target.scrollIntoView({ behavior: "smooth", block: "center" }));
+}
+
+function renderNewsCard(item = {}, index = 0) {
+  const anchorId = newsAnchorId(item, index);
+  const detailUrl = newsDetailUrl(item, index);
   return `
-    <article class="news-card tilt-card">
-      ${
+    <article class="news-card tilt-card" id="${escapeAttribute(anchorId)}">
+      <a class="news-card-media" href="${escapeAttribute(detailUrl)}" aria-label="Прочети ${escapeAttribute(item.title || "Новина")}">${
         item.imageUrl
           ? `<img class="news-image" src="${escapeAttribute(item.imageUrl)}" alt="${escapeAttribute(item.title || "Новина")}" />`
           : `<div class="news-image news-image-placeholder">D.I.S</div>`
-      }
+      }</a>
       <div class="news-content">
         <time datetime="${escapeAttribute(item.createdAt || "")}">${formatLocalDate(item.createdAt)}</time>
-        <h3>${brandText(item.title || "Новина")}</h3>
-        <p>${brandText(item.body || "")}</p>
+        <h3><a href="${escapeAttribute(detailUrl)}">${brandText(item.title || "Новина")}</a></h3>
+        <p>${brandText(newsExcerpt(item))}</p>
+        <div class="news-card-actions">
+          <a class="button primary news-read-button" href="${escapeAttribute(detailUrl)}">Прочети новината</a>
+          <button class="button secondary news-share-button" type="button" data-news-share="${index}" aria-label="Сподели новината ${escapeAttribute(item.title || "")}"><span aria-hidden="true">↗</span> Сподели</button>
+        </div>
       </div>
     </article>
   `;
+}
+
+function renderNewsDetail(container) {
+  let slug = "";
+  try {
+    slug = decodeURIComponent(window.location.pathname.split("/").filter(Boolean)[1] || "");
+  } catch {
+    slug = "";
+  }
+  const newsItems = [...(config.news || [])];
+  const index = newsItems.findIndex((item, itemIndex) => newsItemSlug(item, itemIndex) === slug);
+  const item = newsItems[index];
+  if (!item) {
+    container.innerHTML = `<article class="news-detail-not-found"><span>404</span><h1>Тази новина не е намерена.</h1><p>Възможно е адресът да е променен или публикацията да е премахната.</p><a class="button primary" href="/news">Към всички новини</a></article>`;
+    document.title = "Новината не е намерена | D.I.S Подкаст";
+    return;
+  }
+
+  const paragraphs = String(item.body || item.excerpt || "")
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) => `<p>${escapeHTML(paragraph).replace(/\n/g, "<br />")}</p>`)
+    .join("");
+  const detailUrl = new URL(newsDetailUrl(item, index), officialHomepageUrl).href;
+  container.innerHTML = `
+    <nav class="news-detail-breadcrumb" aria-label="Навигация към новините"><a href="/news">Новини</a><span aria-hidden="true">/</span><span>${escapeHTML(item.title || "Новина")}</span></nav>
+    <article class="news-detail-article">
+      <header class="news-detail-header">
+        <span class="section-kicker">D.I.S Новини</span>
+        <time datetime="${escapeAttribute(item.createdAt || "")}">${formatLocalDate(item.createdAt)}</time>
+        <h1>${brandText(item.title || "Новина")}</h1>
+        ${item.excerpt ? `<p>${brandText(newsExcerpt(item, 320))}</p>` : ""}
+      </header>
+      ${item.imageUrl ? `<figure class="news-detail-figure"><img src="${escapeAttribute(item.imageUrl)}" alt="${escapeAttribute(item.title || "Новина")}" />${item.imageCaption ? `<figcaption>${escapeHTML(item.imageCaption)}</figcaption>` : ""}</figure>` : ""}
+      <div class="news-detail-body">${paragraphs || `<p>${escapeHTML(newsExcerpt(item, 320))}</p>`}</div>
+      <footer class="news-detail-footer">
+        <div><span>Сподели историята</span><strong>D.I.S Story карта с QR към сайта</strong></div>
+        <button class="button primary" type="button" data-news-detail-share>Сподели новината</button>
+      </footer>
+    </article>`;
+
+  document.title = `${plainShareText(item.title)} | D.I.S Подкаст`;
+  document.querySelector('link[rel="canonical"]')?.setAttribute("href", detailUrl);
+  document.querySelector('meta[property="og:title"]')?.setAttribute("content", plainShareText(item.title));
+  document.querySelector('meta[property="og:description"]')?.setAttribute("content", newsExcerpt(item, 180));
+  document.querySelector('meta[property="og:url"]')?.setAttribute("content", detailUrl);
+  if (item.imageUrl) document.querySelector('meta[property="og:image"]')?.setAttribute("content", new URL(item.imageUrl, officialHomepageUrl).href);
+
+  container.querySelector("[data-news-detail-share]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Подготвям…";
+    try {
+      const outcome = await shareNewsItem(item);
+      button.textContent = outcome === "downloaded" ? "Story картата е свалена ✓" : originalLabel;
+    } catch (error) {
+      button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
+    }
+    window.setTimeout(() => { button.textContent = originalLabel; button.disabled = false; }, 1600);
+  });
 }
 
 function formatLocalDate(value = "") {
@@ -1943,7 +2612,7 @@ window.addEventListener(
   { passive: true }
 );
 
-if (window.location.hash && performance.getEntriesByType("navigation")[0]?.type === "reload") {
+if (window.location.hash && !window.location.hash.startsWith("#news-") && performance.getEntriesByType("navigation")[0]?.type === "reload") {
   history.replaceState(null, "", window.location.pathname);
   window.scrollTo(0, 0);
 }
