@@ -725,7 +725,7 @@ async function handleRequest(request, response) {
     if (!target) return sendJson(response, 400, { error: "Invalid share target" });
     const png = await QRCode.toBuffer(target, {
       type: "png",
-      width: 512,
+      width: 384,
       margin: 2,
       errorCorrectionLevel: "H",
       color: { dark: "#050608", light: "#ffffff" }

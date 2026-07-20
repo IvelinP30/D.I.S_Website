@@ -1136,27 +1136,56 @@ function drawCanvasWrappedText(context, text, x, y, maxWidth, lineHeight, maxLin
 }
 
 const officialHomepageUrl = "https://dis-podcast.onrender.com/";
-const shareLogoAssetUrl = "/assets/dis-logo.png";
+const shareLogoAssetUrl = "/assets/pwa/icon-192.png";
+const shareQrCacheLimit = 6;
 const shareQrAssets = new Map();
+let shareLogoImagePromise = null;
+
+function loadShareLogoImage() {
+  if (!shareLogoImagePromise) {
+    shareLogoImagePromise = loadCanvasImage(shareLogoAssetUrl).then((image) => {
+      if (!image) shareLogoImagePromise = null;
+      return image;
+    });
+  }
+  return shareLogoImagePromise;
+}
+
+function rememberShareQrAssets(cacheKey, assetsPromise) {
+  shareQrAssets.delete(cacheKey);
+  shareQrAssets.set(cacheKey, assetsPromise);
+  while (shareQrAssets.size > shareQrCacheLimit) {
+    shareQrAssets.delete(shareQrAssets.keys().next().value);
+  }
+  return assetsPromise;
+}
+
+function releaseShareAssetCache() {
+  shareQrAssets.clear();
+  shareLogoImagePromise = null;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) releaseShareAssetCache();
+});
+window.addEventListener("pagehide", releaseShareAssetCache);
 
 function loadShareQrAssets(targetPath = "/") {
   const cacheKey = String(targetPath || "/");
-  if (!shareQrAssets.has(cacheKey)) {
-    const qrUrl = `/api/share-qr?path=${encodeURIComponent(cacheKey)}`;
-    shareQrAssets.set(
-      cacheKey,
-      Promise.all([loadCanvasImage(qrUrl), loadCanvasImage(shareLogoAssetUrl)])
-        .then(([qrImage, logoImage]) => {
-          if (!qrImage) throw new Error("QR кодът не се зареди. Обнови страницата след рестарт или deploy.");
-          return { qrImage, logoImage };
-        })
-        .catch((error) => {
-          shareQrAssets.delete(cacheKey);
-          throw error;
-        })
-    );
+  if (shareQrAssets.has(cacheKey)) {
+    return rememberShareQrAssets(cacheKey, shareQrAssets.get(cacheKey));
   }
-  return shareQrAssets.get(cacheKey);
+  const qrUrl = `/api/share-qr?path=${encodeURIComponent(cacheKey)}`;
+  const assetsPromise = Promise.all([loadCanvasImage(qrUrl), loadShareLogoImage()])
+    .then(([qrImage, logoImage]) => {
+      if (!qrImage) throw new Error("QR кодът не се зареди. Обнови страницата след рестарт или deploy.");
+      return { qrImage, logoImage };
+    })
+    .catch((error) => {
+      if (shareQrAssets.get(cacheKey) === assetsPromise) shareQrAssets.delete(cacheKey);
+      throw error;
+    });
+  return rememberShareQrAssets(cacheKey, assetsPromise);
 }
 
 function drawShareQrBadge(context, assets, x, y, width) {
@@ -1230,8 +1259,27 @@ function drawCanvasTeamLogo(context, image, x, y, size) {
   context.restore();
 }
 
+function releaseCanvasMemory(canvas) {
+  if (!canvas) return;
+  const context = canvas.getContext("2d");
+  context?.clearRect(0, 0, canvas.width, canvas.height);
+  canvas.width = 1;
+  canvas.height = 1;
+}
+
 function canvasToPngBlob(canvas) {
-  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+  return new Promise((resolve, reject) => {
+    try {
+      canvas.toBlob((blob) => {
+        releaseCanvasMemory(canvas);
+        if (blob) resolve(blob);
+        else reject(new Error("PNG картата не може да бъде генерирана."));
+      }, "image/png");
+    } catch (error) {
+      releaseCanvasMemory(canvas);
+      reject(error);
+    }
+  });
 }
 
 function downloadShareImage(blob, filename) {
@@ -2042,11 +2090,15 @@ function loadCanvasImage(url) {
   if (!url) return Promise.resolve(null);
   return new Promise((resolve) => {
     const image = new Image();
+    image.decoding = "async";
     let finished = false;
     const finish = (value) => {
       if (finished) return;
       finished = true;
       window.clearTimeout(timeout);
+      image.onload = null;
+      image.onerror = null;
+      if (!value) image.src = "";
       resolve(value);
     };
     const timeout = window.setTimeout(() => finish(null), 4000);

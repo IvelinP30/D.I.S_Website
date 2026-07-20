@@ -63,6 +63,15 @@ a {
   overflow: hidden;
 }
 
+html.safari-memory-optimized .button,
+html.safari-memory-optimized .football-cursor-trail,
+html.safari-memory-optimized .tilt-card,
+html.safari-memory-optimized .scroll-ball,
+html.safari-memory-optimized .pwa-pull-refresh,
+html.safari-memory-optimized .pwa-pull-refresh-content {
+  will-change: auto;
+}
+
 .football-cursor-trail {
   position: fixed;
   z-index: 59;

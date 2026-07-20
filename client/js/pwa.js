@@ -1,8 +1,11 @@
+function isSafariBrowser(userAgent = "") {
+  return /Safari/i.test(userAgent) &&
+    !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|Chrome|Chromium|Android/i.test(userAgent);
+}
+
 function getSafariInstallPlatform(userAgent, platform, maxTouchPoints) {
   const isIos = /iPad|iPhone|iPod/i.test(userAgent) || (platform === "MacIntel" && maxTouchPoints > 1);
-  const isSafari =
-    /Safari/i.test(userAgent) &&
-    !/CriOS|FxiOS|EdgiOS|OPiOS|DuckDuckGo|Chrome|Chromium/i.test(userAgent);
+  const isSafari = isSafariBrowser(userAgent);
   if (isIos && isSafari) return "ios";
 
   const safariVersion = Number(userAgent.match(/Version\/(\d+(?:\.\d+)?)/)?.[1] || 0);
@@ -331,10 +334,13 @@ function setupPwa() {
 }
 
 if (typeof window !== "undefined") {
+  if (isSafariBrowser(window.navigator.userAgent)) {
+    document.documentElement.classList.add("safari-memory-optimized");
+  }
   setupNetworkStatus();
   setupPullToRefresh();
   setupPwa();
 }
 if (typeof module !== "undefined") {
-  module.exports = { getSafariInstallPlatform, shouldEnablePullToRefresh, getPullHapticStep, getElasticPullDistance };
+  module.exports = { isSafariBrowser, getSafariInstallPlatform, shouldEnablePullToRefresh, getPullHapticStep, getElasticPullDistance };
 }

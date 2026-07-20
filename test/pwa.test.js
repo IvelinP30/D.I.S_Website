@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const {
+  isSafariBrowser,
   getSafariInstallPlatform,
   shouldEnablePullToRefresh,
   getPullHapticStep,
@@ -45,6 +46,9 @@ test("manual Safari installation is offered only on supported Apple targets", ()
   assert.equal(getSafariInstallPlatform(oldMacSafari, "MacIntel", 0), "");
   assert.equal(getSafariInstallPlatform(macChrome, "MacIntel", 0), "");
   assert.equal(getSafariInstallPlatform(iosSafari, "iPhone", 5), "ios");
+  assert.equal(isSafariBrowser(macSafari), true);
+  assert.equal(isSafariBrowser(iosSafari), true);
+  assert.equal(isSafariBrowser(macChrome), false);
 });
 
 test("every public page loads the public PWA metadata and installer", () => {
@@ -216,7 +220,7 @@ test("league leaderboard exports a story card with rank, points, and the latest 
   assert.match(styles, /\.league-leaderboard-share/);
   assert.match(publicScript, /leagueSelectedPeriod/);
   assert.match(publicScript, /selectedPeriod\.label/);
-  assert.match(fanZone, /script\.js\?v=20260720-6/);
+  assert.match(fanZone, /script\.js\?v=20260720-7/);
 });
 
 test("every news card exports a story-ready image with the article photo and a branded fallback", () => {
@@ -240,7 +244,29 @@ test("every news card exports a story-ready image with the article photo and a b
   assert.match(publicScript, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
   assert.match(styles, /\.news-share-button/);
   assert.match(styles, /\.news-card\.is-shared-target/);
-  assert.match(news, /script\.js\?v=20260720-6/);
+  assert.match(news, /script\.js\?v=20260720-7/);
+});
+
+test("share images release canvas memory and keep bounded reusable QR assets", () => {
+  const publicScript = read("client/js/script.js");
+  const pwa = read("client/js/pwa.js");
+  const styles = read("client/css/styles.css");
+  const serviceWorker = read("sw.js");
+
+  assert.match(publicScript, /const shareQrCacheLimit = 6/);
+  assert.match(publicScript, /function loadShareLogoImage/);
+  assert.match(publicScript, /while \(shareQrAssets\.size > shareQrCacheLimit\)/);
+  assert.match(publicScript, /function releaseShareAssetCache/);
+  assert.match(publicScript, /if \(document\.hidden\) releaseShareAssetCache\(\)/);
+  assert.match(publicScript, /function releaseCanvasMemory/);
+  assert.match(publicScript, /canvas\.width = 1/);
+  assert.match(publicScript, /canvas\.height = 1/);
+  assert.match(publicScript, /image\.onload = null/);
+  assert.match(publicScript, /if \(!canUseCursor\) return/);
+  assert.match(pwa, /function isSafariBrowser/);
+  assert.match(styles, /html\.safari-memory-optimized/);
+  assert.match(styles, /html\.safari-memory-optimized \.football-cursor-trail/);
+  assert.match(serviceWorker, /dis-pwa-v10/);
 });
 
 test("news listing stays compact and every article has a dedicated detail page", () => {
@@ -293,7 +319,7 @@ test("share images include branded dynamic QR codes for the exact intended desti
   const packageJson = read("package.json");
 
   assert.match(publicScript, /officialHomepageUrl = "https:\/\/dis-podcast\.onrender\.com\/"/);
-  assert.match(publicScript, /shareLogoAssetUrl = "\/assets\/dis-logo\.png"/);
+  assert.match(publicScript, /shareLogoAssetUrl = "\/assets\/pwa\/icon-192\.png"/);
   assert.match(publicScript, /\/api\/share-qr\?path=/);
   assert.match(publicScript, /loadShareQrAssets\("\/fan-zone"\)/);
   assert.match(publicScript, /loadShareQrAssets\(newsDetailUrl\(item\)\)/);
