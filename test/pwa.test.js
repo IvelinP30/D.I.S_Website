@@ -256,6 +256,7 @@ test("news listing stays compact and every article has a dedicated detail page",
   assert.match(publicScript, /item\.imageCaption/);
   assert.match(styles, /-webkit-line-clamp: 4/);
   assert.match(styles, /\.news-detail-article/);
+  assert.match(styles, /\.news-detail-header h1[\s\S]*?white-space: normal/);
   assert.match(adminScript, /Кратко резюме за картата и Story share/);
   assert.match(adminScript, /Пълен текст на новината/);
   assert.match(adminScript, /class="mini-field readonly-field wide"/);
@@ -312,6 +313,7 @@ test("social previews are crawler-readable and nested news pages use root-relati
   const homepage = read("index.html");
   const news = read("news.html");
   const detail = read("news-detail.html");
+  const robots = read("robots.txt");
   const publicScript = read("client/js/script.js");
 
   [homepage, news].forEach((page) => {
@@ -325,6 +327,10 @@ test("social previews are crawler-readable and nested news pages use root-relati
   assert.match(detail, /assets\/news-football-hero\.png/);
   assert.match(publicScript, /`\/\$\{value\.replace\(\/\^\\\.\\\//);
   assert.match(publicScript, /dis-podcast\.onrender\.com\/news"/);
+  assert.match(robots, /User-agent: facebookexternalhit\s+Allow: \//);
+  assert.match(robots, /User-agent: Facebot\s+Allow: \//);
+  assert.match(robots, /User-agent: meta-externalagent\s+Allow: \//);
+  assert.match(robots, /User-agent: meta-externalfetcher\s+Allow: \//);
 });
 
 test("shared PWA script exposes an automatic offline status bar", () => {
