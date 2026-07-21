@@ -2272,7 +2272,7 @@ function pressNewsCardStyle(item = {}, index = 0) {
   const layout = [
     "feature", "sidebar", "column", "column", "column",
     "wide", "compact", "compact", "compact", "wide",
-    "compact", "column", "column", "column", "feature",
+    "wide", "column", "column", "column", "feature",
     "sidebar", "compact", "compact", "wide", "panorama"
   ][index % 20];
   const seed = String(item.id || item.articleUrl || index);
