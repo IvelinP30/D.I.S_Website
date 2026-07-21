@@ -89,6 +89,7 @@ async function loadContent({ allowFallback = true } = {}) {
   config = optimizeStaticAssetUrls(config);
 
   renderPage();
+  await renderPressNews();
   document.documentElement.classList.add("content-ready");
   await renderPredictionLeague();
   await renderFanVoting();
@@ -2265,6 +2266,47 @@ function renderNewsCard(item = {}, index = 0) {
       </div>
     </article>
   `;
+}
+
+function renderPressNewsCard(item = {}) {
+  const sourceName = item.sourceName || "Международна медия";
+  const sourceInitial = sourceName.trim().charAt(0).toUpperCase() || "Ф";
+  const publishedLabel = item.publishedAt ? formatLocalDate(item.publishedAt) : "Актуално";
+  return `
+    <article class="press-news-card tilt-card">
+      <div class="press-news-card-meta">
+        <span class="press-news-source-mark" aria-hidden="true">${escapeHTML(sourceInitial)}</span>
+        <span><small>Външен източник</small><strong>${escapeHTML(sourceName)}</strong></span>
+        ${item.isBulgarianFootball ? `<span class="press-news-bg-badge">БГ футбол</span>` : ""}
+      </div>
+      <time datetime="${escapeAttribute(item.publishedAt || "")}">${escapeHTML(publishedLabel)}</time>
+      <h3><a href="${escapeAttribute(item.articleUrl || "#")}" target="_blank" rel="noopener noreferrer">${escapeHTML(item.title || "Футболна новина")}</a></h3>
+      ${item.description ? `<p>${escapeHTML(item.description)}</p>` : ""}
+      <a class="press-news-link" href="${escapeAttribute(item.articleUrl || "#")}" target="_blank" rel="noopener noreferrer" aria-label="Прочети в ${escapeAttribute(sourceName)}">Прочети в източника <span aria-hidden="true">↗</span></a>
+    </article>`;
+}
+
+async function renderPressNews() {
+  const grid = document.querySelector("#press-news-grid");
+  if (!grid) return;
+  grid.setAttribute("aria-busy", "true");
+  try {
+    const response = await fetch("/api/press-news", { headers: { Accept: "application/json" } });
+    if (!response.ok) throw new Error("Press news unavailable");
+    const payload = await response.json();
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    if (items.length) {
+      grid.innerHTML = items.map(renderPressNewsCard).join("");
+    } else if (payload.configured === false) {
+      grid.innerHTML = `<article class="empty-state press-news-empty">Футболният вестник се подготвя. Скоро тук ще се появят подбрани международни заглавия на български.</article>`;
+    } else {
+      grid.innerHTML = `<article class="empty-state press-news-empty">В момента няма достатъчно актуални заглавия. Провери отново по-късно.</article>`;
+    }
+  } catch {
+    grid.innerHTML = `<article class="empty-state press-news-empty">Външните заглавия временно не са достъпни. Новините от D.I.S остават на разположение по-горе.</article>`;
+  } finally {
+    grid.setAttribute("aria-busy", "false");
+  }
 }
 
 function renderNewsDetail(container) {

@@ -7,7 +7,8 @@ Live site: https://dis-podcast.onrender.com
 ## What It Is
 
 - Public brand website for Instagram/TikTok/YouTube/Facebook
-- Separate news listing plus dedicated detail pages with manually managed title, compact excerpt, full article, photo and caption
+- Separate „Новини от D.I.S“ listing plus dedicated detail pages with manually managed title, compact excerpt, full article, photo and caption
+- A visually smaller „D.I.S Футболен вестник“ grid below the manual posts, populated server-side from Bulgarian-language NewsData.io football headlines
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
 - Multiple D.I.S Prediction Leagues with one shared nickname-only profile, period-aware positions, separate matches, points, streaks, trophies and standings, plus recovery codes
@@ -27,7 +28,7 @@ Live site: https://dis-podcast.onrender.com
 - Includes dedicated Privacy and Cookie Policy pages for the live data flow
 - Includes a YouTube player block controlled from admin
 - Includes a password-protected admin panel
-- Stores editable content in `data/content.json`, votes in `data/votes.json`, inbox messages in `data/messages.json`, local giveaway entries in `data/giveaway-entries.json`, and local Prediction League participation in the ignored `data/prediction-league.json`
+- Stores editable content in `data/content.json`, votes in `data/votes.json`, inbox messages in `data/messages.json`, local giveaway entries in `data/giveaway-entries.json`, local Prediction League participation in the ignored `data/prediction-league.json`, and the rolling external-news cache in ignored `data/press-news-cache.json`
 - Supports uploads for logo, hero backgrounds, ad media, and news images
 - Uses a generated football podcast hero image in `assets/hero-football-podcast.png`
 - Uses the D.I.S logo in `assets/dis-logo.png` as the navbar mark and favicon
@@ -81,6 +82,11 @@ Create a local `.env` file:
 ADMIN_PASSWORD="choose-a-strong-password"
 SESSION_SECRET="choose-a-long-random-secret"
 API_FOOTBALL_KEY="optional-api-football-key"
+NEWSDATA_API_KEY="optional-newsdata-key"
+NEWSDATA_QUERY="футбол"
+NEWSDATA_BULGARIAN_QUERY="Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор"
+NEWSDATA_LANGUAGE="bg"
+NEWSDATA_MAX_ITEMS=20
 ```
 
 Then run:
@@ -219,6 +225,18 @@ API-Football documents `/teams` as data updated several times per week and recom
 4. For local testing only, add `API_FOOTBALL_KEY=...` to the ignored `.env` file and restart `npm start`.
 5. After deployment, open the protected admin Fan Zone editor, enter a team/country name, use **Намери лого / флаг**, select the intended result, and save the page.
 
+## Automated Football Newspaper
+
+`NEWSDATA_API_KEY` enables the public `GET /api/press-news` endpoint and the compact **D.I.S Футболен вестник** section below the manually authored D.I.S posts. The API key is used only by the Node server and is never returned to browser JavaScript.
+
+Each refresh makes one Bulgarian-priority search (clubs, the domestic league and the national team) and one general `футбол` search, both with `language=bg` and `category=sports`. Bulgarian football, multi-source coverage, provider priority and major topics are used when evaluating the incoming candidates, but the final page is always ordered by publication time with the newest headline first. This is a relevance proxy, not a claim about exact social-share counts. `NEWSDATA_QUERY`, `NEWSDATA_BULGARIAN_QUERY` and `NEWSDATA_LANGUAGE` can be adjusted without changing code. NewsData returns at most ten results per request; the combined section shows up to 20 items by default, with a configurable display cap between 10 and 30.
+
+While the service is awake, the server checks the feed once per hour but runs the two-query NewsData refresh at most once every 12 hours. A page request also triggers the same guarded check, and concurrent visitors share one in-flight refresh. Results use the existing persistence abstraction: ignored `data/press-news-cache.json` locally and the protected `pressNewsCache` value in Supabase `app_state` in production. Every successful refresh is deduplicated and merged with the previous collection; it does not erase still-current headlines. The cache keeps all valid unique results from the rolling 72-hour window and removes an article only after that age limit. At most 20 top-ranked items are returned to the page by default, so visitors see a compact selection even while the server retains the rest until expiry.
+
+Only public metadata is retained: provider article ID, title, short description, original URL, source name/source URL, language, country, source-priority value and publication time. Full article bodies are never fetched or reproduced. Publisher images are intentionally not rendered, so opening the news page does not contact each publisher; visitors contact an external publisher only after choosing **Прочети в източника**. The Privacy and Cookie pages disclose the provider, server-side request, cache/retention limits, external-link behavior and absence of a new D.I.S cookie.
+
+To activate the feed, create a NewsData.io key, set `NEWSDATA_API_KEY` in Render (or the ignored local `.env`), and restart/redeploy the service. Without a key, manual D.I.S posts continue to work and the newspaper shows a neutral preparation message.
+
 Google Search Console is used for indexing and search-performance reporting. This integration does not add a browser tracking script or a new site cookie, so it does not change the current Privacy or Cookie policy disclosures. Adding Google Analytics, Meta Pixel, advertising trackers, a new external embed, or any new form field requires a fresh review of both legal pages before deployment.
 
 ## Live Stats
@@ -278,6 +296,7 @@ The policy text is a practical transparency baseline and not a substitute for ad
 - Production requires explicit `ADMIN_PASSWORD` and `SESSION_SECRET` environment variables.
 - Production requires `RESEND_API_KEY` and `MESSAGE_EMAIL_FROM`; local development does not send message emails even if they exist in `.env`.
 - `API_FOOTBALL_KEY` is optional. Without it, the site and existing text-only teams continue to work, while the admin logo-search control returns a clear configuration message.
+- `NEWSDATA_API_KEY` is optional. Without it, manual D.I.S news remains available and no third-party news request is made. With it, the public newspaper uses the bounded server-side cache described above.
 - `GET /health` is available for hosting health checks.
 - Do not commit real inbox messages, voter identifiers, passwords, or API keys.
 
@@ -302,7 +321,7 @@ Admin saves never silently fall back to browser-only persistence. If the local b
 
 ### Render Deployment
 
-The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `RESEND_API_KEY`, and `MESSAGE_EMAIL_FROM` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.
+The repository includes `render.yaml` for a free Node web service in Frankfurt. Create a new Render Blueprint from the GitHub repository and provide `ADMIN_PASSWORD`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `RESEND_API_KEY`, `MESSAGE_EMAIL_FROM`, and the optional `NEWSDATA_API_KEY` when prompted. Render generates `SESSION_SECRET` automatically and uses `/health` for health checks.
 
 Large visual assets are delivered as WebP and image assets include browser cache headers to reduce Render outbound bandwidth. CSS and JavaScript always revalidate so a deployment cannot mix incompatible cached frontend versions. The original PNG files remain source assets and are not used by normal public page loads.
 
@@ -326,6 +345,7 @@ The site has a small Node.js backend, a protected admin panel, editable content 
 - sponsor and advertising packages
 - active ads/campaign uploads
 - manual news posts
+- automatically refreshed, Bulgarian-first world-football newspaper cards below the manual D.I.S posts
 - host profiles and optional photos
 - host predictions and fan voting
 - optional giveaway registration, homepage live feature, countdown, public participant count, and admin winner/prize drawing

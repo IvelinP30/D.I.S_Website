@@ -41,7 +41,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./client/css/styles.css?v=20260720-7" />
+    <link rel="stylesheet" href="./client/css/styles.css?v=20260721-1" />
   </head>
   <body>
     <div class="site-shell">
@@ -61,16 +61,36 @@
           <div class="subpage-hero-overlay"></div>
           <div class="subpage-hero-copy">
             <p class="section-kicker" id="news-kicker">Новини</p>
-            <h1 id="news-title">Последни новини и обновления от <span class="brand-name">D.I.S Подкаст</span>.</h1>
-            <p id="news-description">Ръчно добавени публикации от екипа: съобщения, теми, реакции, важни моменти и нови идеи около канала.</p>
+            <h1 id="news-title">Новини от <span class="brand-name">D.I.S Подкаст</span> и световния футбол.</h1>
+            <p id="news-description">Първо са оригиналните публикации от екипа, а след тях — компактна селекция от актуални футболни заглавия на български.</p>
           </div>
         </section>
         <section class="ad-marquee-section news-ad-marquee" aria-label="Активни реклами">
           <div class="ad-marquee-header"><span>Активни партньори</span></div>
           <div class="ad-marquee" data-active-ad-marquee></div>
         </section>
-        <section class="section news-listing">
+        <section class="section news-listing dis-news-section" aria-labelledby="dis-news-heading">
+          <div class="section-heading news-feed-heading">
+            <p class="section-kicker">D.I.S Новини</p>
+            <h2 id="dis-news-heading">Новини от D.I.S</h2>
+            <p>Оригинални публикации, съобщения и реакции, добавени ръчно от нашия екип.</p>
+          </div>
           <div class="news-grid" id="news-grid"></div>
+        </section>
+        <section class="section press-news-section" id="press-news-section" aria-labelledby="press-news-heading">
+          <div class="press-news-masthead" aria-hidden="true">
+            <span>Световен футбол</span>
+            <strong>D.I.S Футболен вестник</strong>
+            <span>Подбрани заглавия</span>
+          </div>
+          <div class="section-heading news-feed-heading press-news-heading">
+            <p class="section-kicker">От вестниците</p>
+            <h2 id="press-news-heading">Последно във футбола: България и светът</h2>
+            <p>Автоматично подбрани заглавия от международни медии. Всяка публикация води към оригиналния източник.</p>
+          </div>
+          <div class="press-news-grid" id="press-news-grid" aria-live="polite" aria-busy="true">
+            <article class="empty-state">Зареждаме последните международни заглавия…</article>
+          </div>
         </section>
       </main>
 
@@ -100,7 +120,7 @@
 
     <script src="./client/js/pwa.js?v=20260720-1"></script>
     <script src="./client/js/config.js?v=20260717-4"></script>
-    <script src="./client/js/script.js?v=20260720-7"></script>
+    <script src="./client/js/script.js?v=20260721-1"></script>
     <script src="/analytics-config.js"></script>
     <script src="./client/js/analytics.js?v=20260717-3"></script>
   </body>

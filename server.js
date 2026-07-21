@@ -6,6 +6,7 @@ const QRCode = require("qrcode");
 const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
 const { searchApiFootballTeams } = require("./server/team-media");
+const { fetchPressNewsSet, mergePressArticles, pressNewsCacheIsFresh } = require("./server/press-news");
 const {
   archiveDeletedLeagueMatches,
   buildPredictionLeagueState,
@@ -43,6 +44,7 @@ const messagesFile = path.join(root, "data", "messages.json");
 const giveawayEntriesFile = path.join(root, "data", "giveaway-entries.json");
 const predictionLeagueFile = path.join(root, "data", "prediction-league.json");
 const teamMediaCacheFile = path.join(root, "data", "team-media-cache.json");
+const pressNewsCacheFile = path.join(root, "data", "press-news-cache.json");
 const uploadsDir = path.join(root, "uploads");
 const port = Number(process.env.PORT || 4177);
 const adminPassword = process.env.ADMIN_PASSWORD || "change-this-password";
@@ -56,6 +58,11 @@ const messageEmailFrom = String(process.env.MESSAGE_EMAIL_FROM || "").trim();
 const configuredGaMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim().toUpperCase();
 const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? configuredGaMeasurementId : "";
 const apiFootballKey = String(process.env.API_FOOTBALL_KEY || "").trim();
+const newsdataApiKey = String(process.env.NEWSDATA_API_KEY || "").trim();
+const pressNewsQuery = String(process.env.NEWSDATA_QUERY || "футбол").trim().slice(0, 100) || "футбол";
+const pressNewsBulgarianQuery = String(process.env.NEWSDATA_BULGARIAN_QUERY || "Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор").trim().slice(0, 100);
+const pressNewsLanguage = String(process.env.NEWSDATA_LANGUAGE || "bg").trim().toLowerCase().slice(0, 8) || "bg";
+const pressNewsMaxItems = Math.min(30, Math.max(10, Number(process.env.NEWSDATA_MAX_ITEMS || 20) || 20));
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
@@ -69,6 +76,7 @@ const messageRateLimits = new Map();
 const giveawayRateLimits = new Map();
 const leagueIdentityRateLimits = new Map();
 let predictionLeagueMutation = Promise.resolve();
+let pressNewsRefreshPromise = null;
 
 if (isProduction && adminPassword === "change-this-password") {
   throw new Error("ADMIN_PASSWORD must be configured in production.");
@@ -121,6 +129,7 @@ if (!fs.existsSync(messagesFile)) fs.writeFileSync(messagesFile, "[]\n");
 if (!fs.existsSync(giveawayEntriesFile)) fs.writeFileSync(giveawayEntriesFile, "[]\n");
 if (!fs.existsSync(predictionLeagueFile)) fs.writeFileSync(predictionLeagueFile, '{"players":[],"predictions":[]}\n');
 if (!fs.existsSync(teamMediaCacheFile)) fs.writeFileSync(teamMediaCacheFile, '{"searches":{}}\n');
+if (!fs.existsSync(pressNewsCacheFile)) fs.writeFileSync(pressNewsCacheFile, '{"items":[],"refreshedAt":""}\n');
 
 function supabaseHeaders(extra = {}) {
   const headers = { apikey: supabaseKey, ...extra };
@@ -187,6 +196,66 @@ async function writeJsonFile(file, value, storageKey = path.basename(file, ".jso
     return;
   }
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+async function readPressNews() {
+  const cache = await readJsonFile(pressNewsCacheFile, { items: [], refreshedAt: "" }, "pressNewsCache");
+  const now = Date.now();
+  const cachedItems = Array.isArray(cache.items) ? cache.items : [];
+  const retainedItems = mergePressArticles(cachedItems, [], {
+    now,
+    limit: Number.POSITIVE_INFINITY,
+    sortMode: "newest"
+  });
+  const currentItems = retainedItems.slice(0, pressNewsMaxItems);
+  const currentCache = { ...cache, items: retainedItems };
+  if (JSON.stringify(retainedItems) !== JSON.stringify(cachedItems)) {
+    await writeJsonFile(pressNewsCacheFile, currentCache, "pressNewsCache");
+  }
+  if (pressNewsCacheIsFresh(currentCache, now)) {
+    return { items: currentItems, refreshedAt: cache.refreshedAt, stale: false, configured: true };
+  }
+
+  if (!newsdataApiKey) {
+    return {
+      items: currentItems,
+      refreshedAt: cache.refreshedAt || "",
+      stale: Boolean(currentItems.length),
+      configured: false
+    };
+  }
+
+  if (!pressNewsRefreshPromise) {
+    pressNewsRefreshPromise = (async () => {
+      const fetchedItems = await fetchPressNewsSet({
+        apiKey: newsdataApiKey,
+        queries: [pressNewsBulgarianQuery, pressNewsQuery],
+        language: pressNewsLanguage,
+        limit: 20,
+        now
+      });
+      const retainedWithNewItems = mergePressArticles(retainedItems, fetchedItems, {
+        now,
+        limit: Number.POSITIVE_INFINITY,
+        sortMode: "newest"
+      });
+      const nextCache = { items: retainedWithNewItems, refreshedAt: new Date(now).toISOString() };
+      await writeJsonFile(pressNewsCacheFile, nextCache, "pressNewsCache");
+      return { ...nextCache, items: retainedWithNewItems.slice(0, pressNewsMaxItems) };
+    })().finally(() => {
+      pressNewsRefreshPromise = null;
+    });
+  }
+
+  try {
+    const refreshed = await pressNewsRefreshPromise;
+    return { ...refreshed, stale: false, configured: true };
+  } catch (error) {
+    if (currentItems.length) {
+      return { items: currentItems, refreshedAt: cache.refreshedAt || "", stale: true, configured: true };
+    }
+    throw error;
+  }
 }
 
 function readBody(request) {
@@ -718,6 +787,18 @@ async function handleRequest(request, response) {
 
   if (url.pathname === "/api/content" && request.method === "GET") {
     return sendJson(response, 200, await readContent());
+  }
+
+  if (url.pathname === "/api/press-news" && request.method === "GET") {
+    try {
+      return sendJson(response, 200, await readPressNews(), {
+        "Cache-Control": "public, max-age=900, stale-while-revalidate=3600"
+      });
+    } catch (error) {
+      return sendJson(response, 502, { error: "Външните новини временно не са достъпни." }, {
+        "Cache-Control": "no-store, max-age=0"
+      });
+    }
   }
 
   if (url.pathname === "/api/share-qr" && request.method === "GET") {
@@ -1278,4 +1359,11 @@ http
   })
   .listen(port, () => {
     console.log(`D.I.S site running at http://127.0.0.1:${port}`);
+    if (newsdataApiKey) {
+      readPressNews().catch(() => console.warn("Initial external-news refresh failed; the cached feed remains available."));
+      const pressNewsCheckTimer = setInterval(() => {
+        readPressNews().catch(() => console.warn("Scheduled external-news refresh failed; the cached feed remains available."));
+      }, 60 * 60 * 1000);
+      pressNewsCheckTimer.unref();
+    }
   });

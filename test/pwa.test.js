@@ -108,7 +108,7 @@ test("public policies disclose PWA storage and its exclusions", () => {
 
   for (const policy of [privacy, cookies]) {
     assert.match(policy, /Cache Storage/);
-    assert.match(policy, /2026-07-20/);
+    assert.match(policy, /2026-07-21/);
     assert.match(policy, /админ/i);
     assert.match(policy, /Google Analytics/);
   }
@@ -244,7 +244,29 @@ test("every news card exports a story-ready image with the article photo and a b
   assert.match(publicScript, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
   assert.match(styles, /\.news-share-button/);
   assert.match(styles, /\.news-card\.is-shared-target/);
-  assert.match(news, /script\.js\?v=20260720-7/);
+  assert.match(news, /script\.js\?v=20260721-1/);
+});
+
+test("external football headlines are visually separate, bounded, and disclosed", () => {
+  const server = read("server.js");
+  const publicScript = read("client/js/script.js");
+  const styles = read("client/css/styles.css");
+  const news = read("news.html");
+  const privacy = read("privacy.html");
+  const cookies = read("cookies.html");
+
+  assert.match(server, /\/api\/press-news/);
+  assert.match(server, /NEWSDATA_MAX_ITEMS \|\| 20/);
+  assert.match(server, /mergePressArticles\(retainedItems, fetchedItems/);
+  assert.match(publicScript, /renderPressNews/);
+  assert.match(publicScript, /Прочети в източника/);
+  assert.match(styles, /\.press-news-grid[\s\S]*repeat\(4/);
+  assert.match(news, /Новини от D\.I\.S/);
+  assert.match(news, /D\.I\.S Футболен вестник/);
+  assert.match(news, /Последно във футбола: България и светът/);
+  assert.match(privacy, /NewsData\.io/);
+  assert.match(privacy, /72 часа/);
+  assert.match(cookies, /не поставя бисквитка/);
 });
 
 test("share images release canvas memory and keep bounded reusable QR assets", () => {

@@ -27,5 +27,15 @@ services:
         sync: false
       - key: API_FOOTBALL_KEY
         sync: false
+      - key: NEWSDATA_API_KEY
+        sync: false
+      - key: NEWSDATA_QUERY
+        value: футбол
+      - key: NEWSDATA_BULGARIAN_QUERY
+        value: Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор
+      - key: NEWSDATA_LANGUAGE
+        value: bg
+      - key: NEWSDATA_MAX_ITEMS
+        value: 20
       - key: GA_MEASUREMENT_ID
         value: G-G21K94TW2T

@@ -9,4 +9,5 @@ data/votes.json
 data/giveaway-entries.json
 data/prediction-league.json
 data/team-media-cache.json
+data/press-news-cache.json
 npm-debug.log*
