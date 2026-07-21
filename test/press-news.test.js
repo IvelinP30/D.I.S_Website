@@ -36,6 +36,18 @@ test("press news keeps only safe public metadata", () => {
   });
 });
 
+test("press news uses pubDate when pubDateTZ contains only the timezone name", () => {
+  const item = normalizePressArticle({
+    article_id: "timezone-story",
+    title: "Football update",
+    link: "https://example.com/timezone-story",
+    pubDate: "2026-07-21 07:31:50",
+    pubDateTZ: "UTC"
+  });
+
+  assert.equal(item.publishedAt, "2026-07-21T07:31:50.000Z");
+});
+
 test("press news removes duplicate links and prefers stronger football stories", () => {
   const items = rankPressArticles([
     { title: "Club training update", link: "https://example.com/a", pubDate: "2026-07-21T08:00:00Z" },

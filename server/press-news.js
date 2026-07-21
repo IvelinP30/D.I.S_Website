@@ -3,7 +3,7 @@ const crypto = require("crypto");
 const NEWSDATA_BASE_URL = "https://newsdata.io/api/1/latest";
 const PRESS_NEWS_CACHE_TTL = 12 * 60 * 60 * 1000;
 const PRESS_NEWS_MAX_AGE = 72 * 60 * 60 * 1000;
-const PRESS_NEWS_CACHE_VERSION = 2;
+const PRESS_NEWS_CACHE_VERSION = 3;
 
 const BULGARIAN_FOOTBALL_SIGNALS = [
   "български футбол", "българия", "първа лига", "efbet лига", "купа на българия",
@@ -72,7 +72,7 @@ function normalizePressArticle(article = {}) {
     articleUrl,
     sourceName,
     sourceUrl: publicHttpUrl(article.sourceUrl || article.source_url),
-    publishedAt: normalizedPublishedAt(article.publishedAt || article.pubDateTZ || article.pubDate),
+    publishedAt: normalizedPublishedAt(article.publishedAt || article.pubDate || article.pubDateTZ),
     language: cleanText(article.language, 16) || "en",
     country,
     sourcePriority: Number.isFinite(sourcePriority) && sourcePriority >= 0 ? sourcePriority : null
