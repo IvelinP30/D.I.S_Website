@@ -14,6 +14,7 @@ const {
   pressNewsCacheIsFresh
 } = require("./server/press-news");
 const { downloadPressNewsThumbnail, pressNewsImageFilename } = require("./server/press-news-image");
+const { applyChoice, choiceState, pruneEngagementStore } = require("./server/engagement");
 const {
   archiveDeletedLeagueMatches,
   buildPredictionLeagueState,
@@ -83,6 +84,7 @@ const messageRateLimits = new Map();
 const giveawayRateLimits = new Map();
 const leagueIdentityRateLimits = new Map();
 let predictionLeagueMutation = Promise.resolve();
+let voteStoreMutation = Promise.resolve();
 let pressNewsRefreshPromise = null;
 
 if (isProduction && adminPassword === "change-this-password") {
@@ -158,11 +160,12 @@ async function writeContent(content) {
   });
   await writeJsonFile(dataFile, content, "content");
   const storedVotes = await readJsonFile(votesFile, { polls: {} });
-  const validPollIds = new Set((content.polls || []).map((poll) => poll.id));
-  const nextPolls = Object.fromEntries(Object.entries(storedVotes.polls || {}).filter(([pollId]) => validPollIds.has(pollId)));
-  if (Object.keys(nextPolls).length !== Object.keys(storedVotes.polls || {}).length) {
-    await writeJsonFile(votesFile, { ...storedVotes, polls: nextPolls });
-  }
+  const nextVotes = pruneEngagementStore(storedVotes, {
+    pollIds: (content.polls || []).map((poll) => poll.id),
+    newsIds: (content.news || []).map((item, index) => newsItemSlug(item, index)),
+    predictionIds: (content.predictions || []).map((prediction) => String(prediction.id || "")).filter(Boolean)
+  });
+  if (JSON.stringify(nextVotes) !== JSON.stringify(storedVotes)) await writeJsonFile(votesFile, nextVotes);
   const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
   const validGiveawayId = content.giveaway?.id || "";
   const nextEntries = validGiveawayId ? entries.filter((entry) => entry.giveawayId === validGiveawayId) : [];
@@ -527,6 +530,21 @@ function voterHash(token, pollId) {
   return crypto.createHash("sha256").update(`${token}:${pollId}:${sessionSecret}`).digest("hex");
 }
 
+function voterCookieHeader(token) {
+  return `dis_voter=${token}; HttpOnly; SameSite=Lax; Max-Age=${oneYear}; Path=/${isProduction ? "; Secure" : ""}`;
+}
+
+async function mutateVoteStore(mutator) {
+  const operation = voteStoreMutation.then(async () => {
+    const store = await readJsonFile(votesFile, { polls: {}, newsReactions: {}, predictionVotes: {} });
+    const result = await mutator(store);
+    await writeJsonFile(votesFile, store);
+    return { store, result };
+  });
+  voteStoreMutation = operation.catch(() => undefined);
+  return operation;
+}
+
 function leagueCookieValue(playerId) {
   return `${playerId}.${sign(`league:${playerId}`)}`;
 }
@@ -611,6 +629,24 @@ async function voteState(request, token) {
       votedOption: hash ? pollStore.voters?.[hash] || "" : ""
     };
   });
+}
+
+async function engagementState(token, contentOverride = null, storeOverride = null) {
+  const content = contentOverride || await readContent();
+  const stored = storeOverride || await readJsonFile(votesFile, { polls: {}, newsReactions: {}, predictionVotes: {} });
+  const newsChoices = ["top", "analysis", "controversial", "more"];
+  const predictionChoices = ["agree", "disagree"];
+  const news = Object.fromEntries((content.news || []).map((item, index) => {
+    const id = newsItemSlug(item, index);
+    const voterKey = token ? voterHash(token, `news:${id}`) : "";
+    return [id, choiceState(stored.newsReactions?.[id], newsChoices, voterKey)];
+  }));
+  const predictions = Object.fromEntries((content.predictions || []).flatMap((prediction) => {
+    const id = String(prediction.id || "");
+    const voterKey = token && id ? voterHash(token, `prediction:${id}`) : "";
+    return id ? [[id, choiceState(stored.predictionVotes?.[id], predictionChoices, voterKey)]] : [];
+  }));
+  return { news, predictions };
 }
 
 function normalizeMessage(payload = {}) {
@@ -1125,6 +1161,58 @@ async function handleRequest(request, response) {
     return sendJson(response, 200, { polls: await voteState(request, token) });
   }
 
+  if (url.pathname === "/api/engagement" && request.method === "GET") {
+    return sendJson(response, 200, await engagementState(getVoterToken(request)), {
+      "Cache-Control": "no-store, max-age=0"
+    });
+  }
+
+  const newsReactionMatch = url.pathname.match(/^\/api\/engagement\/news\/([^/]+)$/);
+  if (newsReactionMatch && request.method === "POST") {
+    const existingToken = getVoterToken(request);
+    const token = existingToken || makeVoterToken();
+    const newsId = decodeURIComponent(newsReactionMatch[1]);
+    const payload = JSON.parse(await readBody(request));
+    const reaction = String(payload.reaction || "");
+    const choices = ["top", "analysis", "controversial", "more"];
+    const content = await readContent();
+    const exists = (content.news || []).some((item, index) => newsItemSlug(item, index) === newsId);
+    if (!exists) return sendJson(response, 404, { error: "Тази новина не е налична." });
+    if (!choices.includes(reaction)) return sendJson(response, 400, { error: "Невалидна реакция." });
+
+    const { store } = await mutateVoteStore((stored) => {
+      stored.newsReactions ||= {};
+      stored.newsReactions[newsId] ||= { counts: {}, voters: {} };
+      applyChoice(stored.newsReactions[newsId], choices, voterHash(token, `news:${newsId}`), reaction);
+    });
+    return sendJson(response, 200, await engagementState(token, content, store), existingToken ? {} : {
+      "Set-Cookie": voterCookieHeader(token)
+    });
+  }
+
+  const predictionVoteMatch = url.pathname.match(/^\/api\/engagement\/predictions\/([^/]+)$/);
+  if (predictionVoteMatch && request.method === "POST") {
+    const existingToken = getVoterToken(request);
+    const token = existingToken || makeVoterToken();
+    const predictionId = decodeURIComponent(predictionVoteMatch[1]);
+    const payload = JSON.parse(await readBody(request));
+    const choice = String(payload.choice || "");
+    const choices = ["agree", "disagree"];
+    const content = await readContent();
+    const exists = (content.predictions || []).some((prediction) => String(prediction.id || "") === predictionId);
+    if (!exists) return sendJson(response, 404, { error: "Тази прогноза не е налична." });
+    if (!choices.includes(choice)) return sendJson(response, 400, { error: "Невалиден избор." });
+
+    const { store } = await mutateVoteStore((stored) => {
+      stored.predictionVotes ||= {};
+      stored.predictionVotes[predictionId] ||= { counts: {}, voters: {} };
+      applyChoice(stored.predictionVotes[predictionId], choices, voterHash(token, `prediction:${predictionId}`), choice);
+    });
+    return sendJson(response, 200, await engagementState(token, content, store), existingToken ? {} : {
+      "Set-Cookie": voterCookieHeader(token)
+    });
+  }
+
   const voteMatch = url.pathname.match(/^\/api\/votes\/([^/]+)$/);
   if (voteMatch && request.method === "POST") {
     const existingToken = getVoterToken(request);
@@ -1138,18 +1226,20 @@ async function handleRequest(request, response) {
     const option = (poll.options || []).find((item) => item.id === payload.optionId);
     if (!option) return sendJson(response, 400, { error: "Невалиден избор." });
 
-    const stored = await readJsonFile(votesFile, { polls: {} });
-    stored.polls ||= {};
-    stored.polls[pollId] ||= { counts: {}, voters: {} };
     const hash = voterHash(token, pollId);
-    if (stored.polls[pollId].voters[hash]) {
+    const { result: alreadyVoted } = await mutateVoteStore((stored) => {
+      stored.polls ||= {};
+      stored.polls[pollId] ||= { counts: {}, voters: {} };
+      if (stored.polls[pollId].voters[hash]) return true;
+      stored.polls[pollId].voters[hash] = option.id;
+      stored.polls[pollId].counts[option.id] = (Number(stored.polls[pollId].counts[option.id]) || 0) + 1;
+      return false;
+    });
+    if (alreadyVoted) {
       return sendJson(response, 409, { error: "Вече си гласувал в тази анкета.", polls: await voteState(request, token) });
     }
-    stored.polls[pollId].voters[hash] = option.id;
-    stored.polls[pollId].counts[option.id] = (Number(stored.polls[pollId].counts[option.id]) || 0) + 1;
-    await writeJsonFile(votesFile, stored);
     return sendJson(response, 200, { polls: await voteState(request, token) }, existingToken ? {} : {
-      "Set-Cookie": `dis_voter=${token}; HttpOnly; SameSite=Lax; Max-Age=${oneYear}; Path=/`
+      "Set-Cookie": voterCookieHeader(token)
     });
   }
 

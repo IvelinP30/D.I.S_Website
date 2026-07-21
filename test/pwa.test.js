@@ -108,7 +108,7 @@ test("public policies disclose PWA storage and its exclusions", () => {
 
   for (const policy of [privacy, cookies]) {
     assert.match(policy, /Cache Storage/);
-    assert.match(policy, /2026-07-21/);
+    assert.match(policy, /2026-07-22/);
     assert.match(policy, /админ/i);
     assert.match(policy, /Google Analytics/);
   }
@@ -221,7 +221,7 @@ test("league leaderboard exports a story card with rank, points, and the latest 
   assert.match(styles, /\.league-leaderboard-share/);
   assert.match(publicScript, /leagueSelectedPeriod/);
   assert.match(publicScript, /selectedPeriod\.label/);
-  assert.match(fanZone, /script\.js\?v=20260722-1/);
+  assert.match(fanZone, /script\.js\?v=20260722-4/);
 });
 
 test("every news card exports a story-ready image with the article photo and a branded fallback", () => {
@@ -245,7 +245,23 @@ test("every news card exports a story-ready image with the article photo and a b
   assert.match(publicScript, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
   assert.match(styles, /\.news-share-button/);
   assert.match(styles, /\.news-card\.is-shared-target/);
-  assert.match(news, /script\.js\?v=20260722-2/);
+  assert.match(news, /script\.js\?v=20260722-4/);
+});
+
+test("news cards expose the same reactions as detail pages and prediction votes survive card replacement", () => {
+  const publicScript = read("client/js/script.js");
+  const styles = read("client/css/styles.css");
+  const news = read("news.html");
+
+  assert.match(publicScript, /const newsReactionChoices =/);
+  assert.match(publicScript, /data-news-card-reaction=/);
+  assert.match(publicScript, /bindNewsCardReactions\(newsGrid\)/);
+  assert.match(publicScript, /#news-detail, #news-grid, #prediction-grid/);
+  assert.match(publicScript, /const grid = card\?\.closest\("#prediction-grid"\)/);
+  assert.match(publicScript, /const nextCard = grid\.querySelector/);
+  assert.match(styles, /\.news-card-reaction-options/);
+  assert.match(styles, /grid-template-columns: repeat\(3, minmax\(0, 1fr\)\)/);
+  assert.match(news, /styles\.css\?v=20260722-4/);
 });
 
 test("external football headlines are visually separate, bounded, and disclosed", () => {

@@ -6,6 +6,13 @@ let predictionLeagueRecoveryCode = "";
 let predictionLeagueNotice = "";
 let predictionLeagueFlashMatchId = "";
 let predictionLeagueRecoveryTimer = null;
+let engagementState = { news: {}, predictions: {} };
+const newsReactionChoices = [
+  { id: "top", emoji: "🔥", label: "Топ" },
+  { id: "analysis", emoji: "👏", label: "Добър анализ" },
+  { id: "controversial", emoji: "🤔", label: "Спорно" },
+  { id: "more", emoji: "⚽", label: "Искам още" }
+];
 let predictionLeagueSelectedId = new URLSearchParams(window.location.search).get("league") || localStorage.getItem("dis-selected-league") || "";
 const leagueRecoveryCloseDelay = 3;
 
@@ -87,6 +94,15 @@ async function loadContent({ allowFallback = true } = {}) {
   }
 
   config = optimizeStaticAssetUrls(config);
+
+  if (document.querySelector("#news-detail, #news-grid, #prediction-grid")) {
+    try {
+      const response = await fetch("/api/engagement", { cache: "no-store", headers: { Accept: "application/json" } });
+      if (response.ok) engagementState = await response.json();
+    } catch {
+      engagementState = { news: {}, predictions: {} };
+    }
+  }
 
   renderPage();
   bindPressNewsReveal();
@@ -317,18 +333,9 @@ function renderPage() {
 
   if (predictionGrid) {
     predictionGrid.innerHTML = (config.predictions || []).length
-      ? config.predictions.map((item) => `
-          <article class="prediction-card tilt-card">
-            <div class="prediction-meta">
-              <span class="prediction-live"><i></i> Прогноза</span>
-              <span class="prediction-host"><b>Водещ</b>${escapeHTML(item.host || "D.I.S Подкаст")}</span>
-            </div>
-            <h3>${escapeHTML(item.match || "Предстоящ мач")}</h3>
-            <strong>${escapeHTML(item.prediction || "")}</strong>
-            <p>${brandText(item.analysis || "")}</p>
-            ${item.createdAt ? `<time datetime="${escapeAttribute(item.createdAt)}">${formatLocalDate(item.createdAt)}</time>` : ""}
-          </article>`).join("")
+      ? config.predictions.map((item) => renderHostPrediction(item, engagementState.predictions?.[item.id])).join("")
       : `<article class="empty-state">Очаквай следващите прогнози на водещите.</article>`;
+    bindPredictionVotes(predictionGrid);
   }
 
   if (giveawaySection) renderGiveaway(config.giveaway);
@@ -345,6 +352,7 @@ function renderPage() {
       ? newsItems.map((item, index) => renderNewsCard(item, index)).join("")
       : `<article class="empty-state">Все още няма добавени новини.</article>`;
     bindNewsShareActions(newsGrid, newsItems);
+    bindNewsCardReactions(newsGrid);
     focusSharedNewsCard(newsGrid);
   }
   if (newsDetail) renderNewsDetail(newsDetail);
@@ -1839,6 +1847,66 @@ function bindGiveawayForm() {
   });
 }
 
+function renderHostPrediction(item = {}, state = {}) {
+  const id = String(item.id || "");
+  const agree = Number(state.counts?.agree) || 0;
+  const disagree = Number(state.counts?.disagree) || 0;
+  const total = agree + disagree;
+  const agreePercent = total ? Math.round((agree / total) * 100) : 0;
+  const disagreePercent = total ? 100 - agreePercent : 0;
+  return `
+    <article class="prediction-card tilt-card" data-prediction-id="${escapeAttribute(id)}">
+      <div class="prediction-meta">
+        <span class="prediction-live"><i></i> Прогноза</span>
+        <span class="prediction-host"><b>Водещ</b>${escapeHTML(item.host || "D.I.S Подкаст")}</span>
+      </div>
+      <h3>${escapeHTML(item.match || "Предстоящ мач")}</h3>
+      <strong>${escapeHTML(item.prediction || "")}</strong>
+      <p>${brandText(item.analysis || "")}</p>
+      ${item.createdAt ? `<time datetime="${escapeAttribute(item.createdAt)}">${formatLocalDate(item.createdAt)}</time>` : ""}
+      ${id ? `
+        <div class="prediction-vote" aria-label="Оцени прогнозата">
+          <div class="prediction-vote-heading"><span>Ти как мислиш?</span><small>${total} ${total === 1 ? "глас" : "гласа"}</small></div>
+          <div class="prediction-vote-actions">
+            <button type="button" data-prediction-choice="agree" class="prediction-vote-button ${state.selected === "agree" ? "is-selected" : ""}" aria-pressed="${state.selected === "agree"}"><span aria-hidden="true">👍</span><b>Съгласен</b><small>${agreePercent}%</small></button>
+            <button type="button" data-prediction-choice="disagree" class="prediction-vote-button ${state.selected === "disagree" ? "is-selected" : ""}" aria-pressed="${state.selected === "disagree"}"><span aria-hidden="true">👎</span><b>Не съм съгласен</b><small>${disagreePercent}%</small></button>
+          </div>
+          <p class="engagement-feedback" aria-live="polite">${state.selected ? "Гласът ти е записан. Можеш да промениш избора си." : "Избери позиция с едно натискане."}</p>
+        </div>` : ""}
+    </article>`;
+}
+
+function bindPredictionVotes(scope) {
+  scope.querySelectorAll("[data-prediction-choice]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const card = button.closest("[data-prediction-id]");
+      const grid = card?.closest("#prediction-grid");
+      const id = card?.dataset.predictionId || "";
+      const item = (config.predictions || []).find((prediction) => String(prediction.id || "") === id);
+      if (!card || !grid || !item || button.disabled) return;
+      card.querySelectorAll("[data-prediction-choice]").forEach((control) => { control.disabled = true; });
+      const feedback = card.querySelector(".engagement-feedback");
+      if (feedback) feedback.textContent = "Записваме гласа…";
+      try {
+        const response = await fetch(`/api/engagement/predictions/${encodeURIComponent(id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ choice: button.dataset.predictionChoice })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Гласът не беше записан.");
+        engagementState = payload;
+        card.outerHTML = renderHostPrediction(item, engagementState.predictions?.[id]);
+        const nextCard = grid.querySelector(`[data-prediction-id="${cssEscape(id)}"]`);
+        if (nextCard) bindPredictionVotes(nextCard);
+      } catch (error) {
+        card.querySelectorAll("[data-prediction-choice]").forEach((control) => { control.disabled = false; });
+        if (feedback) feedback.textContent = error.message || "Гласът не беше записан. Опитай отново.";
+      }
+    });
+  });
+}
+
 function renderPollCard(poll = {}, state = {}, celebrate = false) {
   const counts = state?.counts || {};
   const total = Number(state?.total) || 0;
@@ -2248,10 +2316,13 @@ function focusSharedNewsCard(newsGrid) {
 }
 
 function renderNewsCard(item = {}, index = 0) {
-  const anchorId = newsAnchorId(item, index);
-  const detailUrl = newsDetailUrl(item, index);
+  const contentIndex = (config.news || []).indexOf(item);
+  const stableIndex = contentIndex >= 0 ? contentIndex : index;
+  const newsId = newsItemSlug(item, stableIndex);
+  const anchorId = newsAnchorId(item, stableIndex);
+  const detailUrl = newsDetailUrl(item, stableIndex);
   return `
-    <article class="news-card tilt-card" id="${escapeAttribute(anchorId)}">
+    <article class="news-card tilt-card" id="${escapeAttribute(anchorId)}" data-news-card="${escapeAttribute(newsId)}">
       <a class="news-card-media" href="${escapeAttribute(detailUrl)}" aria-label="Прочети ${escapeAttribute(item.title || "Новина")}">${
         item.imageUrl
           ? `<img class="news-image" src="${escapeAttribute(item.imageUrl)}" alt="${escapeAttribute(item.title || "Новина")}" />`
@@ -2261,6 +2332,7 @@ function renderNewsCard(item = {}, index = 0) {
         <time datetime="${escapeAttribute(item.createdAt || "")}">${formatLocalDate(item.createdAt)}</time>
         <h3><a href="${escapeAttribute(detailUrl)}">${brandText(item.title || "Новина")}</a></h3>
         <p>${brandText(newsExcerpt(item))}</p>
+        ${renderNewsCardReactions(newsId, engagementState.news?.[newsId])}
         <div class="news-card-actions">
           <a class="button primary news-read-button" href="${escapeAttribute(detailUrl)}">Прочети новината</a>
           <button class="button secondary news-share-button" type="button" data-news-share="${index}" aria-label="Сподели новината ${escapeAttribute(item.title || "")}"><span aria-hidden="true">↗</span> Сподели</button>
@@ -2268,6 +2340,52 @@ function renderNewsCard(item = {}, index = 0) {
       </div>
     </article>
   `;
+}
+
+function renderNewsCardReactions(newsId, state = {}) {
+  const total = newsReactionChoices.reduce((sum, choice) => sum + (Number(state.counts?.[choice.id]) || 0), 0);
+  return `
+    <div class="news-card-reactions" data-news-card-reactions="${escapeAttribute(newsId)}">
+      <div class="news-card-reactions-heading"><span>Реагирай</span><small>${total} ${total === 1 ? "реакция" : "реакции"}</small></div>
+      <div class="news-card-reaction-options">
+        ${newsReactionChoices.map((choice) => {
+          const selected = state.selected === choice.id;
+          const count = Number(state.counts?.[choice.id]) || 0;
+          return `<button type="button" class="news-card-reaction-button ${selected ? "is-selected" : ""}" data-news-card-reaction="${choice.id}" aria-label="${escapeAttribute(choice.label)}: ${count}" aria-pressed="${selected}" title="${escapeAttribute(choice.label)}"><span aria-hidden="true">${choice.emoji}</span><small>${count}</small></button>`;
+        }).join("")}
+      </div>
+      <p class="news-card-reaction-feedback" aria-live="polite"></p>
+    </div>`;
+}
+
+function bindNewsCardReactions(newsGrid) {
+  if (newsGrid.dataset.reactionsBound === "true") return;
+  newsGrid.dataset.reactionsBound = "true";
+  newsGrid.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-news-card-reaction]");
+    if (!button || !newsGrid.contains(button) || button.disabled) return;
+    const card = button.closest("[data-news-card]");
+    const reactionBar = button.closest("[data-news-card-reactions]");
+    const newsId = card?.dataset.newsCard || "";
+    if (!card || !reactionBar || !newsId) return;
+    reactionBar.querySelectorAll("[data-news-card-reaction]").forEach((control) => { control.disabled = true; });
+    const feedback = reactionBar.querySelector(".news-card-reaction-feedback");
+    if (feedback) feedback.textContent = "Записваме…";
+    try {
+      const response = await fetch(`/api/engagement/news/${encodeURIComponent(newsId)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ reaction: button.dataset.newsCardReaction })
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Реакцията не беше записана.");
+      engagementState = payload;
+      reactionBar.outerHTML = renderNewsCardReactions(newsId, engagementState.news?.[newsId]);
+    } catch (error) {
+      reactionBar.querySelectorAll("[data-news-card-reaction]").forEach((control) => { control.disabled = false; });
+      if (feedback) feedback.textContent = error.message || "Опитай отново.";
+    }
+  });
 }
 
 function pressNewsCardStyle(item = {}, index = 0) {
@@ -2356,6 +2474,7 @@ function renderNewsDetail(container) {
     .map((paragraph) => `<p>${escapeHTML(paragraph).replace(/\n/g, "<br />")}</p>`)
     .join("");
   const detailUrl = new URL(newsDetailUrl(item, index), officialHomepageUrl).href;
+  const newsId = newsItemSlug(item, index);
   container.innerHTML = `
     <nav class="news-detail-breadcrumb" aria-label="Навигация към новините"><a href="/news">Новини</a><span aria-hidden="true">/</span><span>${escapeHTML(item.title || "Новина")}</span></nav>
     <article class="news-detail-article">
@@ -2367,11 +2486,14 @@ function renderNewsDetail(container) {
       </header>
       ${item.imageUrl ? `<figure class="news-detail-figure"><img src="${escapeAttribute(item.imageUrl)}" alt="${escapeAttribute(item.title || "Новина")}" />${item.imageCaption ? `<figcaption>${escapeHTML(item.imageCaption)}</figcaption>` : ""}</figure>` : ""}
       <div class="news-detail-body">${paragraphs || `<p>${escapeHTML(newsExcerpt(item, 320))}</p>`}</div>
+      ${renderNewsReactions(newsId, engagementState.news?.[newsId])}
       <footer class="news-detail-footer">
         <div><span>Сподели историята</span><strong>D.I.S Story карта с QR към сайта</strong></div>
         <button class="button primary" type="button" data-news-detail-share>Сподели новината</button>
       </footer>
     </article>`;
+
+  bindNewsReactions(container, newsId);
 
   document.title = `${plainShareText(item.title)} | D.I.S Подкаст`;
   document.querySelector('link[rel="canonical"]')?.setAttribute("href", detailUrl);
@@ -2392,6 +2514,52 @@ function renderNewsDetail(container) {
       button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
     }
     window.setTimeout(() => { button.textContent = originalLabel; button.disabled = false; }, 1600);
+  });
+}
+
+function renderNewsReactions(newsId, state = {}) {
+  const total = newsReactionChoices.reduce((sum, choice) => sum + (Number(state.counts?.[choice.id]) || 0), 0);
+  return `
+    <section class="news-reactions" data-news-reactions="${escapeAttribute(newsId)}" aria-labelledby="news-reactions-title">
+      <div class="news-reactions-heading">
+        <div><span class="section-kicker">Твоята реакция</span><h2 id="news-reactions-title">Как ти се стори?</h2></div>
+        <strong>${total} ${total === 1 ? "реакция" : "реакции"}</strong>
+      </div>
+      <div class="news-reaction-options">
+        ${newsReactionChoices.map((choice) => {
+          const selected = state.selected === choice.id;
+          return `<button type="button" class="news-reaction-button ${selected ? "is-selected" : ""}" data-news-reaction="${choice.id}" aria-pressed="${selected}"><span aria-hidden="true">${choice.emoji}</span><b>${choice.label}</b><small>${Number(state.counts?.[choice.id]) || 0}</small></button>`;
+        }).join("")}
+      </div>
+      <p class="engagement-feedback" aria-live="polite">${state.selected ? "Реакцията ти е записана. Можеш да я промениш." : "Избери една реакция — не е нужна регистрация."}</p>
+    </section>`;
+}
+
+function bindNewsReactions(container, newsId) {
+  const section = container.querySelector("[data-news-reactions]");
+  if (!section) return;
+  section.querySelectorAll("[data-news-reaction]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (button.disabled) return;
+      section.querySelectorAll("[data-news-reaction]").forEach((control) => { control.disabled = true; });
+      const feedback = section.querySelector(".engagement-feedback");
+      if (feedback) feedback.textContent = "Записваме реакцията…";
+      try {
+        const response = await fetch(`/api/engagement/news/${encodeURIComponent(newsId)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ reaction: button.dataset.newsReaction })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "Реакцията не беше записана.");
+        engagementState = payload;
+        section.outerHTML = renderNewsReactions(newsId, engagementState.news?.[newsId]);
+        bindNewsReactions(container, newsId);
+      } catch (error) {
+        section.querySelectorAll("[data-news-reaction]").forEach((control) => { control.disabled = false; });
+        if (feedback) feedback.textContent = error.message || "Реакцията не беше записана. Опитай отново.";
+      }
+    });
   });
 }
 

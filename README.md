@@ -98,7 +98,9 @@ npm start
 The public site reads content from `GET /api/content`.
 The admin saves content with `PUT /api/content`, protected by a signed session cookie.
 
-Voting creates a long-lived signed `dis_voter` cookie only after the visitor submits a vote. Merely opening Fan Zone or reading poll results does not create it. The cookie prevents normal repeat voting per poll without requiring accounts. Clearing cookies or deliberately changing identity can bypass this, which is acceptable for the intended entertainment use.
+Voting and reactions create a long-lived signed `dis_voter` cookie only after the visitor submits an interaction. Merely opening Fan Zone, reading poll results, or viewing reaction totals does not create it. The cookie keeps one selection per poll, host prediction, and D.I.S news item without requiring accounts. A visitor can change a news reaction or prediction opinion; the previous count is removed before the new one is added. Clearing cookies or deliberately changing identity can bypass this, which is acceptable for the intended entertainment use.
+
+`GET /api/engagement` returns only aggregate counts and the current browser's selection. `POST /api/engagement/news/:newsSlug` records one of the fixed news reactions, while `POST /api/engagement/predictions/:predictionId` records agree/disagree. Both reuse the protected vote store (`data/votes.json` locally and the `votes` row in Supabase `app_state` in production); voter hashes and raw cookie values are never returned publicly.
 
 Each visitor can vote once in every separate poll. Deleting a poll from admin also removes its stored vote records on the next content save.
 
@@ -269,7 +271,7 @@ Production analytics uses the GA4 web data stream `G-G21K94TW2T` for `https://di
 - Contact, fan-idea, and giveaway forms show a short privacy notice beside the submit flow.
 - Production general questions, fan ideas, and partnership messages are forwarded server-to-server through Resend as an internal notification after they are saved; Resend does not add browser cookies or contact the visitor directly.
 - Every giveaway has its own admin-editable official rules, privacy notice, platform disclaimer, dates, eligibility, and prizes. The public form links directly to the rules for the active campaign.
-- `dis_session` is created only after admin login, `dis_voter` only after voting, `dis_league` only after Prediction League registration or recovery, and `dis_giveaway` only after successful giveaway registration.
+- `dis_session` is created only after admin login, `dis_voter` only after voting or reacting, `dis_league` only after Prediction League registration or recovery, and `dis_giveaway` only after successful giveaway registration.
 - Google Analytics 4 is optional and loads only after explicit analytics consent; Meta Pixel and advertising-profile trackers are not used.
 - The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
 - Google Fonts is also loaded from Google and is disclosed as an external service.
