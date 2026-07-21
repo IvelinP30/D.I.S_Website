@@ -6,7 +6,14 @@ const QRCode = require("qrcode");
 const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
 const { searchApiFootballTeams } = require("./server/team-media");
-const { PRESS_NEWS_CACHE_VERSION, fetchPressNewsWithFallback, mergePressArticles, pressNewsCacheIsFresh } = require("./server/press-news");
+const {
+  PRESS_NEWS_CACHE_VERSION,
+  articleLooksLikeFootball,
+  fetchPressNewsWithFallback,
+  mergePressArticles,
+  pressNewsCacheIsFresh
+} = require("./server/press-news");
+const { downloadPressNewsThumbnail, pressNewsImageFilename } = require("./server/press-news-image");
 const {
   archiveDeletedLeagueMatches,
   buildPredictionLeagueState,
@@ -62,7 +69,7 @@ const newsdataApiKey = String(process.env.NEWSDATA_API_KEY || "").trim();
 const pressNewsQuery = String(process.env.NEWSDATA_QUERY || "футбол").trim().slice(0, 100) || "футбол";
 const pressNewsBulgarianQuery = String(process.env.NEWSDATA_BULGARIAN_QUERY || "Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор").trim().slice(0, 100);
 const pressNewsLanguage = String(process.env.NEWSDATA_LANGUAGE || "bg").trim().toLowerCase().slice(0, 8) || "bg";
-const pressNewsMaxItems = Math.min(30, Math.max(10, Number(process.env.NEWSDATA_MAX_ITEMS || 20) || 20));
+const pressNewsMaxItems = Math.min(20, Math.max(10, Number(process.env.NEWSDATA_MAX_ITEMS || 20) || 20));
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
@@ -201,16 +208,18 @@ async function writeJsonFile(file, value, storageKey = path.basename(file, ".jso
 async function readPressNews() {
   const cache = await readJsonFile(pressNewsCacheFile, { items: [], refreshedAt: "" }, "pressNewsCache");
   const now = Date.now();
-  const cachedItems = Array.isArray(cache.items) ? cache.items : [];
+  const previousCachedItems = Array.isArray(cache.items) ? cache.items : [];
+  const cachedItems = previousCachedItems.filter(articleLooksLikeFootball);
   const retainedItems = mergePressArticles(cachedItems, [], {
     now,
     limit: Number.POSITIVE_INFINITY,
     sortMode: "newest"
-  });
+  }).map(withoutPressImageSource);
   const currentItems = retainedItems.slice(0, pressNewsMaxItems);
   const currentCache = { ...cache, items: retainedItems };
-  if (JSON.stringify(retainedItems) !== JSON.stringify(cachedItems)) {
+  if (JSON.stringify(retainedItems) !== JSON.stringify(previousCachedItems)) {
     await writeJsonFile(pressNewsCacheFile, currentCache, "pressNewsCache");
+    await cleanupExpiredPressNewsImages(previousCachedItems, retainedItems);
   }
   if (pressNewsCacheIsFresh(currentCache, now)) {
     return { items: currentItems, refreshedAt: cache.refreshedAt, stale: false, configured: true };
@@ -234,11 +243,12 @@ async function readPressNews() {
         limit: 20,
         now
       });
-      const retainedWithNewItems = mergePressArticles(retainedItems, fetchedItems, {
+      const fetchedWithImages = await cachePressNewsImages(fetchedItems, retainedItems);
+      const retainedWithNewItems = mergePressArticles(retainedItems, fetchedWithImages, {
         now,
         limit: Number.POSITIVE_INFINITY,
         sortMode: "newest"
-      });
+      }).map(withoutPressImageSource);
       const nextCache = {
         version: PRESS_NEWS_CACHE_VERSION,
         items: retainedWithNewItems,
@@ -390,6 +400,86 @@ async function deleteUpload(filename) {
   const existed = fs.existsSync(filePath);
   if (existed) fs.unlinkSync(filePath);
   return { filename: safeName, deleted: existed };
+}
+
+function pressNewsThumbnailUrl(filename) {
+  return cloudStorageEnabled
+    ? `${supabaseUrl}/storage/v1/object/public/${encodeURIComponent(supabaseBucket)}/${encodeURIComponent(filename)}`
+    : `/uploads/${filename}`;
+}
+
+async function pressNewsThumbnailExists(filename) {
+  if (!cloudStorageEnabled) return fs.existsSync(path.join(uploadsDir, filename));
+  try {
+    const response = await fetch(pressNewsThumbnailUrl(filename), { method: "HEAD" });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function storePressNewsThumbnail(filename, content) {
+  if (cloudStorageEnabled) {
+    const response = await fetch(`${supabaseUrl}/storage/v1/object/${encodeURIComponent(supabaseBucket)}/${encodeURIComponent(filename)}`, {
+      method: "POST",
+      headers: supabaseHeaders({ "Content-Type": "image/webp", "cache-control": "259200", "x-upsert": "true" }),
+      body: content
+    });
+    if (!response.ok) throw new Error(`Cloud thumbnail upload failed (${response.status})`);
+  } else {
+    fs.writeFileSync(path.join(uploadsDir, filename), content);
+  }
+  return pressNewsThumbnailUrl(filename);
+}
+
+function withoutPressImageSource(item = {}) {
+  const cleanItem = { ...item };
+  delete cleanItem.imageSourceUrl;
+  return cleanItem;
+}
+
+async function cachePressNewsImages(items = [], retainedItems = []) {
+  const retainedByUrl = new Map(retainedItems.map((item) => [item.articleUrl, item]));
+  const pendingItems = items.map((item) => ({ ...item }));
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < pendingItems.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const item = pendingItems[index];
+      const retainedImageUrl = retainedByUrl.get(item.articleUrl)?.imageUrl || "";
+      if (retainedImageUrl) {
+        item.imageUrl = retainedImageUrl;
+        pendingItems[index] = withoutPressImageSource(item);
+        continue;
+      }
+      if (!item.imageSourceUrl) {
+        pendingItems[index] = withoutPressImageSource(item);
+        continue;
+      }
+      try {
+        const filename = pressNewsImageFilename(item.imageSourceUrl);
+        const cachedUrl = pressNewsThumbnailUrl(filename);
+        if (await pressNewsThumbnailExists(filename)) {
+          item.imageUrl = cachedUrl;
+        } else {
+          const thumbnail = await downloadPressNewsThumbnail({ sourceUrl: item.imageSourceUrl });
+          item.imageUrl = await storePressNewsThumbnail(filename, thumbnail);
+        }
+      } catch (error) {
+        console.warn(`Press thumbnail skipped for ${String(item.id || "unknown").slice(0, 80)}: ${externalNewsErrorMessage(error)}`);
+      }
+      pendingItems[index] = withoutPressImageSource(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(4, pendingItems.length) }, () => worker()));
+  return pendingItems;
+}
+
+async function cleanupExpiredPressNewsImages(previousItems = [], retainedItems = []) {
+  const retainedUrls = new Set(retainedItems.map((item) => item.imageUrl).filter(Boolean));
+  const expiredUrls = [...new Set(previousItems.map((item) => item.imageUrl).filter((url) => url && !retainedUrls.has(url)))];
+  await Promise.allSettled(expiredUrls.map((url) => deleteUpload(url)));
 }
 
 function send(response, status, body, headers = {}) {

@@ -257,7 +257,10 @@ test("external football headlines are visually separate, bounded, and disclosed"
 
   assert.match(server, /\/api\/press-news/);
   assert.match(server, /NEWSDATA_MAX_ITEMS \|\| 20/);
-  assert.match(server, /mergePressArticles\(retainedItems, fetchedItems/);
+  assert.match(server, /mergePressArticles\(retainedItems, fetchedWithImages/);
+  assert.match(server, /previousCachedItems\.filter\(articleLooksLikeFootball\)/);
+  assert.match(publicScript, /press-news-thumb/);
+  assert.match(styles, /\.press-news-thumb/);
   assert.match(publicScript, /renderPressNews/);
   assert.match(publicScript, /Прочети в източника/);
   assert.match(styles, /\.press-news-grid[\s\S]*repeat\(4/);

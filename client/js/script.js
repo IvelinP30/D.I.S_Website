@@ -2274,6 +2274,7 @@ function renderPressNewsCard(item = {}) {
   const publishedLabel = item.publishedAt ? formatLocalDate(item.publishedAt) : "Актуално";
   return `
     <article class="press-news-card tilt-card">
+      ${item.imageUrl ? `<a class="press-news-thumb" href="${escapeAttribute(item.articleUrl || "#")}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true"><img src="${escapeAttribute(item.imageUrl)}" alt="" loading="lazy" decoding="async" /></a>` : ""}
       <div class="press-news-card-meta">
         <span class="press-news-source-mark" aria-hidden="true">${escapeHTML(sourceInitial)}</span>
         <span><small>Външен източник</small><strong>${escapeHTML(sourceName)}</strong></span>

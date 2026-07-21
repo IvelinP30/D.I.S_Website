@@ -32,6 +32,8 @@ test("press news keeps only safe public metadata", () => {
     language: "en",
     country: [],
     sourcePriority: null,
+    imageUrl: "",
+    imageSourceUrl: "",
     isBulgarianFootball: false
   });
 });
@@ -46,6 +48,60 @@ test("press news uses pubDate when pubDateTZ contains only the timezone name", (
   });
 
   assert.equal(item.publishedAt, "2026-07-21T07:31:50.000Z");
+});
+
+test("Bulgarian publisher country alone does not create a Bulgarian-football badge", () => {
+  const general = normalizePressArticle({
+    article_id: "general-bg-sport",
+    title: "Леброн Джеймс с важно решение",
+    link: "https://example.com/general-bg-sport",
+    country: ["bulgaria"],
+    pubDate: "2026-07-21 07:31:50"
+  });
+  const football = normalizePressArticle({
+    article_id: "levski-story",
+    title: "Левски започва новия сезон",
+    link: "https://example.com/levski-story",
+    country: ["bulgaria"],
+    pubDate: "2026-07-21 07:31:50"
+  });
+
+  assert.equal(general.isBulgarianFootball, false);
+  assert.equal(football.isBulgarianFootball, true);
+});
+
+test("every targeted request locally removes non-football sports results", async () => {
+  const items = await fetchPressNews({
+    apiKey: "private-key",
+    query: "футбол",
+    now: Date.parse("2026-07-21T12:00:00Z"),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: "success",
+        results: [
+          { article_id: "basketball", title: "Рич Пол коментира Леброн Джеймс", link: "https://example.com/basketball", pubDate: "2026-07-21T11:30:00Z" },
+          { article_id: "football", title: "Меси продължава с Аржентина", link: "https://example.com/messi", pubDate: "2026-07-21T11:00:00Z" }
+        ]
+      })
+    })
+  });
+
+  assert.deepEqual(items.map((item) => item.id), ["football"]);
+});
+
+test("press news retains a safe provider image only as a private cache input", () => {
+  const item = normalizePressArticle({
+    article_id: "image-story",
+    title: "Меси с нов гол",
+    link: "https://example.com/image-story",
+    image_url: "https://images.example.com/photo.jpg",
+    pubDate: "2026-07-21 07:31:50"
+  });
+
+  assert.equal(item.imageSourceUrl, "https://images.example.com/photo.jpg");
+  assert.equal(item.imageUrl, "");
 });
 
 test("press news removes duplicate links and prefers stronger football stories", () => {

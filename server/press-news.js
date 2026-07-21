@@ -3,20 +3,32 @@ const crypto = require("crypto");
 const NEWSDATA_BASE_URL = "https://newsdata.io/api/1/latest";
 const PRESS_NEWS_CACHE_TTL = 12 * 60 * 60 * 1000;
 const PRESS_NEWS_MAX_AGE = 72 * 60 * 60 * 1000;
-const PRESS_NEWS_CACHE_VERSION = 3;
+const PRESS_NEWS_CACHE_VERSION = 4;
 
 const BULGARIAN_FOOTBALL_SIGNALS = [
-  "български футбол", "българия", "първа лига", "efbet лига", "купа на българия",
-  "национален отбор", "лудогорец", "левски", "цска", "ботев пловдив", "черно море",
-  "локомотив пловдив", "славия", "берое", "арда", "спартак варна", "септември"
+  "български футбол", "първа професионална лига", "efbet лига", "купа на българия",
+  "суперкупа на българия", "българският национален отбор", "българския национален отбор",
+  "националният отбор на българия", "националния отбор на българия", "български национал",
+  "лудогорец", "левски", "цска", "ботев пловдив", "черно море",
+  "локомотив пловдив", "локомотив софия", "цска 1948", "славия", "берое", "арда",
+  "спартак варна", "септември", "добруджа", "монтана", "етър", "пирин"
 ];
 
 const FOOTBALL_SIGNALS = [
   "футбол", "football", "soccer", "шампионска лига", "лига европа", "конференц лига",
   "първа лига", "efbet лига", "купа на българия", "национален отбор", "уефа", "фифа",
   "левски", "цска", "лудогорец", "ботев пловдив", "черно море", "локомотив пловдив",
-  "premier league", "champions league", "europa league", "conference league", "uefa", "fifa"
+  "локомотив софия", "славия", "берое", "арда", "спартак варна", "premier league",
+  "champions league", "europa league", "conference league", "la liga", "serie a",
+  "bundesliga", "uefa", "fifa", "меси", "роналдо", "мбапе", "неймар", "холанд",
+  "белингам", "ман юнайтед", "манчестър юнайтед", "ман сити", "арсенал", "челси",
+  "ливерпул", "барселона", "реал мадрид", "атлетико", "байерн", "борусия дортмунд",
+  "пари сен жермен", "псж", "интер", "милан", "ювентус", "наполи", "рома"
 ];
+
+const FOOTBALL_ENTITY_SIGNALS = FOOTBALL_SIGNALS.filter((signal) => ![
+  "футбол", "football", "soccer", "национален отбор", "уефа", "фифа", "uefa", "fifa"
+].includes(signal));
 
 const TITLE_STOP_WORDS = new Set([
   "футбол", "футболен", "футболна", "футболни", "спорт", "sports", "след", "преди",
@@ -37,6 +49,19 @@ function publicHttpUrl(value = "") {
   try {
     const url = new URL(String(value || ""));
     return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function cachedPressImageUrl(value = "") {
+  const rawValue = String(value || "").trim();
+  const filenamePattern = /press-news-[a-f0-9]{32}\.webp$/i;
+  if (/^\/uploads\/press-news-[a-f0-9]{32}\.webp$/i.test(rawValue)) return rawValue;
+  const publicUrl = publicHttpUrl(rawValue);
+  if (!publicUrl) return "";
+  try {
+    return filenamePattern.test(new URL(publicUrl).pathname) ? publicUrl : "";
   } catch {
     return "";
   }
@@ -75,14 +100,14 @@ function normalizePressArticle(article = {}) {
     publishedAt: normalizedPublishedAt(article.publishedAt || article.pubDate || article.pubDateTZ),
     language: cleanText(article.language, 16) || "en",
     country,
-    sourcePriority: Number.isFinite(sourcePriority) && sourcePriority >= 0 ? sourcePriority : null
+    sourcePriority: Number.isFinite(sourcePriority) && sourcePriority >= 0 ? sourcePriority : null,
+    imageUrl: cachedPressImageUrl(article.imageUrl),
+    imageSourceUrl: publicHttpUrl(article.imageSourceUrl || article.image_url)
   };
   const keywordText = Array.isArray(article.keywords) ? article.keywords.join(" ") : article.keywords;
-  const bulgarianHaystack = `${normalized.title} ${normalized.description} ${cleanText(keywordText, 300)} ${country.join(" ")}`.toLowerCase();
-  normalized.isBulgarianFootball = Boolean(article.isBulgarianFootball)
-    || country.includes("bulgaria")
-    || country.includes("bg")
-    || BULGARIAN_FOOTBALL_SIGNALS.some((signal) => bulgarianHaystack.includes(signal));
+  const bulgarianHaystack = `${normalized.title} ${normalized.description} ${cleanText(keywordText, 300)}`.toLowerCase();
+  normalized.isBulgarianFootball = BULGARIAN_FOOTBALL_SIGNALS
+    .some((signal) => bulgarianHaystack.includes(signal));
   return normalized;
 }
 
@@ -136,7 +161,13 @@ function rankPressArticles(articles = [], { now = Date.now(), limit = 12, sortMo
     const publishedAt = Date.parse(article.publishedAt || "");
     if (!Number.isFinite(publishedAt) || publishedAt > now + 5 * 60 * 1000 || now - publishedAt > PRESS_NEWS_MAX_AGE) continue;
     const duplicateKey = article.articleUrl.replace(/[?#].*$/, "").replace(/\/$/, "").toLowerCase();
-    if (!unique.has(duplicateKey)) unique.set(duplicateKey, article);
+    const existing = unique.get(duplicateKey);
+    if (!existing) {
+      unique.set(duplicateKey, article);
+    } else {
+      if (!existing.imageUrl && article.imageUrl) existing.imageUrl = article.imageUrl;
+      if (!existing.imageSourceUrl && article.imageSourceUrl) existing.imageSourceUrl = article.imageSourceUrl;
+    }
   }
   const normalizedArticles = [...unique.values()];
   return normalizedArticles
@@ -156,8 +187,10 @@ function mergePressArticles(existingItems = [], incomingItems = [], options = {}
 
 function articleLooksLikeFootball(article = {}) {
   const keywordText = Array.isArray(article.keywords) ? article.keywords.join(" ") : article.keywords;
-  const haystack = `${cleanText(article.title, 240)} ${cleanText(article.description, 520)} ${cleanText(keywordText, 300)}`.toLowerCase();
-  return FOOTBALL_SIGNALS.some((signal) => haystack.includes(signal));
+  const headlineSignals = `${cleanText(article.title, 240)} ${cleanText(keywordText, 300)}`.toLowerCase();
+  if (FOOTBALL_SIGNALS.some((signal) => headlineSignals.includes(signal))) return true;
+  const description = cleanText(article.description, 520).toLowerCase();
+  return FOOTBALL_ENTITY_SIGNALS.some((signal) => description.includes(signal));
 }
 
 function newsDataError(message, status) {
@@ -169,7 +202,7 @@ function newsDataError(message, status) {
   return error;
 }
 
-async function fetchPressNews({ apiKey, fetchImpl = fetch, query = "футбол", language = "bg", now = Date.now(), limit = 10, requireFootball = false } = {}) {
+async function fetchPressNews({ apiKey, fetchImpl = fetch, query = "футбол", language = "bg", now = Date.now(), limit = 10, requireFootball = true } = {}) {
   if (!String(apiKey || "").trim()) {
     const error = new Error("NewsData API is not configured");
     error.code = "NEWSDATA_NOT_CONFIGURED";
@@ -270,6 +303,7 @@ module.exports = {
   fetchPressNews,
   fetchPressNewsSet,
   fetchPressNewsWithFallback,
+  articleLooksLikeFootball,
   mergePressArticles,
   normalizePressArticle,
   pressNewsCacheIsFresh,
