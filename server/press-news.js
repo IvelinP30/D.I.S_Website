@@ -37,9 +37,9 @@ const NON_FOOTBALL_SIGNALS = [
 ];
 
 const BULGARIAN_LANGUAGE_WORDS = new Set([
-  "на", "за", "от", "в", "във", "и", "с", "със", "се", "ще", "след", "преди",
-  "към", "до", "между", "при", "е", "има", "няма", "който", "която", "които",
-  "този", "тази", "това"
+  "на", "за", "от", "във", "със", "се", "ще", "че", "но", "как", "след", "преди",
+  "през", "още", "вече", "към", "между", "при", "има", "няма", "беше", "който",
+  "която", "които", "този", "тази", "това", "срещу"
 ]);
 
 const TITLE_STOP_WORDS = new Set([
@@ -208,8 +208,11 @@ function articleLooksLikeFootball(article = {}) {
   if (NON_FOOTBALL_SIGNALS.some((signal) => fullText.includes(signal))) return false;
   const language = cleanText(article.language, 20).toLowerCase();
   if (["bg", "bulgarian"].includes(language)) {
+    if (/[қғўҳ]/i.test(fullText)) return false;
     const words = fullText.replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/);
-    if (!words.some((word) => BULGARIAN_LANGUAGE_WORDS.has(word))) return false;
+    const hasBulgarianMarker = /[ъщяю]/i.test(fullText)
+      || words.some((word) => BULGARIAN_LANGUAGE_WORDS.has(word));
+    if (!hasBulgarianMarker) return false;
   }
   if (FOOTBALL_SIGNALS.some((signal) => headlineSignals.includes(signal))) return true;
   return FOOTBALL_ENTITY_SIGNALS.some((signal) => description.includes(signal));
