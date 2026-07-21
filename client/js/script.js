@@ -2268,12 +2268,33 @@ function renderNewsCard(item = {}, index = 0) {
   `;
 }
 
-function renderPressNewsCard(item = {}) {
+function pressNewsCardStyle(item = {}, index = 0) {
+  const layout = [
+    "feature", "sidebar", "column", "column", "column",
+    "wide", "compact", "compact", "compact", "wide",
+    "compact", "column", "column", "column", "feature",
+    "sidebar", "compact", "compact", "wide", "panorama"
+  ][index % 20];
+  const seed = String(item.id || item.articleUrl || index);
+  let hash = 2166136261;
+  for (const character of seed) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  const photoStyle = item.imageUrl
+    ? ["photo-wide", "photo-short", "photo-inset", "photo-tall"][Math.abs(hash) % 4]
+    : "no-photo";
+  const copyStyle = ["copy-brief", "copy-standard", "copy-long"][Math.abs(hash >>> 3) % 3];
+  return `press-news-card--${layout} press-news-card--${photoStyle} press-news-card--${copyStyle}`;
+}
+
+function renderPressNewsCard(item = {}, index = 0) {
   const sourceName = item.sourceName || "Международна медия";
   const sourceInitial = sourceName.trim().charAt(0).toUpperCase() || "Ф";
   const publishedLabel = item.publishedAt ? formatLocalDate(item.publishedAt) : "Актуално";
+  const cardStyle = pressNewsCardStyle(item, index);
   return `
-    <article class="press-news-card tilt-card">
+    <article class="press-news-card ${cardStyle}">
       ${item.imageUrl ? `<a class="press-news-thumb" href="${escapeAttribute(item.articleUrl || "#")}" target="_blank" rel="noopener noreferrer" tabindex="-1" aria-hidden="true"><img src="${escapeAttribute(item.imageUrl)}" alt="" loading="lazy" decoding="async" /></a>` : ""}
       <div class="press-news-card-meta">
         <span class="press-news-source-mark" aria-hidden="true">${escapeHTML(sourceInitial)}</span>
