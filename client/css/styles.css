@@ -2122,6 +2122,13 @@ h3 {
     transform 620ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+.reveal.reveal-fast {
+  transform: translateY(10px) scale(0.995);
+  transition:
+    opacity 260ms ease,
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 .is-visible {
   opacity: 1 !important;
   transform: translateY(0) scale(1) !important;

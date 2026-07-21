@@ -89,6 +89,7 @@ async function loadContent({ allowFallback = true } = {}) {
   config = optimizeStaticAssetUrls(config);
 
   renderPage();
+  bindPressNewsReveal();
   await renderPressNews();
   document.documentElement.classList.add("content-ready");
   await renderPredictionLeague();
@@ -1404,7 +1405,8 @@ async function shareLeagueAchievement(state, period = "week") {
     context.fillText(scoring.exactScore ? "ПОСЛЕДЕН УСПЕХ · ТОЧЕН РЕЗУЛТАТ" : "ПОСЛЕДЕН УСПЕХ · ПОЗНАТ ИЗХОД", 112, 1100);
     context.fillStyle = "#f7f8fb";
     context.textAlign = "center";
-    drawCanvasFittedText(context, `${latestSuccess.homeTeam} — ${latestSuccess.awayTeam}`, 540, 1210, 830, { weight: 800, maxSize: 50, minSize: 28 });
+    const fixtureNameMaxWidth = latestHomeLogo || latestAwayLogo ? 650 : 830;
+    drawCanvasFittedText(context, `${latestSuccess.homeTeam} — ${latestSuccess.awayTeam}`, 540, 1210, fixtureNameMaxWidth, { weight: 800, maxSize: 50, minSize: 28 });
     drawCanvasTeamLogo(context, latestHomeLogo, 112, 1145, 82);
     drawCanvasTeamLogo(context, latestAwayLogo, 886, 1145, 82);
     context.fillStyle = "#38f27f";
@@ -2573,6 +2575,22 @@ function getYouTubeEmbedUrl(url) {
   return "";
 }
 
+function bindPressNewsReveal() {
+  const target = document.querySelector(".press-news-section");
+  if (!target || target.dataset.revealBound === "true") return;
+  target.dataset.revealBound = "true";
+  target.classList.add("reveal", "reveal-fast");
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) entry.target.classList.add("is-visible");
+      });
+    },
+    { threshold: 0, rootMargin: "0px 0px 180px 0px" }
+  );
+  observer.observe(target);
+}
+
 function bindMotion() {
   const revealTargets = document.querySelectorAll(
     ".section, .format-card, .social-card, .stat-card, .ad-card, .package-card, .marquee-ad-card, .youtube-player, .discovery-card, .host-card, .prediction-card, .poll-card, .league-entry-card, .league-profile-card, .league-table-card, .league-match-card"
@@ -2585,7 +2603,6 @@ function bindMotion() {
     },
     { threshold: 0.12 }
   );
-
   revealTargets.forEach((target) => {
     if (target.dataset.revealBound === "true") return;
     target.dataset.revealBound = "true";

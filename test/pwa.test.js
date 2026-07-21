@@ -216,11 +216,12 @@ test("league leaderboard exports a story card with rank, points, and the latest 
   assert.match(publicScript, /myPrediction\?\.scoring\?\.correctOutcome/);
   assert.match(publicScript, /МОЯТА ПОЗИЦИЯ/);
   assert.match(publicScript, /ПОСЛЕДЕН УСПЕХ/);
+  assert.match(publicScript, /fixtureNameMaxWidth = latestHomeLogo \|\| latestAwayLogo \? 650 : 830/);
   assert.match(publicScript, /navigator\.canShare\?\.\(\{ files: \[file\] \}\)/);
   assert.match(styles, /\.league-leaderboard-share/);
   assert.match(publicScript, /leagueSelectedPeriod/);
   assert.match(publicScript, /selectedPeriod\.label/);
-  assert.match(fanZone, /script\.js\?v=20260720-7/);
+  assert.match(fanZone, /script\.js\?v=20260722-1/);
 });
 
 test("every news card exports a story-ready image with the article photo and a branded fallback", () => {
@@ -244,7 +245,7 @@ test("every news card exports a story-ready image with the article photo and a b
   assert.match(publicScript, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
   assert.match(styles, /\.news-share-button/);
   assert.match(styles, /\.news-card\.is-shared-target/);
-  assert.match(news, /script\.js\?v=20260721-1/);
+  assert.match(news, /script\.js\?v=20260722-2/);
 });
 
 test("external football headlines are visually separate, bounded, and disclosed", () => {
