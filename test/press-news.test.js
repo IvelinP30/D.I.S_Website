@@ -91,6 +91,40 @@ test("every targeted request locally removes non-football sports results", async
   assert.deepEqual(items.map((item) => item.id), ["football"]);
 });
 
+test("local football filter rejects multi-sport clubs, lifestyle stories, and wrongly tagged foreign text", async () => {
+  const items = await fetchPressNews({
+    apiKey: "private-key",
+    query: "футбол",
+    now: Date.parse("2026-07-21T12:00:00Z"),
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: "success",
+        results: [
+          { article_id: "basket-real", title: "Реал Мадрид финализира сделката", description: "BasketNews съобщава за ново тежко крило", language: "bulgarian", link: "https://example.com/basket-real", pubDate: "2026-07-21T11:30:00Z" },
+          { article_id: "celebrity", title: "Певец отговори на слухове след финала по футбол", description: "Интервю с известния певец", language: "bulgarian", link: "https://example.com/celebrity", pubDate: "2026-07-21T11:20:00Z" },
+          { article_id: "foreign", title: "Майдондаги футбол янгиликлари", description: "Жаҳоннинг миллионлаб мухлислари", language: "bulgarian", link: "https://example.com/foreign", pubDate: "2026-07-21T11:10:00Z" },
+          { article_id: "chelsea", title: "Челси е близо до нов защитник", description: "Клубът преговаря за футболиста", language: "bulgarian", link: "https://example.com/chelsea", pubDate: "2026-07-21T11:00:00Z" }
+        ]
+      })
+    })
+  });
+
+  assert.deepEqual(items.map((item) => item.id), ["chelsea"]);
+});
+
+test("Bulgarian club connection can be recognized across the article text", () => {
+  const item = normalizePressArticle({
+    title: "Талант, роден в Пловдив и израснал в Локомотив",
+    description: "Футболистът празнува рожден ден",
+    link: "https://example.com/lokomotiv",
+    pubDate: "2026-07-21T11:00:00Z"
+  });
+
+  assert.equal(item.isBulgarianFootball, true);
+});
+
 test("press news retains a safe provider image only as a private cache input", () => {
   const item = normalizePressArticle({
     article_id: "image-story",

@@ -30,6 +30,18 @@ const FOOTBALL_ENTITY_SIGNALS = FOOTBALL_SIGNALS.filter((signal) => ![
   "футбол", "football", "soccer", "национален отбор", "уефа", "фифа", "uefa", "fifa"
 ].includes(signal));
 
+const NON_FOOTBALL_SIGNALS = [
+  "баскетбол", "basketball", "basketnews", "нба", "nba", "евролига", "euroleague",
+  "лейкърс", "lakers", "тенис", "волейбол", "хандбал", "алпийски ски", "формула 1",
+  "formula 1", "наркотици", "певец", "певица", "актьор", "актриса", "шоу бизнес"
+];
+
+const BULGARIAN_LANGUAGE_WORDS = new Set([
+  "на", "за", "от", "в", "във", "и", "с", "със", "се", "ще", "след", "преди",
+  "към", "до", "между", "при", "е", "има", "няма", "който", "която", "които",
+  "този", "тази", "това"
+]);
+
 const TITLE_STOP_WORDS = new Set([
   "футбол", "футболен", "футболна", "футболни", "спорт", "sports", "след", "преди",
   "като", "който", "която", "които", "това", "тази", "този", "със", "при", "към",
@@ -106,8 +118,11 @@ function normalizePressArticle(article = {}) {
   };
   const keywordText = Array.isArray(article.keywords) ? article.keywords.join(" ") : article.keywords;
   const bulgarianHaystack = `${normalized.title} ${normalized.description} ${cleanText(keywordText, 300)}`.toLowerCase();
-  normalized.isBulgarianFootball = BULGARIAN_FOOTBALL_SIGNALS
-    .some((signal) => bulgarianHaystack.includes(signal));
+  const pairedBulgarianClub = [
+    ["локомотив", "пловдив"], ["ботев", "пловдив"], ["спартак", "варна"]
+  ].some((signals) => signals.every((signal) => bulgarianHaystack.includes(signal)));
+  normalized.isBulgarianFootball = pairedBulgarianClub
+    || BULGARIAN_FOOTBALL_SIGNALS.some((signal) => bulgarianHaystack.includes(signal));
   return normalized;
 }
 
@@ -188,8 +203,15 @@ function mergePressArticles(existingItems = [], incomingItems = [], options = {}
 function articleLooksLikeFootball(article = {}) {
   const keywordText = Array.isArray(article.keywords) ? article.keywords.join(" ") : article.keywords;
   const headlineSignals = `${cleanText(article.title, 240)} ${cleanText(keywordText, 300)}`.toLowerCase();
-  if (FOOTBALL_SIGNALS.some((signal) => headlineSignals.includes(signal))) return true;
   const description = cleanText(article.description, 520).toLowerCase();
+  const fullText = `${headlineSignals} ${description}`;
+  if (NON_FOOTBALL_SIGNALS.some((signal) => fullText.includes(signal))) return false;
+  const language = cleanText(article.language, 20).toLowerCase();
+  if (["bg", "bulgarian"].includes(language)) {
+    const words = fullText.replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/);
+    if (!words.some((word) => BULGARIAN_LANGUAGE_WORDS.has(word))) return false;
+  }
+  if (FOOTBALL_SIGNALS.some((signal) => headlineSignals.includes(signal))) return true;
   return FOOTBALL_ENTITY_SIGNALS.some((signal) => description.includes(signal));
 }
 
