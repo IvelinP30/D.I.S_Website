@@ -68,6 +68,7 @@ const messageEmailFrom = String(process.env.MESSAGE_EMAIL_FROM || "").trim();
 const configuredGaMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim().toUpperCase();
 const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? configuredGaMeasurementId : "";
 const apiFootballKey = String(process.env.API_FOOTBALL_KEY || "").trim();
+const apiFootballFixtureSyncEnabled = String(process.env.API_FOOTBALL_FIXTURE_SYNC_ENABLED || "").trim().toLowerCase() === "true";
 const apiFootballSyncSecret = String(process.env.API_FOOTBALL_SYNC_SECRET || "").trim();
 const newsdataApiKey = String(process.env.NEWSDATA_API_KEY || "").trim();
 const pressNewsQuery = String(process.env.NEWSDATA_QUERY || "футбол").trim().slice(0, 100) || "футбол";
@@ -236,6 +237,12 @@ function apiFootballRequest(state, endpoint, parameters = {}) {
 
 function queueFootballSync(options = {}) {
   const run = footballSyncMutation.then(async () => {
+    if (!apiFootballFixtureSyncEnabled) {
+      const error = new Error("Автоматичното добавяне на мачове е изключено за текущия API-Football план.");
+      error.code = "API_FOOTBALL_FIXTURE_SYNC_DISABLED";
+      error.statusCode = 503;
+      throw error;
+    }
     if (!apiFootballKey) {
       const error = new Error("API-Football не е конфигуриран. Добави API_FOOTBALL_KEY в environment variables.");
       error.code = "API_FOOTBALL_NOT_CONFIGURED";
@@ -1036,7 +1043,11 @@ async function handleRequest(request, response) {
   if (url.pathname === "/api/football/status" && request.method === "GET") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const usage = await withApiFootballState(async (state) => apiFootballUsageSummary(state));
-    return sendJson(response, 200, { configured: Boolean(apiFootballKey), usage }, { "Cache-Control": "no-store, max-age=0" });
+    return sendJson(response, 200, {
+      configured: Boolean(apiFootballKey),
+      fixtureSyncEnabled: apiFootballFixtureSyncEnabled,
+      usage
+    }, { "Cache-Control": "no-store, max-age=0" });
   }
 
   if (url.pathname === "/api/football/sync" && request.method === "POST") {
@@ -1658,7 +1669,7 @@ http
   })
   .listen(port, () => {
     console.log(`D.I.S site running at http://127.0.0.1:${port}`);
-    if (apiFootballKey) {
+    if (apiFootballKey && apiFootballFixtureSyncEnabled) {
       const syncFootball = () => queueFootballSync().catch((error) => {
         console.warn(`Scheduled API-Football sync failed: ${error.message}`);
       });

@@ -358,7 +358,10 @@ test("API-Football logo search is protected, cached, selectable, and visible in 
   assert.match(server, /\/api\/team-media\/search/);
   assert.match(server, /if \(!isAuthenticated\(request\)\)/);
   assert.match(server, /API_FOOTBALL_KEY/);
+  assert.match(server, /API_FOOTBALL_FIXTURE_SYNC_ENABLED/);
+  assert.match(server, /apiFootballKey && apiFootballFixtureSyncEnabled/);
   assert.match(adminScript, /data-team-media-search/);
+  assert.match(adminScript, /selectedLeague && footballFixtureSyncEnabled/);
   assert.match(adminScript, /homeTeamMedia/);
   assert.match(adminScript, /optionMedia/);
   assert.match(adminScript, /Заключи ръчните промени по отбори, турнир и начален час/);

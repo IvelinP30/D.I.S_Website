@@ -213,7 +213,9 @@ Search Console access and verification require the owner's Google account, so th
 
 ## API-Football Fixtures, Results, And Team Logos
 
-`API_FOOTBALL_KEY` enables the protected admin endpoint `GET /api/team-media/search?q=...` and automatic Prediction League fixture synchronization. The key is used only by the Node server in the `x-apisports-key` header and is never returned to public or admin JavaScript. Team search uses one canonical `/teams?search=` request, requires at least three characters, transliterates Bulgarian input and shares the cache between equivalent Cyrillic and Latin aliases. Admins must still verify and select manually searched logos.
+`API_FOOTBALL_KEY` enables the protected admin endpoint `GET /api/team-media/search?q=...`. The key is used only by the Node server in the `x-apisports-key` header and is never returned to public or admin JavaScript. Team search uses one canonical `/teams?search=` request, requires at least three characters, transliterates Bulgarian input and shares the cache between equivalent Cyrillic and Latin aliases. Admins must still verify and select manually searched logos.
+
+Prediction League fixture synchronization is retained behind `API_FOOTBALL_FIXTURE_SYNC_ENABLED`, which defaults to `false`. While disabled, its admin controls are hidden, manual and scheduled sync endpoints reject requests before contacting API-Football, and no background fixture checks start. Logo search remains available. Set the flag to `true` only after the API-Football account has access to the required current seasons.
 
 Search results, daily usage and recent request timestamps are stored under the protected `teamMediaCache` state. Local development uses ignored `data/team-media-cache.json`; production uses the existing Supabase `app_state` abstraction. The server stops locally at 70 requests per UTC day and 6 requests per rolling minute, leaving a reserve below the Free-plan limits. The admin displays both the local budget and the last upstream quota headers.
 

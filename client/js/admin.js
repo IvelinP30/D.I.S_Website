@@ -53,6 +53,7 @@ let giveawayEntryFilters = { winnersOnly: false, ineligibleOnly: false };
 let winnerAnimationTimer = null;
 let adminSelectedLeagueId = "";
 let footballUsage = null;
+let footballFixtureSyncEnabled = false;
 const teamMediaSearchResults = new WeakMap();
 const leagueTrophyConditions = Object.freeze([
   ["exact", "Поне 1 точен резултат", "Познал си точния резултат в поне един мач."],
@@ -252,7 +253,8 @@ async function loadFootballStatus() {
     if (!response.ok) return;
     const payload = await response.json();
     footballUsage = payload.usage || null;
-    renderFootballUsage();
+    footballFixtureSyncEnabled = payload.fixtureSyncEnabled === true;
+    renderEditors();
   } catch {
     // The rest of the admin remains available when the optional integration is offline.
   }
@@ -857,6 +859,21 @@ function renderEditors() {
   }
   const selectedLeague = predictionLeague.leagues.find((league) => league.id === adminSelectedLeagueId) || null;
   const footballSettings = selectedLeague?.apiFootball || {};
+  const footballAutomationMarkup = selectedLeague && footballFixtureSyncEnabled ? `
+      <h3>Автоматични мачове от API-Football</h3>
+      ${checkboxField("Автоматично добавяй програмата и крайните резултати", "apiFootballEnabled", footballSettings.enabled === true)}
+      ${numberField("API-Football League ID", "apiFootballLeagueId", footballSettings.leagueId || "", 1, 999999)}
+      ${numberField("API сезон (начална година)", "apiFootballSeason", footballSettings.season || new Date().getFullYear(), 2000, 2100)}
+      ${numberField("Добавяй мачове за следващите дни", "apiFootballDaysAhead", footballSettings.daysAhead || 7, 1, 14)}
+      ${readonlyInfo("Последна програма", footballSettings.lastScheduleSyncAt ? formatAdminDate(footballSettings.lastScheduleSyncAt) : "Още няма синхронизация")}
+      ${readonlyInfo("Последна проверка за резултати", footballSettings.lastResultSyncAt ? formatAdminDate(footballSettings.lastResultSyncAt) : "Още няма проверка")}
+      <div class="wide football-sync-panel">
+        <p data-football-usage>${escapeValue(footballUsageText())}</p>
+        <div class="team-media-actions">
+          <button class="button secondary" data-football-sync="${escapeValue(selectedLeague.id)}" type="button">Добави / обнови мачовете сега</button>
+        </div>
+        <small>Първо запази Фен зона след промяна на League ID или сезона. Автоматизацията проверява програмата веднъж дневно и резултатите само след очаквания край на мач.</small>
+      </div>` : "";
 
   leagueListEditor.innerHTML = predictionLeague.leagues.length
     ? predictionLeague.leagues.map((league, index) => `
@@ -885,20 +902,7 @@ function renderEditors() {
       ${textarea("Кратко описание", "description", selectedLeague.description || "", 3)}
       ${field("Име на сезона", "seasonLabel", selectedLeague.seasonLabel || "D.I.S Сезон 2026/27")}
       ${readonlyInfo("Точкуване", "Победител или равенство: 3 т. · Точен резултат: още 7 т. · Всеки 3 поредни правилни: +2 т.")}
-      <h3>Автоматични мачове от API-Football</h3>
-      ${checkboxField("Автоматично добавяй програмата и крайните резултати", "apiFootballEnabled", footballSettings.enabled === true)}
-      ${numberField("API-Football League ID", "apiFootballLeagueId", footballSettings.leagueId || "", 1, 999999)}
-      ${numberField("API сезон (начална година)", "apiFootballSeason", footballSettings.season || new Date().getFullYear(), 2000, 2100)}
-      ${numberField("Добавяй мачове за следващите дни", "apiFootballDaysAhead", footballSettings.daysAhead || 7, 1, 14)}
-      ${readonlyInfo("Последна програма", footballSettings.lastScheduleSyncAt ? formatAdminDate(footballSettings.lastScheduleSyncAt) : "Още няма синхронизация")}
-      ${readonlyInfo("Последна проверка за резултати", footballSettings.lastResultSyncAt ? formatAdminDate(footballSettings.lastResultSyncAt) : "Още няма проверка")}
-      <div class="wide football-sync-panel">
-        <p data-football-usage>${escapeValue(footballUsageText())}</p>
-        <div class="team-media-actions">
-          <button class="button secondary" data-football-sync="${escapeValue(selectedLeague.id)}" type="button">Добави / обнови мачовете сега</button>
-        </div>
-        <small>Първо запази Фен зона след промяна на League ID или сезона. Автоматизацията проверява програмата веднъж дневно и резултатите само след очаквания край на мач.</small>
-      </div>
+      ${footballAutomationMarkup}
     </article>` : ""}`;
 
   leagueTrophiesEditor.innerHTML = (selectedLeague?.trophies || []).map((trophy, index) => {
@@ -1529,14 +1533,17 @@ function collectConfig() {
       title: value(leagueSettingsCard, "title") || previousLeague.title,
       description: value(leagueSettingsCard, "description"),
       seasonLabel: value(leagueSettingsCard, "seasonLabel") || "D.I.S Сезон",
-      apiFootball: {
-        enabled: Boolean(leagueSettingsCard.querySelector('[name="apiFootballEnabled"]')?.checked),
-        leagueId: Number(value(leagueSettingsCard, "apiFootballLeagueId")) || null,
-        season: Number(value(leagueSettingsCard, "apiFootballSeason")) || null,
-        daysAhead: Math.max(1, Math.min(14, Number(value(leagueSettingsCard, "apiFootballDaysAhead")) || 7)),
-        lastScheduleSyncAt: String(previousLeague.apiFootball?.lastScheduleSyncAt || ""),
-        lastResultSyncAt: String(previousLeague.apiFootball?.lastResultSyncAt || "")
-      },
+      apiFootball: footballFixtureSyncEnabled ? {
+          enabled: Boolean(leagueSettingsCard.querySelector('[name="apiFootballEnabled"]')?.checked),
+          leagueId: Number(value(leagueSettingsCard, "apiFootballLeagueId")) || null,
+          season: Number(value(leagueSettingsCard, "apiFootballSeason")) || null,
+          daysAhead: Math.max(1, Math.min(14, Number(value(leagueSettingsCard, "apiFootballDaysAhead")) || 7)),
+          lastScheduleSyncAt: String(previousLeague.apiFootball?.lastScheduleSyncAt || ""),
+          lastResultSyncAt: String(previousLeague.apiFootball?.lastResultSyncAt || "")
+        } : {
+          ...(previousLeague.apiFootball || {}),
+          enabled: false
+        },
       trophies: collectCards(leagueTrophiesEditor, (card) => {
         const index = Number(card.dataset.index);
         return {
