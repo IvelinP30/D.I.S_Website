@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const NEWSDATA_BASE_URL = "https://newsdata.io/api/1/latest";
 const PRESS_NEWS_CACHE_TTL = 12 * 60 * 60 * 1000;
 const PRESS_NEWS_MAX_AGE = 72 * 60 * 60 * 1000;
+const PRESS_NEWS_CACHE_VERSION = 2;
 
 const BULGARIAN_FOOTBALL_SIGNALS = [
   "български футбол", "българия", "първа лига", "efbet лига", "купа на българия",
@@ -228,24 +229,42 @@ async function fetchPressNewsWithFallback(options = {}) {
   }
 
   try {
-    return await fetchPressNews({
+    const broadBulgarianItems = await fetchPressNews({
       ...options,
       query: "",
       limit: options.limit || 20,
       requireFootball: true
     });
+    if (broadBulgarianItems.length) return broadBulgarianItems;
   } catch (fallbackError) {
-    throw targetedError || fallbackError;
+    if (["NEWSDATA_AUTH", "NEWSDATA_LIMIT"].includes(fallbackError.code)) throw fallbackError;
+    targetedError ||= fallbackError;
+  }
+
+  try {
+    return await fetchPressNews({
+      ...options,
+      query: "football",
+      language: "en",
+      limit: options.limit || 20,
+      requireFootball: true
+    });
+  } catch (internationalError) {
+    throw targetedError || internationalError;
   }
 }
 
 function pressNewsCacheIsFresh(cache = {}, now = Date.now(), ttl = PRESS_NEWS_CACHE_TTL) {
   const refreshedAt = Date.parse(cache.refreshedAt || "");
-  return Array.isArray(cache.items) && Number.isFinite(refreshedAt) && now - refreshedAt < ttl;
+  return cache.version === PRESS_NEWS_CACHE_VERSION
+    && Array.isArray(cache.items)
+    && Number.isFinite(refreshedAt)
+    && now - refreshedAt < ttl;
 }
 
 module.exports = {
   NEWSDATA_BASE_URL,
+  PRESS_NEWS_CACHE_VERSION,
   PRESS_NEWS_CACHE_TTL,
   PRESS_NEWS_MAX_AGE,
   fetchPressNews,

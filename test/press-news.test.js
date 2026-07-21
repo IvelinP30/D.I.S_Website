@@ -4,6 +4,7 @@ const {
   fetchPressNews,
   fetchPressNewsSet,
   fetchPressNewsWithFallback,
+  PRESS_NEWS_CACHE_VERSION,
   mergePressArticles,
   normalizePressArticle,
   pressNewsCacheIsFresh,
@@ -204,8 +205,36 @@ test("press news falls back to Bulgarian sports and locally keeps only football"
   assert.equal(items[0].id, "football");
 });
 
+test("press news uses English football only when every Bulgarian fallback is empty", async () => {
+  const requests = [];
+  const items = await fetchPressNewsWithFallback({
+    apiKey: "private-key",
+    queries: ["Левски", "футбол"],
+    now: Date.parse("2026-07-21T12:00:00Z"),
+    fetchImpl: async (url) => {
+      const parsed = new URL(url);
+      requests.push({ query: parsed.searchParams.get("q"), language: parsed.searchParams.get("language") });
+      const isEnglishFallback = parsed.searchParams.get("q") === "football" && parsed.searchParams.get("language") === "en";
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "success",
+          results: isEnglishFallback
+            ? [{ article_id: "world", title: "World football final", link: "https://example.com/world-fallback", pubDate: "2026-07-21T11:00:00Z" }]
+            : []
+        })
+      };
+    }
+  });
+
+  assert.equal(requests.some((request) => request.query === "football" && request.language === "en"), true);
+  assert.equal(items[0].id, "world");
+});
+
 test("press news cache expires after twelve hours", () => {
-  const cache = { refreshedAt: "2026-07-21T00:00:00.000Z", items: [{ id: "1" }] };
+  const cache = { version: PRESS_NEWS_CACHE_VERSION, refreshedAt: "2026-07-21T00:00:00.000Z", items: [{ id: "1" }] };
   assert.equal(pressNewsCacheIsFresh(cache, Date.parse("2026-07-21T11:59:00Z")), true);
   assert.equal(pressNewsCacheIsFresh(cache, Date.parse("2026-07-21T12:01:00Z")), false);
+  assert.equal(pressNewsCacheIsFresh({ ...cache, version: PRESS_NEWS_CACHE_VERSION - 1 }, Date.parse("2026-07-21T11:00:00Z")), false);
 });

@@ -6,7 +6,7 @@ const QRCode = require("qrcode");
 const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
 const { searchApiFootballTeams } = require("./server/team-media");
-const { fetchPressNewsWithFallback, mergePressArticles, pressNewsCacheIsFresh } = require("./server/press-news");
+const { PRESS_NEWS_CACHE_VERSION, fetchPressNewsWithFallback, mergePressArticles, pressNewsCacheIsFresh } = require("./server/press-news");
 const {
   archiveDeletedLeagueMatches,
   buildPredictionLeagueState,
@@ -239,7 +239,11 @@ async function readPressNews() {
         limit: Number.POSITIVE_INFINITY,
         sortMode: "newest"
       });
-      const nextCache = { items: retainedWithNewItems, refreshedAt: new Date(now).toISOString() };
+      const nextCache = {
+        version: PRESS_NEWS_CACHE_VERSION,
+        items: retainedWithNewItems,
+        refreshedAt: new Date(now).toISOString()
+      };
       await writeJsonFile(pressNewsCacheFile, nextCache, "pressNewsCache");
       return { ...nextCache, items: retainedWithNewItems.slice(0, pressNewsMaxItems) };
     })().finally(() => {
