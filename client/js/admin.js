@@ -52,6 +52,7 @@ let giveawayEntrySearchTerm = "";
 let giveawayEntryFilters = { winnersOnly: false, ineligibleOnly: false };
 let winnerAnimationTimer = null;
 let adminSelectedLeagueId = "";
+let footballUsage = null;
 const teamMediaSearchResults = new WeakMap();
 const leagueTrophyConditions = Object.freeze([
   ["exact", "Поне 1 точен резултат", "Познал си точния резултат в поне един мач."],
@@ -116,12 +117,22 @@ function normalizeAdminLeagueCollection(value = {}) {
     let suffix = 2;
     while (used.has(id)) id = `${requested}-${suffix++}`;
     used.add(id);
+    const apiLeagueId = Number(item?.apiFootball?.leagueId);
+    const apiSeason = Number(item?.apiFootball?.season);
     return {
       id,
       enabled: item?.enabled !== false,
       title: String(item?.title || `Лига ${index + 1}`),
       description: String(item?.description || "Прогнозирай резултата и се изкачи в класацията."),
       seasonLabel: String(item?.seasonLabel || "D.I.S Сезон"),
+      apiFootball: {
+        enabled: item?.apiFootball?.enabled === true,
+        leagueId: Number.isInteger(apiLeagueId) && apiLeagueId > 0 ? apiLeagueId : null,
+        season: Number.isInteger(apiSeason) && apiSeason >= 2000 && apiSeason <= 2100 ? apiSeason : null,
+        daysAhead: Math.max(1, Math.min(14, Number(item?.apiFootball?.daysAhead) || 7)),
+        lastScheduleSyncAt: String(item?.apiFootball?.lastScheduleSyncAt || ""),
+        lastResultSyncAt: String(item?.apiFootball?.lastResultSyncAt || "")
+      },
       trophies: Array.isArray(item?.trophies) ? item.trophies : [],
       matches: Array.isArray(item?.matches) ? item.matches : []
     };
@@ -219,6 +230,32 @@ function setStatus(message, isError = false) {
   if (!status) return;
   status.textContent = message;
   status.style.color = isError ? "#ff8ea0" : "#38f27f";
+}
+
+function footballUsageText() {
+  if (!footballUsage) return "API квотата ще се покаже след първата проверка.";
+  const upstream = footballUsage.upstreamLimit
+    ? ` · API-Football: ${footballUsage.upstreamRemaining}/${footballUsage.upstreamLimit} остават`
+    : "";
+  return `Защитен бюджет: ${footballUsage.used}/${footballUsage.localLimit} · Остават ${footballUsage.remaining}${upstream}`;
+}
+
+function renderFootballUsage() {
+  document.querySelectorAll("[data-football-usage]").forEach((element) => {
+    element.textContent = footballUsageText();
+  });
+}
+
+async function loadFootballStatus() {
+  try {
+    const response = await fetch("/api/football/status", { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!response.ok) return;
+    const payload = await response.json();
+    footballUsage = payload.usage || null;
+    renderFootballUsage();
+  } catch {
+    // The rest of the admin remains available when the optional integration is offline.
+  }
 }
 
 function askConfirmation(message, options = {}) {
@@ -346,7 +383,7 @@ async function loadAdminContent({ rethrow = false } = {}) {
   adminConfig = withDefaults(adminConfig);
   savedConfig = structuredClone(adminConfig);
   renderEditors();
-  await loadMessages();
+  await Promise.all([loadMessages(), loadFootballStatus()]);
 }
 
 function withDefaults(config) {
@@ -819,6 +856,7 @@ function renderEditors() {
     adminSelectedLeagueId = predictionLeague.leagues[0]?.id || "";
   }
   const selectedLeague = predictionLeague.leagues.find((league) => league.id === adminSelectedLeagueId) || null;
+  const footballSettings = selectedLeague?.apiFootball || {};
 
   leagueListEditor.innerHTML = predictionLeague.leagues.length
     ? predictionLeague.leagues.map((league, index) => `
@@ -847,6 +885,20 @@ function renderEditors() {
       ${textarea("Кратко описание", "description", selectedLeague.description || "", 3)}
       ${field("Име на сезона", "seasonLabel", selectedLeague.seasonLabel || "D.I.S Сезон 2026/27")}
       ${readonlyInfo("Точкуване", "Победител или равенство: 3 т. · Точен резултат: още 7 т. · Всеки 3 поредни правилни: +2 т.")}
+      <h3>Автоматични мачове от API-Football</h3>
+      ${checkboxField("Автоматично добавяй програмата и крайните резултати", "apiFootballEnabled", footballSettings.enabled === true)}
+      ${numberField("API-Football League ID", "apiFootballLeagueId", footballSettings.leagueId || "", 1, 999999)}
+      ${numberField("API сезон (начална година)", "apiFootballSeason", footballSettings.season || new Date().getFullYear(), 2000, 2100)}
+      ${numberField("Добавяй мачове за следващите дни", "apiFootballDaysAhead", footballSettings.daysAhead || 7, 1, 14)}
+      ${readonlyInfo("Последна програма", footballSettings.lastScheduleSyncAt ? formatAdminDate(footballSettings.lastScheduleSyncAt) : "Още няма синхронизация")}
+      ${readonlyInfo("Последна проверка за резултати", footballSettings.lastResultSyncAt ? formatAdminDate(footballSettings.lastResultSyncAt) : "Още няма проверка")}
+      <div class="wide football-sync-panel">
+        <p data-football-usage>${escapeValue(footballUsageText())}</p>
+        <div class="team-media-actions">
+          <button class="button secondary" data-football-sync="${escapeValue(selectedLeague.id)}" type="button">Добави / обнови мачовете сега</button>
+        </div>
+        <small>Първо запази Фен зона след промяна на League ID или сезона. Автоматизацията проверява програмата веднъж дневно и резултатите само след очаквания край на мач.</small>
+      </div>
     </article>` : ""}`;
 
   leagueTrophiesEditor.innerHTML = (selectedLeague?.trophies || []).map((trophy, index) => {
@@ -886,7 +938,9 @@ function renderEditors() {
         ${checkboxField("Дерби мач", "isDerby", Boolean(match.isDerby))}
         ${numberField("Краен резултат – домакин", "resultHome", resultHome)}
         ${numberField("Краен резултат – гост", "resultAway", resultAway)}
-        <p class="form-privacy-note wide">Остави крайния резултат празен, докато мачът не приключи. След като го запазиш, можеш да премахнеш мача от админ панела — спечелените точки и статистиката ще останат.</p>
+        ${match.apiFixtureId ? checkboxField("Заключи ръчните промени по отбори, турнир и начален час", "apiDetailsLocked", match.apiDetailsLocked === true) : ""}
+        ${match.apiFixtureId ? readonlyInfo("API-Football връзка", `Fixture #${match.apiFixtureId} · ${match.apiStatus || "без статус"}${match.apiSyncedAt ? ` · ${formatAdminDate(match.apiSyncedAt)}` : ""}`) : ""}
+        <p class="form-privacy-note wide">${match.apiFixtureId ? "Автоматичният резултат е само след редовните 90 минути. Ръчният резултат винаги има предимство. При заключени детайли API-Football продължава да обновява само статуса и резултата." : "Остави крайния резултат празен, докато мачът не приключи."} След като го запазиш, можеш да премахнеш мача от админ панела — спечелените точки и статистиката ще останат.</p>
       </article>`;
   }).join("");
 
@@ -1475,6 +1529,14 @@ function collectConfig() {
       title: value(leagueSettingsCard, "title") || previousLeague.title,
       description: value(leagueSettingsCard, "description"),
       seasonLabel: value(leagueSettingsCard, "seasonLabel") || "D.I.S Сезон",
+      apiFootball: {
+        enabled: Boolean(leagueSettingsCard.querySelector('[name="apiFootballEnabled"]')?.checked),
+        leagueId: Number(value(leagueSettingsCard, "apiFootballLeagueId")) || null,
+        season: Number(value(leagueSettingsCard, "apiFootballSeason")) || null,
+        daysAhead: Math.max(1, Math.min(14, Number(value(leagueSettingsCard, "apiFootballDaysAhead")) || 7)),
+        lastScheduleSyncAt: String(previousLeague.apiFootball?.lastScheduleSyncAt || ""),
+        lastResultSyncAt: String(previousLeague.apiFootball?.lastResultSyncAt || "")
+      },
       trophies: collectCards(leagueTrophiesEditor, (card) => {
         const index = Number(card.dataset.index);
         return {
@@ -1490,7 +1552,10 @@ function collectConfig() {
         const resultHome = value(card, "resultHome").trim();
         const resultAway = value(card, "resultAway").trim();
         const hasResult = resultHome !== "" && resultAway !== "";
+        const nextResult = hasResult ? { homeScore: Number(resultHome), awayScore: Number(resultAway) } : null;
+        const resultChanged = JSON.stringify(nextResult) !== JSON.stringify(previous.result || null);
         return {
+          ...previous,
           id: value(card, "id") || `${previousLeague.id}-match-${Date.now()}-${index}`,
           enabled: Boolean(card.querySelector('[name="enabled"]')?.checked),
           competition: value(card, "competition") || previousLeague.title,
@@ -1500,8 +1565,13 @@ function collectConfig() {
           awayTeamMedia: readTeamMediaField(card, "awayTeamMedia"),
           kickoffAt: value(card, "kickoffAt") ? new Date(value(card, "kickoffAt")).toISOString() : "",
           isDerby: Boolean(card.querySelector('[name="isDerby"]')?.checked),
-          result: hasResult ? { homeScore: Number(resultHome), awayScore: Number(resultAway) } : null,
-          settledAt: hasResult ? (previous.settledAt || new Date().toISOString()) : ""
+          result: nextResult,
+          resultSource: resultChanged ? "manual" : String(previous.resultSource || ""),
+          manualResult: resultChanged ? true : previous.manualResult === true,
+          apiDetailsLocked: previous.apiFixtureId
+            ? Boolean(card.querySelector('[name="apiDetailsLocked"]')?.checked)
+            : false,
+          settledAt: hasResult ? (resultChanged ? new Date().toISOString() : previous.settledAt || new Date().toISOString()) : ""
         };
       })
     };
@@ -1777,6 +1847,13 @@ document.querySelectorAll("[data-save-page]").forEach((button) => {
         await showInfo("Всеки мач от Лигата на прогнозите трябва да има два отбора и валиден резултат между 0 и 30.");
         return;
       }
+      const invalidApiLeague = (draftConfig.predictionLeague?.leagues || []).find((league) =>
+        league.apiFootball?.enabled && (!Number.isInteger(league.apiFootball.leagueId) || !Number.isInteger(league.apiFootball.season))
+      );
+      if (invalidApiLeague) {
+        await showInfo(`Попълни валидни API-Football League ID и сезон за „${invalidApiLeague.title}“.`);
+        return;
+      }
     }
     const configuredWinnerCount = (draftConfig.giveaway?.prizes || []).reduce((sum, prize) => sum + (Number(prize.quantity) || 0), 0);
     if (page === "fan" && draftConfig.giveaway && configuredWinnerCount > 20) {
@@ -1889,6 +1966,7 @@ document.querySelectorAll("[data-add]").forEach((button) => {
         title: "Нова лига",
         description: "Прогнозирай резултата и се изкачи в отделната класация.",
         seasonLabel: "D.I.S Сезон 2026/27",
+        apiFootball: { enabled: false, leagueId: null, season: new Date().getFullYear(), daysAhead: 7, lastScheduleSyncAt: "", lastResultSyncAt: "" },
         trophies: structuredClone(adminConfig.predictionLeague.leagues[0]?.trophies || []),
         matches: []
       });
@@ -1952,6 +2030,49 @@ document.querySelectorAll("[data-add]").forEach((button) => {
 });
 
 document.addEventListener("click", async (event) => {
+  const footballSyncButton = event.target.closest("[data-football-sync]");
+  if (footballSyncButton) {
+    const leagueId = footballSyncButton.dataset.footballSync;
+    const draftConfig = collectConfig();
+    const draftLeague = draftConfig.predictionLeague?.leagues?.find((league) => league.id === leagueId);
+    const savedLeague = savedConfig.predictionLeague?.leagues?.find((league) => league.id === leagueId);
+    const comparable = (league) => JSON.stringify({
+      enabled: league?.apiFootball?.enabled === true,
+      leagueId: Number(league?.apiFootball?.leagueId) || null,
+      season: Number(league?.apiFootball?.season) || null,
+      daysAhead: Number(league?.apiFootball?.daysAhead) || 7
+    });
+    if (!draftLeague?.apiFootball?.enabled || !draftLeague.apiFootball.leagueId || !draftLeague.apiFootball.season) {
+      await showInfo("Включи автоматизацията и попълни валидни API League ID и сезон.");
+      return;
+    }
+    if (comparable(draftLeague) !== comparable(savedLeague)) {
+      await showInfo("Първо запази Фен зона, за да запишеш API League ID, сезона и настройките за автоматизация.");
+      return;
+    }
+    footballSyncButton.disabled = true;
+    footballSyncButton.textContent = "Синхронизиране…";
+    try {
+      const response = await fetch("/api/football/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ leagueId })
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || "Синхронизацията не успя.");
+      footballUsage = payload.usage || footballUsage;
+      savedConfig = withDefaults(payload.content);
+      adminConfig = structuredClone(savedConfig);
+      renderEditors();
+      setStatus(payload.message || "Мачовете са синхронизирани.");
+    } catch (error) {
+      footballSyncButton.disabled = false;
+      footballSyncButton.textContent = "Добави / обнови мачовете сега";
+      setStatus(error.message, true);
+    }
+    return;
+  }
+
   const teamMediaResultButton = event.target.closest("[data-team-media-result]");
   if (teamMediaResultButton) {
     const picker = teamMediaResultButton.closest("[data-team-media-picker]");
@@ -1980,6 +2101,8 @@ document.addEventListener("click", async (event) => {
       const response = await fetch(`/api/team-media/search?q=${encodeURIComponent(query)}`, { headers: { Accept: "application/json" }, cache: "no-store" });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Търсенето не успя.");
+      footballUsage = payload.usage || footballUsage;
+      renderFootballUsage();
       showTeamMediaResults(picker, payload.results || []);
     } catch (error) {
       showTeamMediaResults(picker, [], error.message);

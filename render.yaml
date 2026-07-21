@@ -27,6 +27,8 @@ services:
         sync: false
       - key: API_FOOTBALL_KEY
         sync: false
+      - key: API_FOOTBALL_SYNC_SECRET
+        generateValue: true
       - key: NEWSDATA_API_KEY
         sync: false
       - key: NEWSDATA_QUERY

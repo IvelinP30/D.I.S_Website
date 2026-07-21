@@ -4619,6 +4619,8 @@ html.pwa-refreshing body {
 .league-match-status.status-open { color: var(--accent); }
 .league-match-status.status-locked { color: #ffad62; }
 .league-match-status.status-settled { color: var(--accent-2); }
+.league-match-status.status-postponed { color: #ffad62; }
+.league-match-status.status-cancelled { color: #ff8ea0; }
 
 .league-match-top > small {
   color: var(--muted);
@@ -7072,6 +7074,14 @@ html.pwa-refreshing body {
 }
 
 .team-media-actions .button { min-height: 38px; padding: 8px 12px; font-size: .72rem; }
+.football-sync-panel {
+  border: 1px solid rgba(244, 212, 77, .2);
+  border-radius: 10px;
+  background: rgba(244, 212, 77, .05);
+  padding: 12px;
+}
+.football-sync-panel p { margin: 0; color: var(--accent-2); font-size: .78rem; font-weight: 800; }
+.football-sync-panel small { color: var(--muted); font-size: .72rem; line-height: 1.45; }
 .team-media-results { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .team-media-results[hidden] { display: none; }
 .team-media-results button {

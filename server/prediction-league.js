@@ -169,6 +169,9 @@ function resultForMatch(match = {}) {
 
 function matchStatus(match = {}, now = Date.now()) {
   if (resultForMatch(match)) return "settled";
+  const apiStatus = String(match.apiStatus || "").toUpperCase();
+  if (["CANC", "ABD", "AWD", "WO"].includes(apiStatus)) return "cancelled";
+  if (apiStatus === "PST") return "postponed";
   const kickoff = match.kickoffAt ? new Date(match.kickoffAt).getTime() : NaN;
   return Number.isFinite(kickoff) && kickoff <= Number(now) ? "locked" : "open";
 }
@@ -214,12 +217,22 @@ function periodLabels(now = Date.now()) {
 }
 
 function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
+  const apiLeagueId = Number(value.apiFootball?.leagueId);
+  const apiSeason = Number(value.apiFootball?.season);
   return {
     id: normalizeLeagueId(value.id, fallbackId),
     enabled: value.enabled !== false,
     title: String(value.title || "D.I.S Лига на прогнозите").trim(),
     description: String(value.description || "Прогнозирай резултата, печели точки и се изкачи в седмичната класация.").trim(),
     seasonLabel: String(value.seasonLabel || "D.I.S Сезон 2026/27").trim(),
+    apiFootball: {
+      enabled: value.apiFootball?.enabled === true,
+      leagueId: Number.isInteger(apiLeagueId) && apiLeagueId > 0 ? apiLeagueId : null,
+      season: Number.isInteger(apiSeason) && apiSeason >= 2000 && apiSeason <= 2100 ? apiSeason : null,
+      daysAhead: Math.max(1, Math.min(14, Number(value.apiFootball?.daysAhead) || 7)),
+      lastScheduleSyncAt: String(value.apiFootball?.lastScheduleSyncAt || ""),
+      lastResultSyncAt: String(value.apiFootball?.lastResultSyncAt || "")
+    },
     trophies: normalizeTrophyDefinitions(value.trophies),
     matches: (Array.isArray(value.matches) ? value.matches : [])
       .filter((match) => match && match.enabled !== false && String(match.id || "").trim())
@@ -233,7 +246,13 @@ function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
         kickoffAt: String(match.kickoffAt || ""),
         isDerby: Boolean(match.isDerby),
         result: resultForMatch(match),
-        settledAt: String(match.settledAt || "")
+        settledAt: String(match.settledAt || ""),
+        apiFixtureId: Number.isInteger(Number(match.apiFixtureId)) && Number(match.apiFixtureId) > 0 ? Number(match.apiFixtureId) : null,
+        apiStatus: String(match.apiStatus || ""),
+        apiSyncedAt: String(match.apiSyncedAt || ""),
+        resultSource: String(match.resultSource || ""),
+        manualResult: match.manualResult === true,
+        apiDetailsLocked: match.apiDetailsLocked === true
       }))
   };
 }

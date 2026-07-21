@@ -730,7 +730,15 @@ function leagueLeaderboardMarkup(state) {
 function leagueMatchMarkup(match, state) {
   const me = state.me;
   const prediction = match.myPrediction;
-  const statusLabel = match.status === "settled" ? "Приключил" : match.status === "locked" ? "Заключен" : "Приема прогнози";
+  const statusLabel = match.status === "settled"
+    ? "Приключил"
+    : match.status === "cancelled"
+      ? "Отменен"
+      : match.status === "postponed"
+        ? "Отложен"
+        : match.status === "locked"
+          ? "Заключен"
+          : "Приема прогнози";
   const kickoff = match.kickoffAt ? formatLocalDate(match.kickoffAt) : "Началният час предстои";
   const result = match.result ? `${match.result.homeScore}:${match.result.awayScore}` : "";
   const scoring = prediction?.scoring;
@@ -748,6 +756,8 @@ function leagueMatchMarkup(match, state) {
         <button class="button ${prediction ? "league-update-button" : "primary"} ${justSaved ? "is-confirmed" : ""}" type="submit">${justSaved ? "Прогнозата е записана ✓" : prediction ? "Промени прогнозата" : "Запиши прогнозата"}</button>
         <p class="league-form-feedback" data-league-feedback role="status">${prediction ? `Записана прогноза: ${predictionCopy} · Можеш да я промениш до ${kickoff}.` : `Край за прогнози: ${kickoff} — началото на мача.`}</p>
       </form>` : `<div class="league-match-locked-note">Избери прякор, за да запишеш резултат.</div>`;
+  } else if (match.status === "cancelled" || match.status === "postponed") {
+    action = `<p class="league-match-locked-note">${match.status === "cancelled" ? "Мачът е отменен и за него няма да бъдат раздадени точки." : "Мачът е отложен. Прогнозите ще се отворят отново, когато бъде обявен нов начален час."}</p>`;
   } else {
     action = `
       <div class="league-settled-prediction ${scoring?.correctOutcome ? "is-correct" : ""}">

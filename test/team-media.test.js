@@ -7,10 +7,10 @@ const {
   transliterateTeamSearch
 } = require("../server/team-media");
 
-test("team search transliterates Bulgarian and uses a short typo-tolerant fallback", () => {
+test("team search transliterates Bulgarian and makes one canonical API query", () => {
   assert.equal(transliterateTeamSearch("Барселона"), "barselona");
-  assert.deepEqual(apiFootballSearchTerms("Барселона"), ["Barcelona", "Barc"]);
-  assert.deepEqual(apiFootballSearchTerms("Челси"), ["chelsi", "chel"]);
+  assert.deepEqual(apiFootballSearchTerms("Барселона"), ["Barcelona"]);
+  assert.deepEqual(apiFootballSearchTerms("Челси"), ["chelsi"]);
 });
 
 test("team media accepts only a numeric API-Football team id and derives the official logo URL", () => {
@@ -50,4 +50,18 @@ test("team search caches and ranks the selected API response without exposing th
   assert.equal(requests.length, 1);
   assert.equal(requests[0].headers["x-apisports-key"], "secret-key");
   assert.doesNotMatch(JSON.stringify(first.results), /secret-key/);
+});
+
+test("team search shares cached aliases across Cyrillic and Latin queries", async () => {
+  let requests = 0;
+  const requestImpl = async () => {
+    requests += 1;
+    return { response: [{ team: { id: 9, name: "Bulgaria", country: "Bulgaria", national: true } }] };
+  };
+  const first = await searchApiFootballTeams("България", { apiKey: "secret", cache: {}, requestImpl, now: 1_000 });
+  const second = await searchApiFootballTeams("bulgaria", { apiKey: "secret", cache: first.cache, requestImpl, now: 2_000 });
+
+  assert.equal(requests, 1);
+  assert.equal(second.cacheHit, true);
+  assert.equal(second.results[0].id, 9);
 });

@@ -12,7 +12,7 @@ Live site: https://dis-podcast.onrender.com
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
 - Multiple D.I.S Prediction Leagues with one shared nickname-only profile, period-aware positions, separate matches, points, streaks, trophies and standings, plus recovery codes
-- Optional API-Football team/association logo lookup for league matches and voting options, with server-side search caching and an explicit admin selection step
+- Optional API-Football fixture import, kickoff/status/result synchronization and team/association logo lookup, with protected server-side quotas and caching
 - Optional Fan Zone giveaway registration with protected participants, CSV export, and random winner drawing
 - Contact, partnership, and fan-idea forms stored in a protected admin inbox, with production email notifications
 - Presents the channel as a football media brand
@@ -161,7 +161,7 @@ Most public content is editable from the admin panel, including:
 - host profiles and optional profile photos
 - host predictions
 - fan polls, individual options, optional API-Football logo/flag selection, status, deadline, and result visibility
-- Prediction League catalogue and each league's title, season, matches, optional API-Football team logos, kickoff times, derby flags, final scores and trophies
+- Prediction League catalogue and each league's title, season, manually managed or automatically imported API-Football matches, kickoff/status updates, team logos, derby flags, final scores and trophies
 - giveaway title, multiple prizes, prize quantities/images, dates, eligibility, rules, privacy notice, image, and active state
 - giveaway participant search/review, eligibility control, CSV export, secure winner/prize draw, and result reset
 - inbox message statuses and deletion
@@ -211,13 +211,19 @@ QR generation is server-side. After installing dependencies or updating this end
 
 Search Console access and verification require the owner's Google account, so this final registration step cannot be completed from the codebase alone.
 
-## API-Football Team Logos
+## API-Football Fixtures, Results, And Team Logos
 
-`API_FOOTBALL_KEY` enables the protected admin endpoint `GET /api/team-media/search?q=...`. The key is used only by the Node server in the `x-apisports-key` header and is never returned to public or admin JavaScript. The integration uses API-Football's `/teams?search=` endpoint, which requires at least three characters. Bulgarian input is transliterated, several common country/team names have explicit aliases, and a short prefix fallback helps with small spelling differences. Admins must still verify and select the right result; the system never publishes the first match automatically.
+`API_FOOTBALL_KEY` enables the protected admin endpoint `GET /api/team-media/search?q=...` and automatic Prediction League fixture synchronization. The key is used only by the Node server in the `x-apisports-key` header and is never returned to public or admin JavaScript. Team search uses one canonical `/teams?search=` request, requires at least three characters, transliterates Bulgarian input and shares the cache between equivalent Cyrillic and Latin aliases. Admins must still verify and select manually searched logos.
 
-Search results are stored under the protected `teamMediaCache` state for 30 days to reduce quota usage. Local development uses ignored `data/team-media-cache.json`; production uses the existing Supabase `app_state` abstraction. Once an administrator selects a result, its API team ID, official name, country, national-team flag, logo URL and resolution time are stored directly on that match or poll option. Public rendering derives the media URL from the numeric API team ID, and share images include available home/away logos with a text-only fallback when an image cannot load.
+Search results, daily usage and recent request timestamps are stored under the protected `teamMediaCache` state. Local development uses ignored `data/team-media-cache.json`; production uses the existing Supabase `app_state` abstraction. The server stops locally at 70 requests per UTC day and 6 requests per rolling minute, leaving a reserve below the Free-plan limits. The admin displays both the local budget and the last upstream quota headers.
 
-API-Football documents `/teams` as data updated several times per week and recommends caching/reference-style use rather than repeated calls. See the [official API-Football documentation](https://www.api-football.com/documentation-beta). Their [terms](https://www.api-football.com/terms) state that delivered logos and trademarks are for identification/descriptive use, may belong to third parties, and can require separate permission. D.I.S administrators remain responsible for confirming the intended public use and must remove a selected logo if rights or accuracy are uncertain.
+Each Prediction League can store an API-Football league ID, starting season year, automatic-sync flag and a 1–14 day import horizon. A daily schedule refresh requests `/fixtures` once per configured league, upserts matches by stable fixture ID, imports team names/logos, round and Sofia kickoff time, and updates later schedule changes without duplicates. An existing manual match with the same teams and a kickoff within six hours is linked instead of duplicated. Result checks start only 100 minutes after kickoff, wait at least 25 minutes between attempts and batch up to 20 fixture IDs in one request. Scoring always uses `score.fulltime`, the score after the regular 90 minutes, even when the fixture continues to extra time or penalties. Postponed, cancelled, abandoned and awarded statuses never create a score automatically. A manually edited result is permanently preferred over later API responses. Admins can also lock a linked match's manually corrected teams, logos, competition and kickoff time; locked matches continue receiving API status and 90-minute result updates.
+
+The Node process checks for due synchronization work on startup and every 30 minutes while it is awake. For sleeping hosts, an external scheduler can send `POST /api/internal/football-sync` with `Authorization: Bearer <API_FOOTBALL_SYNC_SECRET>`; the endpoint is unavailable without the secret. Public page visits never call API-Football directly and read only the saved content/Supabase state.
+
+Once an administrator selects or imports a team, its API team ID, official name, country, national-team flag, logo URL and resolution time are stored directly on that match or poll option. Public rendering derives the media URL from the numeric API team ID, and share images include available home/away logos with a text-only fallback when an image cannot load.
+
+API-Football documents `/teams` as data updated several times per week and future fixtures as suitable for daily refreshes. See the [official API-Football documentation](https://www.api-football.com/documentation-beta). Their [terms](https://www.api-football.com/terms) state that delivered logos and trademarks are for identification/descriptive use, may belong to third parties, and can require separate permission. D.I.S administrators remain responsible for confirming the intended public use and must remove a selected logo if rights or accuracy are uncertain.
 
 ### Adding the API-Football key
 
@@ -225,7 +231,7 @@ API-Football documents `/teams` as data updated several times per week and recom
 2. In the Render Dashboard, select the D.I.S web service, open **Environment**, click **Add Environment Variable**, set the key to `API_FOOTBALL_KEY`, paste the API key as the value, and choose **Save and deploy**.
 3. Never paste the key into `client/js/config.js`, an HTML file, or Git. It is a server secret and is already declared with `sync: false` in `render.yaml`.
 4. For local testing only, add `API_FOOTBALL_KEY=...` to the ignored `.env` file and restart `npm start`.
-5. After deployment, open the protected admin Fan Zone editor, enter a team/country name, use **Намери лого / флаг**, select the intended result, and save the page.
+5. After deployment, open the protected admin Fan Zone editor. For automatic matches, enable API-Football on a D.I.S league, enter its API league ID and starting season year, save Fan Zone, then use **Добави / обнови мачовете сега** once to verify the configuration.
 
 ## Automated Football Newspaper
 
@@ -275,7 +281,7 @@ Production analytics uses the GA4 web data stream `G-G21K94TW2T` for `https://di
 - Google Analytics 4 is optional and loads only after explicit analytics consent; Meta Pixel and advertising-profile trackers are not used.
 - The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
 - Google Fonts is also loaded from Google and is disclosed as an external service.
-- Optional API-Football searches are server-to-server from the authenticated admin only. Selected public logos load from `media.api-sports.io`; the Privacy and Cookie policies disclose the resulting technical request, the 30-day search cache, selected-result storage, lack of a new D.I.S cookie, and third-party trademark responsibility.
+- Optional API-Football team searches and fixture/result synchronization are server-to-server. Selected public logos load from `media.api-sports.io`; the Privacy and Cookie policies disclose the resulting technical request, protected cache/content storage, lack of a new D.I.S cookie, and third-party trademark responsibility.
 - Treat `README.md`, `/privacy`, and `/cookies` as part of every feature change: update the relevant documentation and displayed last-updated date whenever data collection, cookies, retention, external providers, tracking, user forms, or campaign rules change.
 
 Operational responsibility remains with the administrators: resolve and remove inbox messages when no longer needed, normally within 12 months, and remove giveaway participant data after the campaign, prize delivery, and any short complaint period, normally within 90 days. Before using uploaded media publicly, confirm that D.I.S has permission to use the image, logo, person, music, video, or sponsor material. AI generation alone does not guarantee rights over real people, club marks, or third-party brands.

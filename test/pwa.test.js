@@ -361,7 +361,11 @@ test("API-Football logo search is protected, cached, selectable, and visible in 
   assert.match(adminScript, /data-team-media-search/);
   assert.match(adminScript, /homeTeamMedia/);
   assert.match(adminScript, /optionMedia/);
+  assert.match(adminScript, /Заключи ръчните промени по отбори, турнир и начален час/);
+  assert.match(adminScript, /Автоматичният резултат е само след редовните 90 минути/);
+  assert.match(adminScript, /apiDetailsLocked/);
   assert.match(predictionLeague, /homeTeamMedia: normalizeTeamMedia/);
+  assert.match(predictionLeague, /apiDetailsLocked: match\.apiDetailsLocked === true/);
   assert.match(publicScript, /teamIdentityMarkup\(match\.homeTeam, match\.homeTeamMedia/);
   assert.match(publicScript, /teamIdentityMarkup\(option\.label, option\.media\)/);
   assert.match(privacy, /API-Football/);

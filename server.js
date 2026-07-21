@@ -5,6 +5,8 @@ const path = require("path");
 const QRCode = require("qrcode");
 const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
+const { apiFootballUsageSummary, requestApiFootball } = require("./server/api-football");
+const { synchronizeFootballContent } = require("./server/football-sync");
 const { searchApiFootballTeams } = require("./server/team-media");
 const {
   PRESS_NEWS_CACHE_VERSION,
@@ -66,6 +68,7 @@ const messageEmailFrom = String(process.env.MESSAGE_EMAIL_FROM || "").trim();
 const configuredGaMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim().toUpperCase();
 const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? configuredGaMeasurementId : "";
 const apiFootballKey = String(process.env.API_FOOTBALL_KEY || "").trim();
+const apiFootballSyncSecret = String(process.env.API_FOOTBALL_SYNC_SECRET || "").trim();
 const newsdataApiKey = String(process.env.NEWSDATA_API_KEY || "").trim();
 const pressNewsQuery = String(process.env.NEWSDATA_QUERY || "футбол").trim().slice(0, 100) || "футбол";
 const pressNewsBulgarianQuery = String(process.env.NEWSDATA_BULGARIAN_QUERY || "Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор").trim().slice(0, 100);
@@ -85,6 +88,8 @@ const giveawayRateLimits = new Map();
 const leagueIdentityRateLimits = new Map();
 let predictionLeagueMutation = Promise.resolve();
 let voteStoreMutation = Promise.resolve();
+let apiFootballStateMutation = Promise.resolve();
+let footballSyncMutation = Promise.resolve();
 let pressNewsRefreshPromise = null;
 
 if (isProduction && adminPassword === "change-this-password") {
@@ -206,6 +211,70 @@ async function writeJsonFile(file, value, storageKey = path.basename(file, ".jso
     return;
   }
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function withApiFootballState(operation) {
+  const run = apiFootballStateMutation.then(async () => {
+    const state = await readJsonFile(teamMediaCacheFile, { searches: {}, usage: {} }, "teamMediaCache");
+    state.searches ||= {};
+    try {
+      return await operation(state);
+    } finally {
+      await writeJsonFile(teamMediaCacheFile, state, "teamMediaCache");
+    }
+  });
+  apiFootballStateMutation = run.catch(() => undefined);
+  return run;
+}
+
+function apiFootballRequest(state, endpoint, parameters = {}) {
+  return requestApiFootball(endpoint, parameters, {
+    apiKey: apiFootballKey,
+    state
+  });
+}
+
+function queueFootballSync(options = {}) {
+  const run = footballSyncMutation.then(async () => {
+    if (!apiFootballKey) {
+      const error = new Error("API-Football не е конфигуриран. Добави API_FOOTBALL_KEY в environment variables.");
+      error.code = "API_FOOTBALL_NOT_CONFIGURED";
+      error.statusCode = 503;
+      throw error;
+    }
+    const content = await readContent();
+    let result;
+    let usage;
+    await withApiFootballState(async (state) => {
+      result = await synchronizeFootballContent(content, {
+        leagueId: String(options.leagueId || ""),
+        forceSchedule: options.forceSchedule === true,
+        request: (endpoint, parameters) => apiFootballRequest(state, endpoint, parameters)
+      });
+      usage = apiFootballUsageSummary(state);
+    });
+    if (result.changed) await writeContent(result.content);
+    return { ...result, usage };
+  });
+  footballSyncMutation = run.catch(() => undefined);
+  return run;
+}
+
+function internalFootballSyncAuthorized(request) {
+  if (!apiFootballSyncSecret) return false;
+  const authorization = String(request.headers.authorization || "");
+  const provided = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const expectedBuffer = Buffer.from(apiFootballSyncSecret);
+  const providedBuffer = Buffer.from(provided);
+  return providedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(providedBuffer, expectedBuffer);
+}
+
+function footballSyncMessage(summary = {}) {
+  const parts = [];
+  if (summary.added) parts.push(`${summary.added} добавени`);
+  if (summary.updated) parts.push(`${summary.updated} обновени`);
+  if (summary.settled) parts.push(`${summary.settled} приключени`);
+  return parts.length ? parts.join(" · ") : "Няма нови или променени мачове.";
 }
 
 async function readPressNews() {
@@ -964,20 +1033,58 @@ async function handleRequest(request, response) {
     return sendJson(response, 200, nextContent);
   }
 
+  if (url.pathname === "/api/football/status" && request.method === "GET") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const usage = await withApiFootballState(async (state) => apiFootballUsageSummary(state));
+    return sendJson(response, 200, { configured: Boolean(apiFootballKey), usage }, { "Cache-Control": "no-store, max-age=0" });
+  }
+
+  if (url.pathname === "/api/football/sync" && request.method === "POST") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const payload = JSON.parse(await readBody(request) || "{}");
+    try {
+      const result = await queueFootballSync({ leagueId: payload.leagueId, forceSchedule: true });
+      return sendJson(response, 200, {
+        content: result.content,
+        summary: result.summary,
+        usage: result.usage,
+        message: footballSyncMessage(result.summary)
+      }, { "Cache-Control": "no-store, max-age=0" });
+    } catch (error) {
+      return sendJson(response, error.statusCode || 502, { error: error.message }, { "Cache-Control": "no-store, max-age=0" });
+    }
+  }
+
+  if (url.pathname === "/api/internal/football-sync" && request.method === "POST") {
+    if (!internalFootballSyncAuthorized(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    try {
+      const result = await queueFootballSync();
+      return sendJson(response, 200, { ok: true, summary: result.summary, usage: result.usage });
+    } catch (error) {
+      return sendJson(response, error.statusCode || 502, { error: error.message });
+    }
+  }
+
   if (url.pathname === "/api/team-media/search" && request.method === "GET") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const query = String(url.searchParams.get("q") || "").trim();
     try {
-      const cache = await readJsonFile(teamMediaCacheFile, { searches: {} }, "teamMediaCache");
-      const result = await searchApiFootballTeams(query, { apiKey: apiFootballKey, cache });
-      if (!result.cacheHit) await writeJsonFile(teamMediaCacheFile, result.cache, "teamMediaCache");
+      const result = await withApiFootballState(async (cache) => {
+        const searchResult = await searchApiFootballTeams(query, {
+          apiKey: apiFootballKey,
+          cache,
+          requestImpl: (term) => apiFootballRequest(cache, "/teams", { search: term })
+        });
+        return { ...searchResult, usage: apiFootballUsageSummary(cache) };
+      });
       return sendJson(response, 200, {
         results: result.results,
         cached: Boolean(result.cacheHit),
-        stale: Boolean(result.stale)
+        stale: Boolean(result.stale),
+        usage: result.usage
       }, { "Cache-Control": "no-store, max-age=0" });
     } catch (error) {
-      const statusCode = error.code === "API_FOOTBALL_NOT_CONFIGURED" ? 503 : /поне 3/.test(error.message) ? 400 : 502;
+      const statusCode = error.statusCode || (/поне 3/.test(error.message) ? 400 : 502);
       return sendJson(response, statusCode, { error: error.message }, { "Cache-Control": "no-store, max-age=0" });
     }
   }
@@ -1551,6 +1658,15 @@ http
   })
   .listen(port, () => {
     console.log(`D.I.S site running at http://127.0.0.1:${port}`);
+    if (apiFootballKey) {
+      const syncFootball = () => queueFootballSync().catch((error) => {
+        console.warn(`Scheduled API-Football sync failed: ${error.message}`);
+      });
+      const initialFootballSyncTimer = setTimeout(syncFootball, 45_000);
+      initialFootballSyncTimer.unref();
+      const footballSyncTimer = setInterval(syncFootball, 30 * 60 * 1000);
+      footballSyncTimer.unref();
+    }
     if (newsdataApiKey) {
       readPressNews().catch((error) => console.warn(`Initial external-news refresh failed: ${externalNewsErrorMessage(error)}`));
       const pressNewsCheckTimer = setInterval(() => {

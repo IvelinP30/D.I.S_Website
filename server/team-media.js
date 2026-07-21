@@ -1,4 +1,4 @@
-const API_FOOTBALL_BASE_URL = "https://v3.football.api-sports.io";
+const { API_FOOTBALL_BASE_URL } = require("./api-football");
 const API_FOOTBALL_MEDIA_ORIGIN = "https://media.api-sports.io";
 const TEAM_SEARCH_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
 
@@ -48,10 +48,7 @@ function transliterateTeamSearch(value = "") {
 function apiFootballSearchTerms(query = "") {
   const normalized = normalizeTeamSearch(query);
   const preferred = searchAliases[normalized] || transliterateTeamSearch(normalized);
-  const terms = [preferred];
-  const compact = preferred.replace(/[^a-z0-9]/gi, "");
-  if (compact.length >= 3) terms.push(compact.slice(0, Math.min(4, compact.length)));
-  return [...new Set(terms.map((term) => term.trim()).filter((term) => term.length >= 3))].slice(0, 2);
+  return [preferred].map((term) => term.trim()).filter((term) => term.length >= 3).slice(0, 1);
 }
 
 function levenshtein(left = "", right = "") {
@@ -112,7 +109,11 @@ function normalizeApiTeam(item = {}) {
   });
 }
 
-async function fetchApiFootballTeams(term, apiKey, fetchImpl) {
+async function fetchApiFootballTeams(term, apiKey, fetchImpl, requestImpl) {
+  if (requestImpl) {
+    const payload = await requestImpl(term);
+    return (Array.isArray(payload?.response) ? payload.response : []).map(normalizeApiTeam).filter(Boolean);
+  }
   const url = new URL("/teams", API_FOOTBALL_BASE_URL);
   url.searchParams.set("search", term);
   const response = await fetchImpl(url, {
@@ -137,7 +138,8 @@ async function searchApiFootballTeams(query, options = {}) {
   const now = Number(options.now || Date.now());
   const cache = options.cache && typeof options.cache === "object" ? options.cache : {};
   cache.searches ||= {};
-  const cacheKey = normalizeTeamSearch(cleanQuery);
+  const terms = apiFootballSearchTerms(cleanQuery);
+  const cacheKey = normalizeTeamSearch(terms[0] || cleanQuery);
   const cached = cache.searches[cacheKey];
   if (cached && Number(cached.expiresAt) > now && Array.isArray(cached.results)) {
     return { results: cached.results.map(normalizeTeamMedia).filter(Boolean), cache, cacheHit: true };
@@ -145,9 +147,9 @@ async function searchApiFootballTeams(query, options = {}) {
 
   let results = [];
   let lastError = null;
-  for (const term of apiFootballSearchTerms(cleanQuery)) {
+  for (const term of terms) {
     try {
-      results = await fetchApiFootballTeams(term, options.apiKey, options.fetchImpl || fetch);
+      results = await fetchApiFootballTeams(term, options.apiKey, options.fetchImpl || fetch, options.requestImpl);
       if (results.length) break;
     } catch (error) {
       lastError = error;

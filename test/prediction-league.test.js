@@ -217,6 +217,8 @@ test("locks matches at kickoff and keeps future matches open", () => {
   assert.equal(matchStatus({ kickoffAt: "2026-07-17T11:00:00.000Z" }, now), "locked");
   assert.equal(matchStatus({ kickoffAt: "2026-07-17T13:00:00.000Z" }, now), "open");
   assert.equal(matchStatus({ kickoffAt: "2026-07-17T13:00:00.000Z", result: { homeScore: 1, awayScore: 0 } }, now), "settled");
+  assert.equal(matchStatus({ kickoffAt: "2026-07-17T13:00:00.000Z", apiStatus: "PST" }, now), "postponed");
+  assert.equal(matchStatus({ kickoffAt: "2026-07-17T13:00:00.000Z", apiStatus: "CANC" }, now), "cancelled");
 });
 
 test("adds the three-result streak bonus deterministically", () => {
