@@ -10,6 +10,13 @@ const BULGARIAN_FOOTBALL_SIGNALS = [
   "локомотив пловдив", "славия", "берое", "арда", "спартак варна", "септември"
 ];
 
+const FOOTBALL_SIGNALS = [
+  "футбол", "football", "soccer", "шампионска лига", "лига европа", "конференц лига",
+  "първа лига", "efbet лига", "купа на българия", "национален отбор", "уефа", "фифа",
+  "левски", "цска", "лудогорец", "ботев пловдив", "черно море", "локомотив пловдив",
+  "premier league", "champions league", "europa league", "conference league", "uefa", "fifa"
+];
+
 const TITLE_STOP_WORDS = new Set([
   "футбол", "футболен", "футболна", "футболни", "спорт", "sports", "след", "преди",
   "като", "който", "която", "които", "това", "тази", "този", "със", "при", "към",
@@ -146,7 +153,22 @@ function mergePressArticles(existingItems = [], incomingItems = [], options = {}
   return rankPressArticles([...existingItems, ...incomingItems], options);
 }
 
-async function fetchPressNews({ apiKey, fetchImpl = fetch, query = "футбол", language = "bg", now = Date.now(), limit = 10 } = {}) {
+function articleLooksLikeFootball(article = {}) {
+  const keywordText = Array.isArray(article.keywords) ? article.keywords.join(" ") : article.keywords;
+  const haystack = `${cleanText(article.title, 240)} ${cleanText(article.description, 520)} ${cleanText(keywordText, 300)}`.toLowerCase();
+  return FOOTBALL_SIGNALS.some((signal) => haystack.includes(signal));
+}
+
+function newsDataError(message, status) {
+  const error = new Error(message || "NewsData request failed");
+  error.statusCode = status;
+  if (status === 401 || status === 403) error.code = "NEWSDATA_AUTH";
+  else if (status === 429) error.code = "NEWSDATA_LIMIT";
+  else error.code = "NEWSDATA_REQUEST_FAILED";
+  return error;
+}
+
+async function fetchPressNews({ apiKey, fetchImpl = fetch, query = "футбол", language = "bg", now = Date.now(), limit = 10, requireFootball = false } = {}) {
   if (!String(apiKey || "").trim()) {
     const error = new Error("NewsData API is not configured");
     error.code = "NEWSDATA_NOT_CONFIGURED";
@@ -155,12 +177,13 @@ async function fetchPressNews({ apiKey, fetchImpl = fetch, query = "футбол
 
   const url = new URL(NEWSDATA_BASE_URL);
   url.searchParams.set("apikey", String(apiKey).trim());
-  url.searchParams.set("q", cleanText(query, 100) || "футбол");
+  const normalizedQuery = cleanText(query, 100);
+  if (normalizedQuery) url.searchParams.set("q", normalizedQuery);
   url.searchParams.set("category", "sports");
   url.searchParams.set("language", cleanText(language, 8).toLowerCase() || "bg");
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8_000);
+  const timeout = setTimeout(() => controller.abort(), 15_000);
   timeout.unref?.();
   let response;
   try {
@@ -176,21 +199,44 @@ async function fetchPressNews({ apiKey, fetchImpl = fetch, query = "футбол
   }
   if (!response.ok || payload.status === "error") {
     const message = cleanText(payload.results?.message || payload.message || `NewsData request failed (${response.status})`, 220);
-    throw new Error(message || "NewsData request failed");
+    throw newsDataError(message, response.status);
   }
 
-  return rankPressArticles(Array.isArray(payload.results) ? payload.results : [], { now, limit });
+  const results = Array.isArray(payload.results) ? payload.results : [];
+  return rankPressArticles(requireFootball ? results.filter(articleLooksLikeFootball) : results, { now, limit });
 }
 
 async function fetchPressNewsSet({ queries = ["футбол"], limit = 20, ...options } = {}) {
   const uniqueQueries = [...new Set(queries.map((query) => cleanText(query, 100)).filter(Boolean))];
   const results = await Promise.allSettled(uniqueQueries.map((query) => fetchPressNews({ ...options, query, limit: 10 })));
-  const fulfilled = results.filter((result) => result.status === "fulfilled").flatMap((result) => result.value);
-  if (!fulfilled.length) {
+  const successfulRequests = results.filter((result) => result.status === "fulfilled");
+  if (!successfulRequests.length) {
     const failed = results.find((result) => result.status === "rejected");
     throw failed?.reason || new Error("NewsData request failed");
   }
+  const fulfilled = successfulRequests.flatMap((result) => result.value);
   return rankPressArticles(fulfilled, { now: options.now || Date.now(), limit });
+}
+
+async function fetchPressNewsWithFallback(options = {}) {
+  let targetedError = null;
+  try {
+    const targetedItems = await fetchPressNewsSet(options);
+    if (targetedItems.length) return targetedItems;
+  } catch (error) {
+    targetedError = error;
+  }
+
+  try {
+    return await fetchPressNews({
+      ...options,
+      query: "",
+      limit: options.limit || 20,
+      requireFootball: true
+    });
+  } catch (fallbackError) {
+    throw targetedError || fallbackError;
+  }
 }
 
 function pressNewsCacheIsFresh(cache = {}, now = Date.now(), ttl = PRESS_NEWS_CACHE_TTL) {
@@ -204,6 +250,7 @@ module.exports = {
   PRESS_NEWS_MAX_AGE,
   fetchPressNews,
   fetchPressNewsSet,
+  fetchPressNewsWithFallback,
   mergePressArticles,
   normalizePressArticle,
   pressNewsCacheIsFresh,

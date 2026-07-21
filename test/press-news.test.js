@@ -3,6 +3,7 @@ const test = require("node:test");
 const {
   fetchPressNews,
   fetchPressNewsSet,
+  fetchPressNewsWithFallback,
   mergePressArticles,
   normalizePressArticle,
   pressNewsCacheIsFresh,
@@ -159,6 +160,48 @@ test("press news set runs priority and general searches and tolerates one failed
 
   assert.deepEqual(requestedQueries.sort(), ["Левски OR ЦСКА", "футбол"].sort());
   assert.equal(items.length, 1);
+});
+
+test("an empty successful NewsData response is not treated as a provider failure", async () => {
+  const items = await fetchPressNewsSet({
+    apiKey: "private-key",
+    queries: ["футбол"],
+    fetchImpl: async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "success", results: [] })
+    })
+  });
+
+  assert.deepEqual(items, []);
+});
+
+test("press news falls back to Bulgarian sports and locally keeps only football", async () => {
+  const requestedQueries = [];
+  const items = await fetchPressNewsWithFallback({
+    apiKey: "private-key",
+    queries: ["Левски", "футбол"],
+    now: Date.parse("2026-07-21T12:00:00Z"),
+    fetchImpl: async (url) => {
+      const query = new URL(url).searchParams.get("q");
+      requestedQueries.push(query);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          status: "success",
+          results: query ? [] : [
+            { article_id: "football", title: "Левски започва новия футболен сезон", link: "https://example.com/football", pubDate: "2026-07-21T11:00:00Z" },
+            { article_id: "tennis", title: "Тенис турнир в София", link: "https://example.com/tennis", pubDate: "2026-07-21T11:30:00Z" }
+          ]
+        })
+      };
+    }
+  });
+
+  assert.deepEqual(requestedQueries.sort(), ["Левски", "футбол", null].sort());
+  assert.equal(items.length, 1);
+  assert.equal(items[0].id, "football");
 });
 
 test("press news cache expires after twelve hours", () => {

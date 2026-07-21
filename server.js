@@ -6,7 +6,7 @@ const QRCode = require("qrcode");
 const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
 const { searchApiFootballTeams } = require("./server/team-media");
-const { fetchPressNewsSet, mergePressArticles, pressNewsCacheIsFresh } = require("./server/press-news");
+const { fetchPressNewsWithFallback, mergePressArticles, pressNewsCacheIsFresh } = require("./server/press-news");
 const {
   archiveDeletedLeagueMatches,
   buildPredictionLeagueState,
@@ -227,7 +227,7 @@ async function readPressNews() {
 
   if (!pressNewsRefreshPromise) {
     pressNewsRefreshPromise = (async () => {
-      const fetchedItems = await fetchPressNewsSet({
+      const fetchedItems = await fetchPressNewsWithFallback({
         apiKey: newsdataApiKey,
         queries: [pressNewsBulgarianQuery, pressNewsQuery],
         language: pressNewsLanguage,
@@ -256,6 +256,13 @@ async function readPressNews() {
     }
     throw error;
   }
+}
+
+function externalNewsErrorMessage(error) {
+  return String(error?.message || "Unknown NewsData error")
+    .replace(/pub_[a-z0-9]+/gi, "[redacted-api-key]")
+    .replace(/https?:\/\/\S+/gi, "[redacted-url]")
+    .slice(0, 300);
 }
 
 function readBody(request) {
@@ -795,6 +802,7 @@ async function handleRequest(request, response) {
         "Cache-Control": "public, max-age=900, stale-while-revalidate=3600"
       });
     } catch (error) {
+      console.warn(`External-news endpoint failed: ${externalNewsErrorMessage(error)}`);
       return sendJson(response, 502, { error: "Външните новини временно не са достъпни." }, {
         "Cache-Control": "no-store, max-age=0"
       });
@@ -1360,9 +1368,9 @@ http
   .listen(port, () => {
     console.log(`D.I.S site running at http://127.0.0.1:${port}`);
     if (newsdataApiKey) {
-      readPressNews().catch(() => console.warn("Initial external-news refresh failed; the cached feed remains available."));
+      readPressNews().catch((error) => console.warn(`Initial external-news refresh failed: ${externalNewsErrorMessage(error)}`));
       const pressNewsCheckTimer = setInterval(() => {
-        readPressNews().catch(() => console.warn("Scheduled external-news refresh failed; the cached feed remains available."));
+        readPressNews().catch((error) => console.warn(`Scheduled external-news refresh failed: ${externalNewsErrorMessage(error)}`));
       }, 60 * 60 * 1000);
       pressNewsCheckTimer.unref();
     }
