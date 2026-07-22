@@ -602,6 +602,13 @@ function leagueIdentityMarkup() {
 }
 
 function teamMediaLogoUrl(media) {
+  const explicitLogo = String(media?.logo || "");
+  try {
+    const url = new URL(explicitLogo, window.location.origin);
+    if (url.protocol === "https:" && ["r2.thesportsdb.com", "www.thesportsdb.com", "media.api-sports.io"].includes(url.hostname)) return url.href;
+  } catch {
+    // Fall through to the legacy API-Football ID URL.
+  }
   const id = Number(media?.id);
   return Number.isInteger(id) && id > 0 ? `https://media.api-sports.io/football/teams/${id}.png` : "";
 }
@@ -803,7 +810,7 @@ function renderPredictionLeagueApp() {
       <span><b>${state.me?.currentStreak || 0}</b> твоята серия</span>
     </div>
     <div class="league-match-list">
-      <div class="league-match-list-heading"><div><span>Следващи прогнози</span><h3>Прогнозирай преди началото на мача.</h3></div><small>${state.matches.length} ${state.matches.length === 1 ? "мач" : "мача"}</small></div>
+      <div class="league-match-list-heading"><div><span>Следващи прогнози</span><h3>Прогнозирай преди началото на мача.</h3></div><small>${state.matches.length} ${state.matches.length === 1 ? "мач" : "мача"}${state.matches.some((match) => match.dataSource === "TheSportsDB") ? " · Данни: TheSportsDB" : ""}</small></div>
       <div class="league-match-grid">${state.matches.length ? state.matches.map((match) => leagueMatchMarkup(match, state)).join("") : `<article class="empty-state">Следващият кръг в Лигата на прогнозите скоро ще бъде добавен.</article>`}</div>
     </div>`;
   bindPredictionLeagueActions();

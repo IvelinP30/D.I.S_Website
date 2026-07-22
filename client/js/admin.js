@@ -118,21 +118,27 @@ function normalizeAdminLeagueCollection(value = {}) {
     let suffix = 2;
     while (used.has(id)) id = `${requested}-${suffix++}`;
     used.add(id);
-    const apiLeagueId = Number(item?.apiFootball?.leagueId);
-    const apiSeason = Number(item?.apiFootball?.season);
+    const hasTheSportsDbSettings = Boolean(item?.theSportsDb && typeof item.theSportsDb === "object");
+    const providerSettings = hasTheSportsDbSettings ? item.theSportsDb : item?.apiFootball || {};
+    const providerLeagueId = Number(providerSettings.leagueId);
+    const rawSeason = String(providerSettings.season || "").trim();
+    const providerSeason = /^\d{4}-\d{4}$/.test(rawSeason)
+      ? rawSeason
+      : /^\d{4}$/.test(rawSeason) ? `${rawSeason}-${Number(rawSeason) + 1}` : "";
     return {
       id,
       enabled: item?.enabled !== false,
       title: String(item?.title || `Лига ${index + 1}`),
       description: String(item?.description || "Прогнозирай резултата и се изкачи в класацията."),
       seasonLabel: String(item?.seasonLabel || "D.I.S Сезон"),
-      apiFootball: {
-        enabled: item?.apiFootball?.enabled === true,
-        leagueId: Number.isInteger(apiLeagueId) && apiLeagueId > 0 ? apiLeagueId : null,
-        season: Number.isInteger(apiSeason) && apiSeason >= 2000 && apiSeason <= 2100 ? apiSeason : null,
-        daysAhead: Math.max(1, Math.min(14, Number(item?.apiFootball?.daysAhead) || 7)),
-        lastScheduleSyncAt: String(item?.apiFootball?.lastScheduleSyncAt || ""),
-        lastResultSyncAt: String(item?.apiFootball?.lastResultSyncAt || "")
+      theSportsDb: {
+        enabled: hasTheSportsDbSettings && providerSettings.enabled === true,
+        leagueId: hasTheSportsDbSettings && Number.isInteger(providerLeagueId) && providerLeagueId > 0 ? providerLeagueId : null,
+        season: providerSeason,
+        currentRound: Math.max(1, Math.min(100, Number(providerSettings.currentRound) || 1)),
+        daysAhead: Math.max(1, Math.min(14, Number(providerSettings.daysAhead) || 14)),
+        lastScheduleSyncAt: String(providerSettings.lastScheduleSyncAt || ""),
+        lastResultSyncAt: String(providerSettings.lastResultSyncAt || "")
       },
       trophies: Array.isArray(item?.trophies) ? item.trophies : [],
       matches: Array.isArray(item?.matches) ? item.matches : []
@@ -170,14 +176,23 @@ function compactNewsExcerpt(value = "", maxLength = 220) {
 function normalizeAdminTeamMedia(value) {
   if (!value || typeof value !== "object" || !Number.isInteger(Number(value.id)) || Number(value.id) <= 0) return null;
   const id = Number(value.id);
+  let logo = String(value.logo || "");
+  try {
+    const url = new URL(logo);
+    if (url.protocol !== "https:" || !["r2.thesportsdb.com", "www.thesportsdb.com", "media.api-sports.io"].includes(url.hostname)) logo = "";
+  } catch {
+    logo = "";
+  }
+  if (!logo && (value.source === "API-Football" || value.logo === undefined)) logo = `https://media.api-sports.io/football/teams/${id}.png`;
+  if (!logo) return null;
   return {
     id,
     name: String(value.name || ""),
     code: String(value.code || ""),
     country: String(value.country || ""),
     national: Boolean(value.national),
-    logo: `https://media.api-sports.io/football/teams/${id}.png`,
-    source: "API-Football",
+    logo,
+    source: String(value.source || (logo.includes("thesportsdb.com") ? "TheSportsDB" : "API-Football")),
     resolvedAt: String(value.resolvedAt || new Date().toISOString())
   };
 }
@@ -235,10 +250,7 @@ function setStatus(message, isError = false) {
 
 function footballUsageText() {
   if (!footballUsage) return "API квотата ще се покаже след първата проверка.";
-  const upstream = footballUsage.upstreamLimit
-    ? ` · API-Football: ${footballUsage.upstreamRemaining}/${footballUsage.upstreamLimit} остават`
-    : "";
-  return `Защитен бюджет: ${footballUsage.used}/${footballUsage.localLimit} · Остават ${footballUsage.remaining}${upstream}`;
+  return `TheSportsDB Free: ${footballUsage.minuteUsed || 0}/${footballUsage.minuteLimit || 20} защитени заявки през последната минута · ${footballUsage.used || 0} днес`;
 }
 
 function renderFootballUsage() {
@@ -478,13 +490,13 @@ function teamMediaPicker(label, nameField, mediaField, mediaValue) {
     <div class="team-media-picker wide" data-team-media-picker data-name-field="${escapeValue(nameField)}" data-media-field="${escapeValue(mediaField)}">
       ${hiddenField(mediaField, media ? JSON.stringify(media) : "")}
       <div class="team-media-selection" data-team-media-selection>
-        ${media ? `<img src="${escapeValue(media.logo)}" alt="" /><span><strong>${escapeValue(media.name)}</strong><small>${escapeValue([media.country, media.code].filter(Boolean).join(" · "))} · API-Football</small></span>` : `<span><strong>${escapeValue(label)}</strong><small>Няма избрано автоматично лого</small></span>`}
+        ${media ? `<img src="${escapeValue(media.logo)}" alt="" /><span><strong>${escapeValue(media.name)}</strong><small>${escapeValue([media.country, media.code].filter(Boolean).join(" · "))} · ${escapeValue(media.source)}</small></span>` : `<span><strong>${escapeValue(label)}</strong><small>Няма избрано автоматично лого</small></span>`}
       </div>
       <div class="team-media-actions">
         <button class="button secondary" data-team-media-search type="button">Намери лого / флаг</button>
         <button class="button secondary" data-team-media-clear type="button" ${media ? "" : "hidden"}>Премахни</button>
       </div>
-      <small class="team-media-note">Търсенето е в API-Football. Провери предложението и го избери ръчно преди запис.</small>
+      <small class="team-media-note">Първо се търси в кеширания каталог. Ако отборът липсва, се прави една безплатна TheSportsDB заявка по име и намереното лого се запазва за следваща употреба. Безплатното търсене обичайно предлага един резултат — провери го и го избери преди запис.</small>
       <div class="team-media-results" data-team-media-results hidden></div>
     </div>`;
 }
@@ -497,7 +509,7 @@ function updateTeamMediaPicker(picker, mediaValue) {
   if (hidden) hidden.value = media ? JSON.stringify(media) : "";
   if (selection) {
     selection.innerHTML = media
-      ? `<img src="${escapeValue(media.logo)}" alt="" /><span><strong>${escapeValue(media.name)}</strong><small>${escapeValue([media.country, media.code].filter(Boolean).join(" · "))} · API-Football</small></span>`
+      ? `<img src="${escapeValue(media.logo)}" alt="" /><span><strong>${escapeValue(media.name)}</strong><small>${escapeValue([media.country, media.code].filter(Boolean).join(" · "))} · ${escapeValue(media.source)}</small></span>`
       : `<span><strong>Автоматично лого</strong><small>Няма избрано автоматично лого</small></span>`;
   }
   if (clearButton) clearButton.hidden = !media;
@@ -514,7 +526,7 @@ function showTeamMediaResults(picker, results = [], message = "") {
         <img src="${escapeValue(team.logo)}" alt="" />
         <span><strong>${escapeValue(team.name)}</strong><small>${escapeValue([team.country, team.code, team.national ? "национален отбор" : "клуб"].filter(Boolean).join(" · "))}</small></span>
       </button>`).join("")
-    : `<p>${escapeValue(message || "Няма намерени предложения. Опитай с част от името на латиница.")}</p>`;
+    : `<p>${escapeValue(message || "Няма такъв отбор в локалния каталог. Първо импортирай кръг от неговата лига или опитай с част от името на латиница.")}</p>`;
 }
 
 function readonlyInfo(label, value = "") {
@@ -858,21 +870,23 @@ function renderEditors() {
     adminSelectedLeagueId = predictionLeague.leagues[0]?.id || "";
   }
   const selectedLeague = predictionLeague.leagues.find((league) => league.id === adminSelectedLeagueId) || null;
-  const footballSettings = selectedLeague?.apiFootball || {};
+  const footballSettings = selectedLeague?.theSportsDb || {};
   const footballAutomationMarkup = selectedLeague && footballFixtureSyncEnabled ? `
-      <h3>Автоматични мачове от API-Football</h3>
-      ${checkboxField("Автоматично добавяй програмата и крайните резултати", "apiFootballEnabled", footballSettings.enabled === true)}
-      ${numberField("API-Football League ID", "apiFootballLeagueId", footballSettings.leagueId || "", 1, 999999)}
-      ${numberField("API сезон (начална година)", "apiFootballSeason", footballSettings.season || new Date().getFullYear(), 2000, 2100)}
-      ${numberField("Добавяй мачове за следващите дни", "apiFootballDaysAhead", footballSettings.daysAhead || 7, 1, 14)}
+      <h3>Безплатни автоматични мачове от TheSportsDB</h3>
+      ${checkboxField("Автоматично добавяй кръговете и крайните резултати", "theSportsDbEnabled", footballSettings.enabled === true)}
+      ${numberField("TheSportsDB League ID", "theSportsDbLeagueId", footballSettings.leagueId || "", 1, 999999)}
+      ${field("TheSportsDB сезон (например 2026-2027)", "theSportsDbSeason", footballSettings.season || `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`)}
+      ${numberField("Текущ кръг (Matchweek / Round)", "theSportsDbCurrentRound", footballSettings.currentRound || 1, 1, 100)}
+      ${numberField("Автоматично добавяй за следващите дни", "theSportsDbDaysAhead", footballSettings.daysAhead || 14, 1, 14)}
+      <small class="wide team-media-note"><strong>Как работят тези полета:</strong> „Текущ кръг“ е кръгът, който се играе сега или предстои. В началото на сезона започни с 1; ако сезонът вече е започнал, провери номера Matchweek/Round в официалната програма на първенството и го въведи тук. След като всички мачове от него приключат, системата автоматично преминава към следващия кръг. „Автоматичен хоризонт“ 7 означава, че при дневната проверка ще се добавят само новите мачове с начало през следващите 7 дни. Стойността е между 1 и 14 дни.</small>
       ${readonlyInfo("Последна програма", footballSettings.lastScheduleSyncAt ? formatAdminDate(footballSettings.lastScheduleSyncAt) : "Още няма синхронизация")}
       ${readonlyInfo("Последна проверка за резултати", footballSettings.lastResultSyncAt ? formatAdminDate(footballSettings.lastResultSyncAt) : "Още няма проверка")}
       <div class="wide football-sync-panel">
         <p data-football-usage>${escapeValue(footballUsageText())}</p>
         <div class="team-media-actions">
-          <button class="button secondary" data-football-sync="${escapeValue(selectedLeague.id)}" type="button">Добави / обнови мачовете сега</button>
+          <button class="button secondary" data-football-sync="${escapeValue(selectedLeague.id)}" data-football-round="${footballSettings.currentRound || 1}" type="button">Добави / обнови кръг ${footballSettings.currentRound || 1}</button>
         </div>
-        <small>Първо запази Фен зона след промяна на League ID или сезона. Автоматизацията проверява програмата веднъж дневно и резултатите само след очаквания край на мач.</small>
+        <small>Ръчният бутон винаги добавя целия показан кръг, независимо от броя дни. Същият бутон по-късно обновява часовете, статусите, логата и наличните крайни резултати. Автоматизацията проверява текущия и следващия кръг веднъж дневно и преминава напред след приключване. Приключил мач остава видим 24 часа след записването на резултата, след което се архивира; прогнозите, резултатът и точките се запазват.</small>
       </div>` : "";
 
   leagueListEditor.innerHTML = predictionLeague.leagues.length
@@ -942,9 +956,9 @@ function renderEditors() {
         ${checkboxField("Дерби мач", "isDerby", Boolean(match.isDerby))}
         ${numberField("Краен резултат – домакин", "resultHome", resultHome)}
         ${numberField("Краен резултат – гост", "resultAway", resultAway)}
-        ${match.apiFixtureId ? checkboxField("Заключи ръчните промени по отбори, турнир и начален час", "apiDetailsLocked", match.apiDetailsLocked === true) : ""}
-        ${match.apiFixtureId ? readonlyInfo("API-Football връзка", `Fixture #${match.apiFixtureId} · ${match.apiStatus || "без статус"}${match.apiSyncedAt ? ` · ${formatAdminDate(match.apiSyncedAt)}` : ""}`) : ""}
-        <p class="form-privacy-note wide">${match.apiFixtureId ? "Автоматичният резултат е само след редовните 90 минути. Ръчният резултат винаги има предимство. При заключени детайли API-Football продължава да обновява само статуса и резултата." : "Остави крайния резултат празен, докато мачът не приключи."} След като го запазиш, можеш да премахнеш мача от админ панела — спечелените точки и статистиката ще останат.</p>
+        ${match.externalEventId || match.apiFixtureId ? checkboxField("Заключи ръчните промени по отбори, турнир и начален час", "externalDetailsLocked", match.externalDetailsLocked === true || match.apiDetailsLocked === true) : ""}
+        ${match.externalEventId ? readonlyInfo("TheSportsDB връзка", `Event #${match.externalEventId} · кръг ${match.externalRound || "?"} · ${match.externalStatus || "без статус"}${match.externalSyncedAt ? ` · ${formatAdminDate(match.externalSyncedAt)}` : ""}`) : match.apiFixtureId ? readonlyInfo("Стара API-Football връзка", `Fixture #${match.apiFixtureId}`) : ""}
+        <p class="form-privacy-note wide">${match.externalEventId || match.apiFixtureId ? "Автоматичен резултат се записва само при безопасен статус FT след редовните 90 минути. Ръчният резултат винаги има предимство. При продължения или дузпи резултатът остава за ръчна проверка." : "Остави крайния резултат празен, докато мачът не приключи."} След като го запазиш, можеш да премахнеш мача от админ панела — спечелените точки и статистиката ще останат.</p>
       </article>`;
   }).join("");
 
@@ -1533,15 +1547,16 @@ function collectConfig() {
       title: value(leagueSettingsCard, "title") || previousLeague.title,
       description: value(leagueSettingsCard, "description"),
       seasonLabel: value(leagueSettingsCard, "seasonLabel") || "D.I.S Сезон",
-      apiFootball: footballFixtureSyncEnabled ? {
-          enabled: Boolean(leagueSettingsCard.querySelector('[name="apiFootballEnabled"]')?.checked),
-          leagueId: Number(value(leagueSettingsCard, "apiFootballLeagueId")) || null,
-          season: Number(value(leagueSettingsCard, "apiFootballSeason")) || null,
-          daysAhead: Math.max(1, Math.min(14, Number(value(leagueSettingsCard, "apiFootballDaysAhead")) || 7)),
-          lastScheduleSyncAt: String(previousLeague.apiFootball?.lastScheduleSyncAt || ""),
-          lastResultSyncAt: String(previousLeague.apiFootball?.lastResultSyncAt || "")
+      theSportsDb: footballFixtureSyncEnabled ? {
+          enabled: Boolean(leagueSettingsCard.querySelector('[name="theSportsDbEnabled"]')?.checked),
+          leagueId: Number(value(leagueSettingsCard, "theSportsDbLeagueId")) || null,
+          season: value(leagueSettingsCard, "theSportsDbSeason").trim(),
+          currentRound: Math.max(1, Math.min(100, Number(value(leagueSettingsCard, "theSportsDbCurrentRound")) || 1)),
+          daysAhead: Math.max(1, Math.min(14, Number(value(leagueSettingsCard, "theSportsDbDaysAhead")) || 14)),
+          lastScheduleSyncAt: String(previousLeague.theSportsDb?.lastScheduleSyncAt || ""),
+          lastResultSyncAt: String(previousLeague.theSportsDb?.lastResultSyncAt || "")
         } : {
-          ...(previousLeague.apiFootball || {}),
+          ...(previousLeague.theSportsDb || {}),
           enabled: false
         },
       trophies: collectCards(leagueTrophiesEditor, (card) => {
@@ -1575,8 +1590,11 @@ function collectConfig() {
           result: nextResult,
           resultSource: resultChanged ? "manual" : String(previous.resultSource || ""),
           manualResult: resultChanged ? true : previous.manualResult === true,
-          apiDetailsLocked: previous.apiFixtureId
-            ? Boolean(card.querySelector('[name="apiDetailsLocked"]')?.checked)
+          externalDetailsLocked: previous.externalEventId || previous.apiFixtureId
+            ? Boolean(card.querySelector('[name="externalDetailsLocked"]')?.checked)
+            : false,
+          apiDetailsLocked: previous.externalEventId || previous.apiFixtureId
+            ? Boolean(card.querySelector('[name="externalDetailsLocked"]')?.checked)
             : false,
           settledAt: hasResult ? (resultChanged ? new Date().toISOString() : previous.settledAt || new Date().toISOString()) : ""
         };
@@ -1855,10 +1873,10 @@ document.querySelectorAll("[data-save-page]").forEach((button) => {
         return;
       }
       const invalidApiLeague = (draftConfig.predictionLeague?.leagues || []).find((league) =>
-        league.apiFootball?.enabled && (!Number.isInteger(league.apiFootball.leagueId) || !Number.isInteger(league.apiFootball.season))
+        league.theSportsDb?.enabled && (!Number.isInteger(league.theSportsDb.leagueId) || !/^\d{4}-\d{4}$/.test(league.theSportsDb.season) || !Number.isInteger(league.theSportsDb.currentRound))
       );
       if (invalidApiLeague) {
-        await showInfo(`Попълни валидни API-Football League ID и сезон за „${invalidApiLeague.title}“.`);
+        await showInfo(`Попълни валидни TheSportsDB League ID, сезон във формат 2026-2027 и текущ кръг за „${invalidApiLeague.title}“.`);
         return;
       }
     }
@@ -1973,7 +1991,7 @@ document.querySelectorAll("[data-add]").forEach((button) => {
         title: "Нова лига",
         description: "Прогнозирай резултата и се изкачи в отделната класация.",
         seasonLabel: "D.I.S Сезон 2026/27",
-        apiFootball: { enabled: false, leagueId: null, season: new Date().getFullYear(), daysAhead: 7, lastScheduleSyncAt: "", lastResultSyncAt: "" },
+        theSportsDb: { enabled: false, leagueId: null, season: `${new Date().getFullYear()}-${new Date().getFullYear() + 1}`, currentRound: 1, daysAhead: 14, lastScheduleSyncAt: "", lastResultSyncAt: "" },
         trophies: structuredClone(adminConfig.predictionLeague.leagues[0]?.trophies || []),
         matches: []
       });
@@ -2044,17 +2062,18 @@ document.addEventListener("click", async (event) => {
     const draftLeague = draftConfig.predictionLeague?.leagues?.find((league) => league.id === leagueId);
     const savedLeague = savedConfig.predictionLeague?.leagues?.find((league) => league.id === leagueId);
     const comparable = (league) => JSON.stringify({
-      enabled: league?.apiFootball?.enabled === true,
-      leagueId: Number(league?.apiFootball?.leagueId) || null,
-      season: Number(league?.apiFootball?.season) || null,
-      daysAhead: Number(league?.apiFootball?.daysAhead) || 7
+      enabled: league?.theSportsDb?.enabled === true,
+      leagueId: Number(league?.theSportsDb?.leagueId) || null,
+      season: String(league?.theSportsDb?.season || ""),
+      currentRound: Number(league?.theSportsDb?.currentRound) || 1,
+      daysAhead: Number(league?.theSportsDb?.daysAhead) || 14
     });
-    if (!draftLeague?.apiFootball?.enabled || !draftLeague.apiFootball.leagueId || !draftLeague.apiFootball.season) {
-      await showInfo("Включи автоматизацията и попълни валидни API League ID и сезон.");
+    if (!draftLeague?.theSportsDb?.leagueId || !draftLeague.theSportsDb.season) {
+      await showInfo("Попълни валидни TheSportsDB League ID, сезон и текущ кръг. Отметката е необходима само за автоматичните проверки.");
       return;
     }
     if (comparable(draftLeague) !== comparable(savedLeague)) {
-      await showInfo("Първо запази Фен зона, за да запишеш API League ID, сезона и настройките за автоматизация.");
+      await showInfo("Първо запази Фен зона, за да запишеш TheSportsDB League ID, сезона, кръга и настройките.");
       return;
     }
     footballSyncButton.disabled = true;
@@ -2063,7 +2082,7 @@ document.addEventListener("click", async (event) => {
       const response = await fetch("/api/football/sync", {
         method: "POST",
         headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ leagueId })
+        body: JSON.stringify({ leagueId, round: Number(footballSyncButton.dataset.footballRound) || draftLeague.theSportsDb.currentRound })
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "Синхронизацията не успя.");
@@ -2074,7 +2093,7 @@ document.addEventListener("click", async (event) => {
       setStatus(payload.message || "Мачовете са синхронизирани.");
     } catch (error) {
       footballSyncButton.disabled = false;
-      footballSyncButton.textContent = "Добави / обнови мачовете сега";
+      footballSyncButton.textContent = `Добави / обнови кръг ${draftLeague.theSportsDb.currentRound}`;
       setStatus(error.message, true);
     }
     return;

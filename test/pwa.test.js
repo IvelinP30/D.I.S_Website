@@ -221,7 +221,7 @@ test("league leaderboard exports a story card with rank, points, and the latest 
   assert.match(styles, /\.league-leaderboard-share/);
   assert.match(publicScript, /leagueSelectedPeriod/);
   assert.match(publicScript, /selectedPeriod\.label/);
-  assert.match(fanZone, /script\.js\?v=20260722-4/);
+  assert.match(fanZone, /script\.js\?v=20260722-5/);
 });
 
 test("every news card exports a story-ready image with the article photo and a branded fallback", () => {
@@ -245,7 +245,7 @@ test("every news card exports a story-ready image with the article photo and a b
   assert.match(publicScript, /scrollIntoView\(\{ behavior: "smooth", block: "center" \}\)/);
   assert.match(styles, /\.news-share-button/);
   assert.match(styles, /\.news-card\.is-shared-target/);
-  assert.match(news, /script\.js\?v=20260722-4/);
+  assert.match(news, /script\.js\?v=20260722-5/);
 });
 
 test("news cards expose the same reactions as detail pages and prediction votes survive card replacement", () => {
@@ -347,7 +347,7 @@ test("news listing stays compact and every article has a dedicated detail page",
   assert.match(server, /renderSitemap/);
 });
 
-test("API-Football logo search is protected, cached, selectable, and visible in league and poll UI", () => {
+test("TheSportsDB Free round import keeps a protected local logo catalogue for league and poll UI", () => {
   const publicScript = read("client/js/script.js");
   const adminScript = read("client/js/admin.js");
   const predictionLeague = read("server/prediction-league.js");
@@ -357,22 +357,23 @@ test("API-Football logo search is protected, cached, selectable, and visible in 
 
   assert.match(server, /\/api\/team-media\/search/);
   assert.match(server, /if \(!isAuthenticated\(request\)\)/);
-  assert.match(server, /API_FOOTBALL_KEY/);
-  assert.match(server, /API_FOOTBALL_FIXTURE_SYNC_ENABLED/);
-  assert.match(server, /apiFootballKey && apiFootballFixtureSyncEnabled/);
+  assert.match(server, /requestTheSportsDb/);
+  assert.match(server, /searchteams\.php/);
+  assert.match(server, /rememberTeamsFromEvents/);
+  assert.match(server, /Scheduled TheSportsDB sync failed/);
   assert.match(adminScript, /data-team-media-search/);
   assert.match(adminScript, /selectedLeague && footballFixtureSyncEnabled/);
   assert.match(adminScript, /homeTeamMedia/);
   assert.match(adminScript, /optionMedia/);
   assert.match(adminScript, /Заключи ръчните промени по отбори, турнир и начален час/);
-  assert.match(adminScript, /Автоматичният резултат е само след редовните 90 минути/);
-  assert.match(adminScript, /apiDetailsLocked/);
+  assert.match(adminScript, /Автоматичен резултат се записва само при безопасен статус FT/);
+  assert.match(adminScript, /externalDetailsLocked/);
   assert.match(predictionLeague, /homeTeamMedia: normalizeTeamMedia/);
-  assert.match(predictionLeague, /apiDetailsLocked: match\.apiDetailsLocked === true/);
+  assert.match(predictionLeague, /externalDetailsLocked:/);
   assert.match(publicScript, /teamIdentityMarkup\(match\.homeTeam, match\.homeTeamMedia/);
   assert.match(publicScript, /teamIdentityMarkup\(option\.label, option\.media\)/);
-  assert.match(privacy, /API-Football/);
-  assert.match(cookies, /media\.api-sports\.io/);
+  assert.match(privacy, /TheSportsDB/);
+  assert.match(cookies, /r2\.thesportsdb\.com/);
 });
 
 test("share images include branded dynamic QR codes for the exact intended destination", () => {

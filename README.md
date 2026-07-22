@@ -12,7 +12,7 @@ Live site: https://dis-podcast.onrender.com
 - Separate Fan Zone, Hosts, Partnerships, and Contact pages
 - Fan voting with host predictions, animated results, and one signed visitor vote per poll
 - Multiple D.I.S Prediction Leagues with one shared nickname-only profile, period-aware positions, separate matches, points, streaks, trophies and standings, plus recovery codes
-- Optional API-Football fixture import, kickoff/status/result synchronization and team/association logo lookup, with protected server-side quotas and caching
+- Free TheSportsDB round import, kickoff/status/result synchronization and a locally searchable team-logo catalogue, with protected server-side quotas and caching
 - Optional Fan Zone giveaway registration with protected participants, CSV export, and random winner drawing
 - Contact, partnership, and fan-idea forms stored in a protected admin inbox, with production email notifications
 - Presents the channel as a football media brand
@@ -81,7 +81,7 @@ Create a local `.env` file:
 ```bash
 ADMIN_PASSWORD="choose-a-strong-password"
 SESSION_SECRET="choose-a-long-random-secret"
-API_FOOTBALL_KEY="optional-api-football-key"
+FOOTBALL_SYNC_SECRET="optional-secret-for-external-scheduler"
 NEWSDATA_API_KEY="optional-newsdata-key"
 NEWSDATA_QUERY="футбол"
 NEWSDATA_BULGARIAN_QUERY="Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор"
@@ -160,8 +160,8 @@ Most public content is editable from the admin panel, including:
 - page hero content and images for Fan Zone, Hosts, Partnerships, and Contact
 - host profiles and optional profile photos
 - host predictions
-- fan polls, individual options, optional API-Football logo/flag selection, status, deadline, and result visibility
-- Prediction League catalogue and each league's title, season, manually managed or automatically imported API-Football matches, kickoff/status updates, team logos, derby flags, final scores and trophies
+- fan polls, individual options, optional cached TheSportsDB logo/flag selection, status, deadline, and result visibility
+- Prediction League catalogue and each league's title, season, manually managed or automatically imported TheSportsDB rounds, kickoff/status updates, team logos, derby flags, final scores and trophies
 - giveaway title, multiple prizes, prize quantities/images, dates, eligibility, rules, privacy notice, image, and active state
 - giveaway participant search/review, eligibility control, CSV export, secure winner/prize draw, and result reset
 - inbox message statuses and deletion
@@ -211,29 +211,34 @@ QR generation is server-side. After installing dependencies or updating this end
 
 Search Console access and verification require the owner's Google account, so this final registration step cannot be completed from the codebase alone.
 
-## API-Football Fixtures, Results, And Team Logos
+## Free TheSportsDB Rounds, Results, And Team Logos
 
-`API_FOOTBALL_KEY` enables the protected admin endpoint `GET /api/team-media/search?q=...`. The key is used only by the Node server in the `x-apisports-key` header and is never returned to public or admin JavaScript. Team search uses one canonical `/teams?search=` request, requires at least three characters, transliterates Bulgarian input and shares the cache between equivalent Cyrillic and Latin aliases. Admins must still verify and select manually searched logos.
+The football integration uses the public TheSportsDB V1 free key `123`; no account or API secret is required. The server calls `eventsround.php` for a configured league ID, season such as `2026-2027`, and round number. One response imports the complete round with stable event IDs, teams, badge URLs, UTC kickoff timestamps, statuses and available scores.
 
-Prediction League fixture synchronization is retained behind `API_FOOTBALL_FIXTURE_SYNC_ENABLED`, which defaults to `false`. While disabled, its admin controls are hidden, manual and scheduled sync endpoints reject requests before contacting API-Football, and no background fixture checks start. Logo search remains available. Set the flag to `true` only after the API-Football account has access to the required current seasons.
+Each Prediction League stores a TheSportsDB league ID, season, current round, automatic-sync flag and a 1–14 day automatic import horizon. The admin button **Добави / обнови кръг N** explicitly imports the complete selected round even when it is outside the automatic horizon. Scheduled synchronization checks the current and next round once per day while the process is awake. When every event in the current round is final or cancelled, the stored round advances automatically.
 
-Search results, daily usage and recent request timestamps are stored under the protected `teamMediaCache` state. Local development uses ignored `data/team-media-cache.json`; production uses the existing Supabase `app_state` abstraction. The server stops locally at 70 requests per UTC day and 6 requests per rolling minute, leaving a reserve below the Free-plan limits. The admin displays both the local budget and the last upstream quota headers.
+The automatic-sync checkbox controls only background work. With it disabled, scheduled round and result requests stop completely, while the authenticated **Добави / обнови кръг N** button remains available when a valid league ID, season and round are saved. A manual request fetches only that selected round, updates its fixtures/results/logos and advances the stored current round if every event is complete.
 
-Each Prediction League can store an API-Football league ID, starting season year, automatic-sync flag and a 1–14 day import horizon. A daily schedule refresh requests `/fixtures` once per configured league, upserts matches by stable fixture ID, imports team names/logos, round and Sofia kickoff time, and updates later schedule changes without duplicates. An existing manual match with the same teams and a kickoff within six hours is linked instead of duplicated. Result checks start only 100 minutes after kickoff, wait at least 25 minutes between attempts and batch up to 20 fixture IDs in one request. Scoring always uses `score.fulltime`, the score after the regular 90 minutes, even when the fixture continues to extra time or penalties. Postponed, cancelled, abandoned and awarded statuses never create a score automatically. A manually edited result is permanently preferred over later API responses. Admins can also lock a linked match's manually corrected teams, logos, competition and kickoff time; locked matches continue receiving API status and 90-minute result updates.
+Matches are upserted by TheSportsDB event ID. Existing API-Football-linked matches can migrate without duplication when TheSportsDB supplies its `idAPIfootball` cross-reference; otherwise a manual match with the same teams and a kickoff within six hours is linked. Later kickoff and status changes are applied unless an administrator locks the match details.
 
-The Node process checks for due synchronization work on startup and every 30 minutes while it is awake. For sleeping hosts, an external scheduler can send `POST /api/internal/football-sync` with `Authorization: Bearer <API_FOOTBALL_SYNC_SECRET>`; the endpoint is unavailable without the secret. Public page visits never call API-Football directly and read only the saved content/Supabase state.
+Result checks begin 100 minutes after kickoff and wait at least 25 minutes between attempts. The complete round is refreshed with one request. Only a valid `FT` score without extra-time score fields settles a match automatically. Extra-time, penalty, postponed, cancelled, incomplete and ambiguous results remain available for manual review. A manually edited result is permanently preferred over provider data.
 
-Once an administrator selects or imports a team, its API team ID, official name, country, national-team flag, logo URL and resolution time are stored directly on that match or poll option. Public rendering derives the media URL from the numeric API team ID, and share images include available home/away logos with a text-only fallback when an image cannot load.
+Settled matches remain visible for 24 hours after the final result is recorded, then scheduled synchronization removes them from the active match list. The existing deletion archive preserves the match, result, predictions and earned points for scoring and leaderboards. Archived TheSportsDB event IDs are ignored by later round refreshes, so an automatically archived match cannot be added back.
 
-API-Football documents `/teams` as data updated several times per week and future fixtures as suitable for daily refreshes. See the [official API-Football documentation](https://www.api-football.com/documentation-beta). Their [terms](https://www.api-football.com/terms) state that delivered logos and trademarks are for identification/descriptive use, may belong to third parties, and can require separate permission. D.I.S administrators remain responsible for confirming the intended public use and must remove a selected logo if rights or accuracy are uncertain.
+Every imported event contributes its home and away team IDs, names and badge URLs to the protected team catalogue. `GET /api/team-media/search?q=...` checks that catalogue first, including transliterated Bulgarian queries. On a cache miss it uses the free `searchteams.php` name lookup, keeps only soccer teams and stores the returned badge for later searches. The free lookup normally returns one candidate, which the administrator must review and select. A repeated search uses the cache and consumes no provider request.
 
-### Adding the API-Football key
+Usage timestamps and the team catalogue are stored under the protected `teamMediaCache` state. Local development uses ignored `data/team-media-cache.json`; production uses the existing Supabase `app_state` abstraction. The server enforces a conservative rolling limit of 20 requests per minute below TheSportsDB Free's published 30-request limit. The admin shows rolling usage and the number of requests made that day.
 
-1. Create or sign in to an account at [dashboard.api-football.com](https://dashboard.api-football.com/), enable an API-Football plan, then open **Account → My Access** and copy the API key.
-2. In the Render Dashboard, select the D.I.S web service, open **Environment**, click **Add Environment Variable**, set the key to `API_FOOTBALL_KEY`, paste the API key as the value, and choose **Save and deploy**.
-3. Never paste the key into `client/js/config.js`, an HTML file, or Git. It is a server secret and is already declared with `sync: false` in `render.yaml`.
-4. For local testing only, add `API_FOOTBALL_KEY=...` to the ignored `.env` file and restart `npm start`.
-5. After deployment, open the protected admin Fan Zone editor. For automatic matches, enable API-Football on a D.I.S league, enter its API league ID and starting season year, save Fan Zone, then use **Добави / обнови мачовете сега** once to verify the configuration.
+The Node process checks for due work on startup and every 30 minutes while it is awake; the 20-hour schedule timestamp prevents redundant round downloads. For sleeping hosts, an external scheduler can send `POST /api/internal/football-sync` with `Authorization: Bearer <FOOTBALL_SYNC_SECRET>`. Public page visits never call the sports-data API directly and read only saved content.
+
+Public cards and share images use the stored badge URL with a text fallback. New badges load from `r2.thesportsdb.com`; legacy API-Football selections remain readable for backward compatibility. TheSportsDB is crowd-sourced and the `eventsround.php` endpoint is not included in its current main reference, so manual match creation, result correction and detail locking remain deliberate fallbacks.
+
+### Configure a free league
+
+1. Find the numeric league ID in the TheSportsDB league URL. Premier League is `4328`; Bulgarian First League is `4626`.
+2. Open the protected Fan Zone editor, enable TheSportsDB automation for the D.I.S league, enter the league ID, a season such as `2026-2027`, and the current round.
+3. Save Fan Zone, then press **Добави / обнови кръг N**. The same button later refreshes kickoff changes, statuses, final scores and badges.
+4. `FOOTBALL_SYNC_SECRET` is optional for the admin button and in-process scheduler. Configure it only when an external scheduler must call the protected internal endpoint.
 
 ## Automated Football Newspaper
 
@@ -283,7 +288,7 @@ Production analytics uses the GA4 web data stream `G-G21K94TW2T` for `https://di
 - Google Analytics 4 is optional and loads only after explicit analytics consent; Meta Pixel and advertising-profile trackers are not used.
 - The YouTube iframe intentionally loads immediately on the homepage. This preserves the direct player experience but means the browser connects to YouTube/Google on page load; the Cookie and Privacy policies disclose this behavior.
 - Google Fonts is also loaded from Google and is disclosed as an external service.
-- Optional API-Football team searches and fixture/result synchronization are server-to-server. Selected public logos load from `media.api-sports.io`; the Privacy and Cookie policies disclose the resulting technical request, protected cache/content storage, lack of a new D.I.S cookie, and third-party trademark responsibility.
+- TheSportsDB round/result synchronization and cache-miss logo lookup are server-to-server. Logo search reads the protected imported-team catalogue first and caches a free name lookup when necessary. New public logos load from `r2.thesportsdb.com`; the Privacy and Cookie policies disclose the resulting technical request, protected cache/content storage, lack of a new D.I.S cookie, and third-party trademark responsibility.
 - Treat `README.md`, `/privacy`, and `/cookies` as part of every feature change: update the relevant documentation and displayed last-updated date whenever data collection, cookies, retention, external providers, tracking, user forms, or campaign rules change.
 
 Operational responsibility remains with the administrators: resolve and remove inbox messages when no longer needed, normally within 12 months, and remove giveaway participant data after the campaign, prize delivery, and any short complaint period, normally within 90 days. Before using uploaded media publicly, confirm that D.I.S has permission to use the image, logo, person, music, video, or sponsor material. AI generation alone does not guarantee rights over real people, club marks, or third-party brands.
@@ -305,7 +310,7 @@ The policy text is a practical transparency baseline and not a substitute for ad
 - Runtime inbox messages, vote records, Prediction League participants/predictions, and uploaded files are ignored by Git.
 - Production requires explicit `ADMIN_PASSWORD` and `SESSION_SECRET` environment variables.
 - Production requires `RESEND_API_KEY` and `MESSAGE_EMAIL_FROM`; local development does not send message emails even if they exist in `.env`.
-- `API_FOOTBALL_KEY` is optional. Without it, the site and existing text-only teams continue to work, while the admin logo-search control returns a clear configuration message.
+- TheSportsDB Free requires no environment API key. Without a configured league, manual matches and existing team media continue to work; the logo picker searches whatever teams have already been cached from imported rounds.
 - `NEWSDATA_API_KEY` is optional. Without it, manual D.I.S news remains available and no third-party news request is made. With it, the public newspaper uses the bounded server-side cache described above.
 - `GET /health` is available for hosting health checks.
 - Do not commit real inbox messages, voter identifiers, passwords, or API keys.

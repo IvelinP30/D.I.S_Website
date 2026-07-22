@@ -25,11 +25,7 @@ services:
         sync: false
       - key: MESSAGE_EMAIL_FROM
         sync: false
-      - key: API_FOOTBALL_KEY
-        sync: false
-      - key: API_FOOTBALL_FIXTURE_SYNC_ENABLED
-        value: "false"
-      - key: API_FOOTBALL_SYNC_SECRET
+      - key: FOOTBALL_SYNC_SECRET
         generateValue: true
       - key: NEWSDATA_API_KEY
         sync: false

@@ -1,93 +1,77 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
-  apiFootballSearchTerms,
+  cachedTeamMediaSearch,
   normalizeTeamMedia,
-  searchApiFootballTeams,
+  rememberTeamMediaSearch,
+  rememberTeamsFromEvents,
+  searchTeamMediaCatalog,
   transliterateTeamSearch
 } = require("../server/team-media");
 
-test("team search transliterates Bulgarian and makes one canonical API query", () => {
+test("team search transliterates Bulgarian", () => {
   assert.equal(transliterateTeamSearch("Барселона"), "barselona");
-  assert.deepEqual(apiFootballSearchTerms("Барселона"), ["Barcelona"]);
-  assert.deepEqual(apiFootballSearchTerms("Челси"), ["chelsi"]);
 });
 
-test("team media accepts only a numeric API-Football team id and derives the official logo URL", () => {
-  assert.equal(normalizeTeamMedia({ id: "bad", logo: "https://example.com/logo.png" }), null);
-  assert.deepEqual(normalizeTeamMedia({ id: 33, name: "Manchester United", country: "England", national: false, resolvedAt: "2026-07-20T00:00:00.000Z" }), {
-    id: 33,
+test("team media preserves safe TheSportsDB badges and legacy API-Football logos", () => {
+  assert.equal(normalizeTeamMedia({ id: 1, logo: "https://evil.example/logo.png", source: "TheSportsDB" }), null);
+  assert.deepEqual(normalizeTeamMedia({
+    id: 133612,
+    name: "Manchester United",
+    country: "England",
+    logo: "https://r2.thesportsdb.com/images/media/team/badge/united.png",
+    source: "TheSportsDB",
+    resolvedAt: "2026-07-20T00:00:00.000Z"
+  }), {
+    id: 133612,
     name: "Manchester United",
     code: "",
     country: "England",
     national: false,
-    logo: "https://media.api-sports.io/football/teams/33.png",
-    source: "API-Football",
+    logo: "https://r2.thesportsdb.com/images/media/team/badge/united.png",
+    source: "TheSportsDB",
     resolvedAt: "2026-07-20T00:00:00.000Z"
   });
+  assert.equal(normalizeTeamMedia({ id: 33, name: "Legacy", source: "API-Football" }).logo, "https://media.api-sports.io/football/teams/33.png");
 });
 
-test("team search caches and ranks the selected API response without exposing the API key", async () => {
-  const requests = [];
-  const fetchImpl = async (url, options) => {
-    requests.push({ url: String(url), headers: options.headers });
-    return {
-      ok: true,
-      json: async () => ({
-        errors: [],
-        response: [
-          { team: { id: 529, name: "Barcelona", code: "BAR", country: "Spain", national: false } },
-          { team: { id: 715, name: "Barcelona W", code: "BAR", country: "Spain", national: false } }
-        ]
-      })
-    };
-  };
-  const first = await searchApiFootballTeams("Барселона", { apiKey: "secret-key", fetchImpl, cache: {}, now: 1_000 });
-  const second = await searchApiFootballTeams("Барселона", { apiKey: "secret-key", fetchImpl, cache: first.cache, now: 2_000 });
+test("imported round badges build a locally searchable free catalogue", () => {
+  const cache = {};
+  rememberTeamsFromEvents(cache, [{
+    idHomeTeam: "133612",
+    strHomeTeam: "Manchester United",
+    strHomeTeamBadge: "https://r2.thesportsdb.com/images/media/team/badge/united.png",
+    idAwayTeam: "133604",
+    strAwayTeam: "Arsenal",
+    strAwayTeamBadge: "https://r2.thesportsdb.com/images/media/team/badge/arsenal.png",
+    strCountry: "England"
+  }], "2026-07-22T00:00:00.000Z");
 
-  assert.equal(first.results[0].id, 529);
-  assert.equal(second.cacheHit, true);
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].headers["x-apisports-key"], "secret-key");
-  assert.doesNotMatch(JSON.stringify(first.results), /secret-key/);
+  const result = searchTeamMediaCatalog("Манчестър Юнайтед", { cache });
+  assert.equal(result.results[0].id, 133612);
+  assert.equal(result.catalogSize, 2);
 });
 
-test("team search shares cached aliases across Cyrillic and Latin queries", async () => {
-  let requests = 0;
-  const requestImpl = async () => {
-    requests += 1;
-    return { response: [{ team: { id: 9, name: "Bulgaria", country: "Bulgaria", national: true } }] };
-  };
-  const first = await searchApiFootballTeams("България", { apiKey: "secret", cache: {}, requestImpl, now: 1_000 });
-  const second = await searchApiFootballTeams("bulgaria", { apiKey: "secret", cache: first.cache, requestImpl, now: 2_000 });
-
-  assert.equal(requests, 1);
-  assert.equal(second.cacheHit, true);
-  assert.equal(second.results[0].id, 9);
+test("legacy cached searches are migrated into the local team catalogue", () => {
+  const cache = { searches: { arsenal: { results: [{ id: 42, name: "Arsenal", source: "API-Football" }] } } };
+  const result = searchTeamMediaCatalog("Arsenal", { cache });
+  assert.equal(result.results[0].id, 42);
+  assert.equal(cache.teams["42"].logo, "https://media.api-sports.io/football/teams/42.png");
 });
 
-test("team search reads a Cyrillic cache key before requiring or calling API-Football", async () => {
-  const cachedTeam = { id: 634, name: "Botev Plovdiv", country: "Bulgaria", national: false };
-  const cache = {
-    searches: {
-      "ботев пловдив": {
-        expiresAt: 10_000,
-        results: [cachedTeam]
-      }
-    }
+test("free name-search results and misses are cached for reuse", () => {
+  const cache = {};
+  const team = {
+    id: 134085,
+    name: "Levski Sofia",
+    country: "Bulgaria",
+    logo: "https://r2.thesportsdb.com/images/media/team/badge/levski.png",
+    source: "TheSportsDB"
   };
-  let requests = 0;
+  rememberTeamMediaSearch(cache, "Levski Sofia", [team], "2026-07-22T10:00:00.000Z");
+  rememberTeamMediaSearch(cache, "Missing FC", [], "2026-07-22T10:01:00.000Z");
 
-  const result = await searchApiFootballTeams("Ботев Пловдив", {
-    cache,
-    now: 1_000,
-    requestImpl: async () => {
-      requests += 1;
-      throw new Error("API-Football should not be called");
-    }
-  });
-
-  assert.equal(result.cacheHit, true);
-  assert.equal(result.results[0].id, 634);
-  assert.equal(requests, 0);
+  assert.equal(cachedTeamMediaSearch(cache, "Levski Sofia")[0].id, 134085);
+  assert.deepEqual(cachedTeamMediaSearch(cache, "Missing FC"), []);
+  assert.equal(cache.teams["134085"].source, "TheSportsDB");
 });

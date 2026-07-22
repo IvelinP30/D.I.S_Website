@@ -1,32 +1,41 @@
-const { normalizeTeamMedia } = require("./team-media");
+const { eventTeamMedia, transliterateTeamSearch } = require("./team-media");
 
-const DEFAULT_SYNC_DAYS = 7;
+const DEFAULT_SYNC_DAYS = 14;
 const SCHEDULE_SYNC_INTERVAL = 20 * 60 * 60 * 1000;
 const RESULT_RECHECK_INTERVAL = 25 * 60 * 1000;
 const RESULT_CHECK_DELAY = 100 * 60 * 1000;
-const RESULT_CHECK_MAX_AGE = 72 * 60 * 60 * 1000;
-const FINISHED_STATUSES = new Set(["FT", "AET", "PEN"]);
-const REGULATION_RESULT_STATUSES = new Set(["FT", "ET", "BT", "P", "AET", "PEN"]);
-const CANCELLED_STATUSES = new Set(["CANC", "ABD", "AWD", "WO"]);
-const NEW_FIXTURE_STATUSES = new Set(["TBD", "NS", "PST"]);
+const RESULT_CHECK_MAX_AGE = 21 * 24 * 60 * 60 * 1000;
+const SETTLED_MATCH_ARCHIVE_DELAY = 24 * 60 * 60 * 1000;
+const ESTIMATED_MATCH_DURATION = 2 * 60 * 60 * 1000;
+const FINISHED_STATUSES = new Set(["FT"]);
+const CANCELLED_STATUSES = new Set(["CANC", "CANCELLED", "ABD", "AWD", "WO"]);
+const POSTPONED_STATUSES = new Set(["PST", "POSTPONED"]);
+const NEW_FIXTURE_STATUSES = new Set(["", "NS", "TBD"]);
+
+function normalizeSeason(value, fallback = "") {
+  const clean = String(value || fallback || "").trim();
+  if (/^\d{4}-\d{4}$/.test(clean)) return clean;
+  if (/^\d{4}$/.test(clean)) return `${clean}-${Number(clean) + 1}`;
+  return "";
+}
 
 function normalizeFootballSettings(value = {}) {
-  const leagueId = Number(value.leagueId);
-  const season = Number(value.season);
+  const source = value.theSportsDb && typeof value.theSportsDb === "object" ? value.theSportsDb : value;
+  const leagueId = Number(source.leagueId);
+  const currentRound = Number(source.currentRound || 1);
   return {
-    enabled: value.enabled === true,
+    enabled: source.enabled === true,
     leagueId: Number.isInteger(leagueId) && leagueId > 0 ? leagueId : null,
-    season: Number.isInteger(season) && season >= 2000 && season <= 2100 ? season : null,
-    daysAhead: Math.max(1, Math.min(14, Number(value.daysAhead) || DEFAULT_SYNC_DAYS)),
-    lastScheduleSyncAt: String(value.lastScheduleSyncAt || ""),
-    lastResultSyncAt: String(value.lastResultSyncAt || "")
+    season: normalizeSeason(source.season),
+    currentRound: Number.isInteger(currentRound) ? Math.max(1, Math.min(100, currentRound)) : 1,
+    daysAhead: Math.max(1, Math.min(14, Number(source.daysAhead) || DEFAULT_SYNC_DAYS)),
+    lastScheduleSyncAt: String(source.lastScheduleSyncAt || ""),
+    lastResultSyncAt: String(source.lastResultSyncAt || "")
   };
 }
 
 function rawLeagues(predictionLeague = {}) {
-  return Array.isArray(predictionLeague.leagues)
-    ? predictionLeague.leagues
-    : [predictionLeague];
+  return Array.isArray(predictionLeague.leagues) ? predictionLeague.leagues : [predictionLeague];
 }
 
 function rawLeagueId(league = {}, index = 0) {
@@ -35,115 +44,160 @@ function rawLeagueId(league = {}, index = 0) {
 
 function zonedDate(now, daysAhead = 0, timeZone = "Europe/Sofia") {
   const date = new Date(Number(now) + Number(daysAhead) * 86_400_000);
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).formatToParts(date);
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
   const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${value.year}-${value.month}-${value.day}`;
 }
 
-function apiTeamMedia(team = {}, resolvedAt = new Date().toISOString()) {
-  return normalizeTeamMedia({
-    id: team.id,
-    name: team.name,
-    code: team.code,
-    country: team.country,
-    national: team.national,
-    resolvedAt
-  });
+function eventStatus(item = {}) {
+  if (String(item.strPostponed || "").toLowerCase() === "yes") return "PST";
+  const status = String(item.strStatus || "").trim().toUpperCase();
+  if (status === "POSTPONED") return "PST";
+  if (status === "CANCELED" || status === "CANCELLED") return "CANC";
+  return status;
 }
 
-function apiFixtureStatus(item = {}) {
-  return String(item.fixture?.status?.short || "").trim().toUpperCase();
+function eventKickoff(item = {}) {
+  const timestamp = String(item.strTimestamp || "").trim();
+  if (timestamp) {
+    const explicitZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(timestamp);
+    const parsed = Date.parse(explicitZone ? timestamp : `${timestamp}Z`);
+    if (Number.isFinite(parsed)) return new Date(parsed).toISOString();
+  }
+  const date = String(item.dateEvent || "").trim();
+  const time = String(item.strTime || "00:00:00").trim() || "00:00:00";
+  const parsed = Date.parse(`${date}T${time}Z`);
+  return Number.isFinite(parsed) ? new Date(parsed).toISOString() : "";
 }
 
-function apiFixtureResult(item = {}) {
-  if (!REGULATION_RESULT_STATUSES.has(apiFixtureStatus(item))) return null;
-  const rawHomeScore = item.score?.fulltime?.home;
-  const rawAwayScore = item.score?.fulltime?.away;
-  if (rawHomeScore === null || rawHomeScore === undefined || rawHomeScore === "" || rawAwayScore === null || rawAwayScore === undefined || rawAwayScore === "") return null;
-  const homeScore = Number(rawHomeScore);
-  const awayScore = Number(rawAwayScore);
+function eventResult(item = {}) {
+  if (!FINISHED_STATUSES.has(eventStatus(item))) return null;
+  if (item.intHomeScoreExtra !== null && item.intHomeScoreExtra !== undefined && item.intHomeScoreExtra !== "") return null;
+  if (item.intAwayScoreExtra !== null && item.intAwayScoreExtra !== undefined && item.intAwayScoreExtra !== "") return null;
+  if (item.intHomeScore === null || item.intHomeScore === undefined || item.intHomeScore === "") return null;
+  if (item.intAwayScore === null || item.intAwayScore === undefined || item.intAwayScore === "") return null;
+  const homeScore = Number(item.intHomeScore);
+  const awayScore = Number(item.intAwayScore);
   if (!Number.isInteger(homeScore) || !Number.isInteger(awayScore) || homeScore < 0 || awayScore < 0 || homeScore > 30 || awayScore > 30) return null;
   return { homeScore, awayScore };
 }
 
-function fixtureCompetition(item = {}, fallback = "D.I.S Matchday") {
-  return [item.league?.name, item.league?.round].map((value) => String(value || "").trim()).filter(Boolean).join(" · ") || fallback;
-}
-
-function sameTeamsAndKickoff(match = {}, item = {}) {
-  const apiHomeId = Number(item.teams?.home?.id);
-  const apiAwayId = Number(item.teams?.away?.id);
-  const mediaMatch = Number(match.homeTeamMedia?.id) === apiHomeId && Number(match.awayTeamMedia?.id) === apiAwayId;
-  const name = (value) => String(value || "").trim().toLocaleLowerCase("en");
-  const nameMatch = name(match.homeTeam) === name(item.teams?.home?.name) && name(match.awayTeam) === name(item.teams?.away?.name);
-  const existingKickoff = Date.parse(match.kickoffAt || "");
-  const apiKickoff = Date.parse(item.fixture?.date || "");
-  const closeKickoff = Number.isFinite(existingKickoff) && Number.isFinite(apiKickoff) && Math.abs(existingKickoff - apiKickoff) <= 6 * 60 * 60 * 1000;
-  return closeKickoff && (mediaMatch || nameMatch);
-}
-
-function mergeFixture(match, item, now = Date.now()) {
+function normalizedEvent(item = {}, now = Date.now()) {
+  const externalEventId = Number(item.idEvent);
+  if (!Number.isInteger(externalEventId) || externalEventId <= 0) return null;
+  const round = Number(item.intRound);
   const syncedAt = new Date(now).toISOString();
-  const status = apiFixtureStatus(item);
-  const apiResult = apiFixtureResult(item);
-  const manualResult = match.manualResult === true || Boolean(match.result && match.resultSource !== "API-Football");
-  const apiDetailsLocked = match.apiDetailsLocked === true;
   return {
-    ...match,
-    id: String(match.id || `api-fixture-${item.fixture.id}`),
-    enabled: match.enabled !== false,
-    competition: apiDetailsLocked ? String(match.competition || "D.I.S Matchday") : fixtureCompetition(item, match.competition),
-    homeTeam: apiDetailsLocked ? String(match.homeTeam || "Отбор A") : String(item.teams?.home?.name || match.homeTeam || "Отбор A"),
-    awayTeam: apiDetailsLocked ? String(match.awayTeam || "Отбор B") : String(item.teams?.away?.name || match.awayTeam || "Отбор B"),
-    homeTeamMedia: apiDetailsLocked ? (match.homeTeamMedia || null) : apiTeamMedia(item.teams?.home, syncedAt) || match.homeTeamMedia || null,
-    awayTeamMedia: apiDetailsLocked ? (match.awayTeamMedia || null) : apiTeamMedia(item.teams?.away, syncedAt) || match.awayTeamMedia || null,
-    kickoffAt: apiDetailsLocked ? String(match.kickoffAt || "") : String(item.fixture?.date || match.kickoffAt || ""),
-    isDerby: Boolean(match.isDerby),
-    apiDetailsLocked,
-    apiFixtureId: Number(item.fixture?.id),
-    apiStatus: status,
-    apiSyncedAt: syncedAt,
-    result: manualResult ? (match.result || null) : (apiResult || match.result || null),
-    resultSource: manualResult ? "manual" : apiResult ? "API-Football" : String(match.resultSource || ""),
-    manualResult,
-    settledAt: manualResult
-      ? String(match.settledAt || "")
-      : apiResult
-        ? String(match.settledAt || syncedAt)
-        : String(match.settledAt || "")
+    externalEventId,
+    legacyApiFootballId: Number(item.idAPIfootball) || null,
+    kickoffAt: eventKickoff(item),
+    status: eventStatus(item),
+    result: eventResult(item),
+    round: Number.isInteger(round) && round > 0 ? round : null,
+    competition: [item.strLeague, Number.isInteger(round) && round > 0 ? `Кръг ${round}` : ""].filter(Boolean).join(" · ") || "D.I.S Matchday",
+    homeTeam: String(item.strHomeTeam || "Отбор A"),
+    awayTeam: String(item.strAwayTeam || "Отбор B"),
+    homeTeamMedia: eventTeamMedia(item, "home", syncedAt),
+    awayTeamMedia: eventTeamMedia(item, "away", syncedAt),
+    syncedAt
   };
 }
 
-function mergeLeagueSchedule(league = {}, fixtures = [], now = Date.now()) {
+function comparableTeamName(value = "") {
+  return transliterateTeamSearch(value)
+    .replace(/\btsska\b/g, "cska")
+    .replace(/\btska\b/g, "cska")
+    .replace(/\b(?:fc|pfc|pfk|fk)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function teamNameMatches(existingValues = [], providerValue = "") {
+  const provider = comparableTeamName(providerValue);
+  if (!provider) return false;
+  return existingValues.some((value) => {
+    const existing = comparableTeamName(value);
+    if (!existing) return false;
+    if (existing === provider) return true;
+    const shorter = existing.length <= provider.length ? existing : provider;
+    const longer = existing.length > provider.length ? existing : provider;
+    return shorter.length >= 7 && (` ${longer} `).includes(` ${shorter} `);
+  });
+}
+
+function sameTeamsAndKickoff(match = {}, event = {}) {
+  const homeId = Number(event.homeTeamMedia?.id);
+  const awayId = Number(event.awayTeamMedia?.id);
+  const mediaMatch = Number(match.homeTeamMedia?.id) === homeId && Number(match.awayTeamMedia?.id) === awayId;
+  const nameMatch = teamNameMatches([match.homeTeam, match.homeTeamMedia?.name], event.homeTeam)
+    && teamNameMatches([match.awayTeam, match.awayTeamMedia?.name], event.awayTeam);
+  const existingKickoff = Date.parse(match.kickoffAt || "");
+  const nextKickoff = Date.parse(event.kickoffAt || "");
+  const closeKickoff = Number.isFinite(existingKickoff) && Number.isFinite(nextKickoff) && Math.abs(existingKickoff - nextKickoff) <= 6 * 60 * 60 * 1000;
+  return closeKickoff && (mediaMatch || nameMatch);
+}
+
+function mergeEvent(match, event) {
+  const automaticSources = new Set(["API-Football", "TheSportsDB"]);
+  const manualResult = match.manualResult === true || Boolean(match.result && !automaticSources.has(match.resultSource));
+  const detailsLocked = match.externalDetailsLocked === true || match.apiDetailsLocked === true;
+  return {
+    ...match,
+    id: String(match.id || `sports-event-${event.externalEventId}`),
+    enabled: match.enabled !== false,
+    competition: detailsLocked ? String(match.competition || "D.I.S Matchday") : event.competition,
+    homeTeam: detailsLocked ? String(match.homeTeam || "Отбор A") : event.homeTeam,
+    awayTeam: detailsLocked ? String(match.awayTeam || "Отбор B") : event.awayTeam,
+    homeTeamMedia: detailsLocked ? (match.homeTeamMedia || null) : (event.homeTeamMedia || match.homeTeamMedia || null),
+    awayTeamMedia: detailsLocked ? (match.awayTeamMedia || null) : (event.awayTeamMedia || match.awayTeamMedia || null),
+    kickoffAt: detailsLocked ? String(match.kickoffAt || "") : (event.kickoffAt || match.kickoffAt || ""),
+    isDerby: Boolean(match.isDerby),
+    externalDetailsLocked: detailsLocked,
+    apiDetailsLocked: detailsLocked,
+    externalProvider: "TheSportsDB",
+    externalEventId: event.externalEventId,
+    externalRound: event.round,
+    externalStatus: event.status,
+    externalSyncedAt: event.syncedAt,
+    legacyApiFootballId: event.legacyApiFootballId || match.legacyApiFootballId || match.apiFixtureId || null,
+    result: manualResult ? (match.result || null) : (event.result || match.result || null),
+    resultSource: manualResult ? "manual" : event.result ? "TheSportsDB" : String(match.resultSource || ""),
+    manualResult,
+    settledAt: manualResult ? String(match.settledAt || "") : event.result ? String(match.settledAt || event.syncedAt) : String(match.settledAt || "")
+  };
+}
+
+function mergeLeagueSchedule(league = {}, rawEvents = [], now = Date.now(), options = {}) {
   const matches = Array.isArray(league.matches) ? league.matches.map((match) => ({ ...match })) : [];
+  const maxKickoff = Number(options.maxKickoff || Number.POSITIVE_INFINITY);
   let added = 0;
   let updated = 0;
-  for (const item of fixtures) {
-    const fixtureId = Number(item.fixture?.id);
-    if (!Number.isInteger(fixtureId) || fixtureId <= 0) continue;
-    let index = matches.findIndex((match) => Number(match.apiFixtureId) === fixtureId);
-    if (index < 0) index = matches.findIndex((match) => !match.apiFixtureId && sameTeamsAndKickoff(match, item));
+  for (const rawEvent of rawEvents) {
+    const event = normalizedEvent(rawEvent, now);
+    if (!event) continue;
+    let index = matches.findIndex((match) => Number(match.externalEventId) === event.externalEventId);
+    if (index < 0 && event.legacyApiFootballId) {
+      index = matches.findIndex((match) => Number(match.apiFixtureId || match.legacyApiFootballId) === event.legacyApiFootballId);
+    }
+    if (index < 0) index = matches.findIndex((match) => !match.externalEventId && sameTeamsAndKickoff(match, event));
     if (index >= 0) {
-      matches[index] = mergeFixture(matches[index], item, now);
+      matches[index] = mergeEvent(matches[index], event);
       updated += 1;
       continue;
     }
-    if (!NEW_FIXTURE_STATUSES.has(apiFixtureStatus(item))) continue;
-    matches.push(mergeFixture({
-      id: `api-fixture-${fixtureId}`,
+    const kickoff = Date.parse(event.kickoffAt || "");
+    if (Number.isFinite(maxKickoff) && (!Number.isFinite(kickoff) || kickoff > maxKickoff)) continue;
+    if (!NEW_FIXTURE_STATUSES.has(event.status) && !event.result) continue;
+    matches.push(mergeEvent({
+      id: `sports-event-${event.externalEventId}`,
       enabled: true,
       isDerby: false,
       result: null,
       settledAt: "",
       resultSource: "",
       manualResult: false,
-      apiDetailsLocked: false
-    }, item, now));
+      externalDetailsLocked: false
+    }, event));
     added += 1;
   }
   matches.sort((left, right) => {
@@ -161,95 +215,119 @@ function dueResultMatches(predictionLeague = {}, now = Date.now(), selectedLeagu
   return rawLeagues(predictionLeague).flatMap((league, index) => {
     const leagueId = rawLeagueId(league, index);
     if (selectedLeagueId && leagueId !== selectedLeagueId) return [];
-    return (Array.isArray(league.matches) ? league.matches : [])
-      .filter((match) => {
-        if (!Number.isInteger(Number(match.apiFixtureId)) || match.result || match.manualResult === true) return false;
-        if (CANCELLED_STATUSES.has(String(match.apiStatus || "").toUpperCase()) || String(match.apiStatus || "").toUpperCase() === "PST") return false;
-        const kickoff = Date.parse(match.kickoffAt || "");
-        if (!Number.isFinite(kickoff) || now - kickoff < RESULT_CHECK_DELAY || now - kickoff > RESULT_CHECK_MAX_AGE) return false;
-        const checkedAt = Date.parse(match.apiSyncedAt || "");
-        return !Number.isFinite(checkedAt) || now - checkedAt >= RESULT_RECHECK_INTERVAL;
-      })
-      .map((match) => ({ leagueId, match }));
+    return (Array.isArray(league.matches) ? league.matches : []).filter((match) => {
+      if (!Number.isInteger(Number(match.externalEventId)) || match.result || match.manualResult === true) return false;
+      const status = String(match.externalStatus || "").toUpperCase();
+      if (CANCELLED_STATUSES.has(status) || POSTPONED_STATUSES.has(status)) return false;
+      const kickoff = Date.parse(match.kickoffAt || "");
+      if (!Number.isFinite(kickoff) || now - kickoff < RESULT_CHECK_DELAY || now - kickoff > RESULT_CHECK_MAX_AGE) return false;
+      const checkedAt = Date.parse(match.externalSyncedAt || "");
+      return !Number.isFinite(checkedAt) || now - checkedAt >= RESULT_RECHECK_INTERVAL;
+    }).map((match) => ({ leagueId, match }));
   });
 }
 
-function applyFixtureResults(predictionLeague = {}, fixtures = [], now = Date.now()) {
-  const byId = new Map(fixtures.map((item) => [Number(item.fixture?.id), item]));
-  const summary = { checked: 0, settled: 0, rescheduled: 0, cancelled: 0 };
-  rawLeagues(predictionLeague).forEach((league) => {
-    (Array.isArray(league.matches) ? league.matches : []).forEach((match, index) => {
-      const item = byId.get(Number(match.apiFixtureId));
-      if (!item) return;
-      const previousKickoff = String(match.kickoffAt || "");
-      const next = mergeFixture(match, item, now);
-      league.matches[index] = next;
-      summary.checked += 1;
-      if (!match.result && next.result) summary.settled += 1;
-      if (previousKickoff && next.kickoffAt && previousKickoff !== next.kickoffAt) summary.rescheduled += 1;
-      if (CANCELLED_STATUSES.has(next.apiStatus)) summary.cancelled += 1;
+function roundIsComplete(events = []) {
+  return events.length > 0 && events.every((item) => FINISHED_STATUSES.has(eventStatus(item)) || CANCELLED_STATUSES.has(eventStatus(item)) || POSTPONED_STATUSES.has(eventStatus(item)));
+}
+
+function archiveExpiredSettledMatches(content = {}, now = Date.now()) {
+  let archived = 0;
+  for (const league of rawLeagues(content.predictionLeague || {})) {
+    if (!normalizeFootballSettings(league.theSportsDb || {}).enabled) continue;
+    const matches = Array.isArray(league.matches) ? league.matches : [];
+    league.matches = matches.filter((match) => {
+      if (!match.result) return true;
+      const settledAt = Date.parse(match.settledAt || "");
+      const kickoffAt = Date.parse(match.kickoffAt || "");
+      const finishedAt = Number.isFinite(settledAt)
+        ? settledAt
+        : Number.isFinite(kickoffAt) ? kickoffAt + ESTIMATED_MATCH_DURATION : NaN;
+      const expired = Number.isFinite(finishedAt) && Number(now) - finishedAt >= SETTLED_MATCH_ARCHIVE_DELAY;
+      if (expired) archived += 1;
+      return !expired;
     });
-  });
-  return summary;
-}
-
-function chunk(values, size = 20) {
-  const result = [];
-  for (let index = 0; index < values.length; index += size) result.push(values.slice(index, index + size));
-  return result;
+  }
+  return archived;
 }
 
 async function synchronizeFootballContent(content = {}, options = {}) {
   const now = Number(options.now || Date.now());
   const nextContent = structuredClone(content);
   nextContent.predictionLeague ||= {};
-  const summary = { leagues: 0, added: 0, updated: 0, checked: 0, settled: 0, rescheduled: 0, cancelled: 0, apiCalls: 0 };
+  const summary = { leagues: 0, rounds: 0, added: 0, updated: 0, checked: 0, settled: 0, archived: 0, rescheduled: 0, cancelled: 0, advanced: 0, apiCalls: 0 };
   const selectedLeagueId = String(options.leagueId || "");
+  const requestedRound = Number(options.round);
+  const manualRequest = options.forceSchedule === true && Boolean(selectedLeagueId) && Number.isInteger(requestedRound) && requestedRound > 0;
   const leagues = rawLeagues(nextContent.predictionLeague);
 
   for (let index = 0; index < leagues.length; index += 1) {
     const league = leagues[index];
     const leagueId = rawLeagueId(league, index);
     if (selectedLeagueId && leagueId !== selectedLeagueId) continue;
-    const settings = normalizeFootballSettings(league.apiFootball);
-    league.apiFootball = settings;
-    if (!settings.enabled || !settings.leagueId || !settings.season) continue;
+    const settings = normalizeFootballSettings(league.theSportsDb || {});
+    league.theSportsDb = settings;
+    if ((!settings.enabled && !manualRequest) || !settings.leagueId || !settings.season) continue;
     summary.leagues += 1;
-    const lastSync = Date.parse(settings.lastScheduleSyncAt || "");
-    const scheduleDue = options.forceSchedule === true || !Number.isFinite(lastSync) || now - lastSync >= SCHEDULE_SYNC_INTERVAL;
-    if (!scheduleDue) continue;
-    const result = await options.request("/fixtures", {
-      league: settings.leagueId,
-      season: settings.season,
-      from: zonedDate(now, 0),
-      to: zonedDate(now, settings.daysAhead),
-      timezone: "Europe/Sofia"
-    });
-    summary.apiCalls += 1;
-    const merged = mergeLeagueSchedule(league, result.response, now);
-    summary.added += merged.added;
-    summary.updated += merged.updated;
-    league.apiFootball.lastScheduleSyncAt = new Date(now).toISOString();
-  }
+    const lastScheduleSync = Date.parse(settings.lastScheduleSyncAt || "");
+    const scheduleDue = options.forceSchedule === true || !Number.isFinite(lastScheduleSync) || now - lastScheduleSync >= SCHEDULE_SYNC_INTERVAL;
+    const dueResults = dueResultMatches({ leagues: [league] }, now).length > 0;
+    if (!scheduleDue && !dueResults) continue;
 
-  const due = dueResultMatches(nextContent.predictionLeague, now, selectedLeagueId);
-  const fixtureIds = [...new Set(due.map(({ match }) => Number(match.apiFixtureId)))];
-  for (const ids of chunk(fixtureIds, 20)) {
-    const result = await options.request("/fixtures", { ids: ids.join("-") });
-    summary.apiCalls += 1;
-    const applied = applyFixtureResults(nextContent.predictionLeague, result.response, now);
-    Object.keys(applied).forEach((key) => { summary[key] += applied[key]; });
-  }
-  if (fixtureIds.length) {
+    const resultRounds = dueResultMatches({ leagues: [league] }, now)
+      .map(({ match }) => Number(match.externalRound))
+      .filter((round) => Number.isInteger(round) && round > 0);
+    const postponedRounds = (league.matches || [])
+      .filter((match) => !match.result && POSTPONED_STATUSES.has(String(match.externalStatus || "").toUpperCase()))
+      .map((match) => Number(match.externalRound))
+      .filter((round) => Number.isInteger(round) && round > 0);
+    const rounds = Number.isInteger(requestedRound) && requestedRound > 0
+      ? [Math.min(100, requestedRound)]
+      : scheduleDue
+        ? [settings.currentRound, Math.min(100, settings.currentRound + 1), ...resultRounds, ...postponedRounds]
+        : [settings.currentRound, ...resultRounds, ...postponedRounds];
+    const uniqueRounds = [...new Set(rounds)];
+    let currentRoundEvents = [];
+    for (const round of uniqueRounds) {
+      const response = await options.request("eventsround.php", { id: settings.leagueId, r: round, s: settings.season });
+      summary.apiCalls += 1;
+      summary.rounds += 1;
+      const events = (Array.isArray(response.events) ? response.events : []).filter((event) => {
+        const eventId = Number(event.idEvent);
+        return !options.archivedEventKeys?.has(`${leagueId}:${eventId}`);
+      });
+      const eventIds = new Set(events.map((event) => Number(event.idEvent)).filter(Number.isInteger));
+      if (round === settings.currentRound) currentRoundEvents = events;
+      const before = new Map((league.matches || []).map((match) => [Number(match.externalEventId), { kickoffAt: match.kickoffAt, result: match.result }]));
+      const merged = mergeLeagueSchedule(league, events, now, {
+        maxKickoff: options.forceSchedule === true ? Number.POSITIVE_INFINITY : now + settings.daysAhead * 86_400_000
+      });
+      summary.added += merged.added;
+      summary.updated += merged.updated;
+      for (const match of league.matches || []) {
+        if (!eventIds.has(Number(match.externalEventId))) continue;
+        const previous = before.get(Number(match.externalEventId));
+        if (!previous) continue;
+        summary.checked += 1;
+        if (!previous.result && match.result) summary.settled += 1;
+        if (previous.kickoffAt && match.kickoffAt && previous.kickoffAt !== match.kickoffAt) summary.rescheduled += 1;
+        if (CANCELLED_STATUSES.has(String(match.externalStatus || "").toUpperCase())) summary.cancelled += 1;
+      }
+    }
+
     const syncedAt = new Date(now).toISOString();
-    leagues.forEach((league, index) => {
-      const leagueId = rawLeagueId(league, index);
-      if (selectedLeagueId && leagueId !== selectedLeagueId) return;
-      if (normalizeFootballSettings(league.apiFootball).enabled) league.apiFootball.lastResultSyncAt = syncedAt;
-    });
+    if (scheduleDue) league.theSportsDb.lastScheduleSyncAt = syncedAt;
+    if (dueResults || options.forceSchedule === true) league.theSportsDb.lastResultSyncAt = syncedAt;
+    const requestedCurrentRound = Number.isInteger(requestedRound) && requestedRound === settings.currentRound;
+    if ((!Number.isInteger(requestedRound) || requestedCurrentRound) && roundIsComplete(currentRoundEvents)) {
+      league.theSportsDb.currentRound = Math.min(100, settings.currentRound + 1);
+      summary.advanced += 1;
+    }
   }
 
-  return { content: nextContent, summary, changed: summary.apiCalls > 0 };
+  summary.archived = archiveExpiredSettledMatches(nextContent, now);
+
+  return { content: nextContent, summary, changed: summary.apiCalls > 0 || summary.archived > 0 };
 }
 
 module.exports = {
@@ -257,11 +335,17 @@ module.exports = {
   FINISHED_STATUSES,
   RESULT_CHECK_DELAY,
   SCHEDULE_SYNC_INTERVAL,
-  apiFixtureResult,
-  applyFixtureResults,
+  SETTLED_MATCH_ARCHIVE_DELAY,
+  archiveExpiredSettledMatches,
   dueResultMatches,
+  eventKickoff,
+  eventResult,
+  eventStatus,
   mergeLeagueSchedule,
   normalizeFootballSettings,
+  normalizeSeason,
+  normalizedEvent,
+  roundIsComplete,
   synchronizeFootballContent,
   zonedDate
 };

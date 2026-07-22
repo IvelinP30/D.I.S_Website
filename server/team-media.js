@@ -1,23 +1,21 @@
-const { API_FOOTBALL_BASE_URL } = require("./api-football");
-const API_FOOTBALL_MEDIA_ORIGIN = "https://media.api-sports.io";
-const TEAM_SEARCH_CACHE_TTL = 30 * 24 * 60 * 60 * 1000;
+const TEAM_CATALOG_MAX_ITEMS = 1000;
+const TEAM_SEARCH_CACHE_MAX_ITEMS = 500;
 
 const searchAliases = Object.freeze({
-  "англия": "England",
-  "аржентина": "Argentina",
-  "барселона": "Barcelona",
-  "бразилия": "Brazil",
-  "българия": "Bulgaria",
-  "германия": "Germany",
-  "испани": "Spain",
-  "испания": "Spain",
-  "италия": "Italy",
-  "манчестър сити": "Manchester City",
-  "манчестър юнайтед": "Manchester United",
-  "нидерландия": "Netherlands",
-  "португалия": "Portugal",
-  "реал мадрид": "Real Madrid",
-  "франция": "France"
+  "англия": "england",
+  "аржентина": "argentina",
+  "барселона": "barcelona",
+  "бразилия": "brazil",
+  "българия": "bulgaria",
+  "германия": "germany",
+  "испания": "spain",
+  "италия": "italy",
+  "манчестър сити": "manchester city",
+  "манчестър юнайтед": "manchester united",
+  "нидерландия": "netherlands",
+  "португалия": "portugal",
+  "реал мадрид": "real madrid",
+  "франция": "france"
 });
 
 const transliteration = Object.freeze({
@@ -45,10 +43,92 @@ function transliterateTeamSearch(value = "") {
     .trim();
 }
 
-function apiFootballSearchTerms(query = "") {
-  const normalized = normalizeTeamSearch(query);
-  const preferred = searchAliases[normalized] || transliterateTeamSearch(normalized);
-  return [preferred].map((term) => term.trim()).filter((term) => term.length >= 3).slice(0, 1);
+function safeTeamLogo(value = "") {
+  try {
+    const url = new URL(String(value || ""));
+    if (url.protocol !== "https:") return "";
+    const allowed = url.hostname === "r2.thesportsdb.com"
+      || url.hostname === "www.thesportsdb.com"
+      || url.hostname === "media.api-sports.io";
+    return allowed ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+function normalizeTeamMedia(value = {}) {
+  if (!value || typeof value !== "object") return null;
+  const id = Number(value.id);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const explicitLogo = safeTeamLogo(value.logo);
+  const legacyApiFootball = String(value.source || "") === "API-Football" || (!explicitLogo && value.logo === undefined);
+  const logo = explicitLogo || (legacyApiFootball ? `https://media.api-sports.io/football/teams/${id}.png` : "");
+  if (!logo) return null;
+  return {
+    id,
+    name: String(value.name || "").trim().slice(0, 120),
+    code: String(value.code || "").trim().slice(0, 12),
+    country: String(value.country || "").trim().slice(0, 80),
+    national: Boolean(value.national),
+    logo,
+    source: legacyApiFootball && !explicitLogo.includes("thesportsdb.com") ? "API-Football" : "TheSportsDB",
+    resolvedAt: String(value.resolvedAt || new Date().toISOString())
+  };
+}
+
+function theSportsDbTeamMedia(team = {}, resolvedAt = new Date().toISOString()) {
+  return normalizeTeamMedia({
+    id: team.idTeam || team.id,
+    name: team.strTeam || team.name,
+    code: team.strTeamShort || team.code,
+    country: team.strCountry || team.country,
+    national: team.strTeamType === "National" || team.national === true,
+    logo: team.strBadge || team.logo,
+    source: "TheSportsDB",
+    resolvedAt
+  });
+}
+
+function eventTeamMedia(event = {}, side = "home", resolvedAt = new Date().toISOString()) {
+  const home = side === "home";
+  return theSportsDbTeamMedia({
+    idTeam: home ? event.idHomeTeam : event.idAwayTeam,
+    strTeam: home ? event.strHomeTeam : event.strAwayTeam,
+    strBadge: home ? event.strHomeTeamBadge : event.strAwayTeamBadge,
+    strCountry: event.strCountry
+  }, resolvedAt);
+}
+
+function catalogTeams(cache = {}) {
+  cache.teams ||= {};
+  for (const entry of Object.values(cache.searches || {})) {
+    for (const candidate of Array.isArray(entry?.results) ? entry.results : []) {
+      const media = normalizeTeamMedia(candidate);
+      if (media) cache.teams[String(media.id)] = media;
+    }
+  }
+  return cache.teams;
+}
+
+function rememberTeamMedia(cache = {}, values = []) {
+  const teams = catalogTeams(cache);
+  for (const value of values) {
+    const media = normalizeTeamMedia(value);
+    if (media) teams[String(media.id)] = media;
+  }
+  const ordered = Object.values(teams)
+    .sort((left, right) => Date.parse(right.resolvedAt || "") - Date.parse(left.resolvedAt || ""))
+    .slice(0, TEAM_CATALOG_MAX_ITEMS);
+  cache.teams = Object.fromEntries(ordered.map((team) => [String(team.id), team]));
+  return cache;
+}
+
+function rememberTeamsFromEvents(cache = {}, events = [], resolvedAt = new Date().toISOString()) {
+  const media = events.flatMap((event) => [
+    eventTeamMedia(event, "home", resolvedAt),
+    eventTeamMedia(event, "away", resolvedAt)
+  ]).filter(Boolean);
+  return rememberTeamMedia(cache, media);
 }
 
 function levenshtein(left = "", right = "") {
@@ -72,121 +152,65 @@ function levenshtein(left = "", right = "") {
 }
 
 function teamSearchScore(team, query) {
-  const normalizedQuery = normalizeTeamSearch(searchAliases[normalizeTeamSearch(query)] || transliterateTeamSearch(query));
-  const candidates = [team.name, team.code, team.country].map((value) => normalizeTeamSearch(value)).filter(Boolean);
+  const normalized = normalizeTeamSearch(query);
+  const translated = searchAliases[normalized] || transliterateTeamSearch(normalized);
+  const candidates = [team.name, team.code, team.country]
+    .flatMap((value) => [normalizeTeamSearch(value), transliterateTeamSearch(value)])
+    .filter(Boolean);
   return Math.min(...candidates.map((candidate) => {
-    if (candidate === normalizedQuery) return 0;
-    if (candidate.startsWith(normalizedQuery) || normalizedQuery.startsWith(candidate)) return 1;
-    if (candidate.includes(normalizedQuery) || normalizedQuery.includes(candidate)) return 2;
-    return 3 + levenshtein(candidate, normalizedQuery) / Math.max(candidate.length, normalizedQuery.length, 1);
+    if (candidate === translated || candidate === normalized) return 0;
+    if (candidate.startsWith(translated) || translated.startsWith(candidate)) return 1;
+    if (candidate.includes(translated) || translated.includes(candidate)) return 2;
+    return 3 + levenshtein(candidate, translated) / Math.max(candidate.length, translated.length, 1);
   }));
 }
 
-function normalizeTeamMedia(value = {}) {
-  if (!value || typeof value !== "object") return null;
-  const id = Number(value.id);
-  if (!Number.isInteger(id) || id <= 0) return null;
-  return {
-    id,
-    name: String(value.name || "").trim().slice(0, 120),
-    code: String(value.code || "").trim().slice(0, 12),
-    country: String(value.country || "").trim().slice(0, 80),
-    national: Boolean(value.national),
-    logo: `${API_FOOTBALL_MEDIA_ORIGIN}/football/teams/${id}.png`,
-    source: "API-Football",
-    resolvedAt: String(value.resolvedAt || new Date().toISOString())
-  };
-}
-
-function normalizeApiTeam(item = {}) {
-  return normalizeTeamMedia({
-    id: item.team?.id,
-    name: item.team?.name,
-    code: item.team?.code,
-    country: item.team?.country,
-    national: item.team?.national,
-    resolvedAt: new Date().toISOString()
-  });
-}
-
-async function fetchApiFootballTeams(term, apiKey, fetchImpl, requestImpl) {
-  if (requestImpl) {
-    const payload = await requestImpl(term);
-    return (Array.isArray(payload?.response) ? payload.response : []).map(normalizeApiTeam).filter(Boolean);
-  }
-  const url = new URL("/teams", API_FOOTBALL_BASE_URL);
-  url.searchParams.set("search", term);
-  const response = await fetchImpl(url, {
-    headers: { Accept: "application/json", "x-apisports-key": apiKey }
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`API-Football върна грешка ${response.status}.`);
-  const apiErrors = payload.errors && (Array.isArray(payload.errors) ? payload.errors.length : Object.keys(payload.errors).length);
-  if (apiErrors) throw new Error("API-Football не прие заявката.");
-  return (Array.isArray(payload.response) ? payload.response : []).map(normalizeApiTeam).filter(Boolean);
-}
-
-async function searchApiFootballTeams(query, options = {}) {
+function searchTeamMediaCatalog(query, options = {}) {
   const cleanQuery = String(query || "").trim().slice(0, 80);
   if (normalizeTeamSearch(cleanQuery).length < 3) throw new Error("Въведи поне 3 символа за търсене.");
-
-  const now = Number(options.now || Date.now());
   const cache = options.cache && typeof options.cache === "object" ? options.cache : {};
+  const results = Object.values(catalogTeams(cache))
+    .map(normalizeTeamMedia)
+    .filter(Boolean)
+    .map((team) => ({ team, score: teamSearchScore(team, cleanQuery) }))
+    .filter(({ score }) => score < 3.75)
+    .sort((left, right) => left.score - right.score || left.team.name.localeCompare(right.team.name, "bg"))
+    .slice(0, 8)
+    .map(({ team }) => team);
+  return { results, cache, cacheHit: true, catalogSize: Object.keys(cache.teams || {}).length };
+}
+
+function cachedTeamMediaSearch(cache = {}, query = "") {
+  const key = normalizeTeamSearch(query);
+  const entry = cache.searches?.[key];
+  if (!entry || !Array.isArray(entry.results)) return null;
+  return entry.results.map(normalizeTeamMedia).filter(Boolean);
+}
+
+function rememberTeamMediaSearch(cache = {}, query = "", values = [], resolvedAt = new Date().toISOString()) {
+  const key = normalizeTeamSearch(query);
+  const results = values.map(normalizeTeamMedia).filter(Boolean);
+  rememberTeamMedia(cache, results);
   cache.searches ||= {};
-  const terms = apiFootballSearchTerms(cleanQuery);
-  const cacheKey = normalizeTeamSearch(terms[0] || cleanQuery);
-  const cacheKeys = [...new Set([
-    normalizeTeamSearch(cleanQuery),
-    cacheKey,
-    transliterateTeamSearch(cleanQuery)
-  ].filter(Boolean))];
-  const cached = cacheKeys
-    .map((key) => cache.searches[key])
-    .find((entry) => entry && Array.isArray(entry.results));
-  if (cached && Number(cached.expiresAt) > now && Array.isArray(cached.results)) {
-    return { results: cached.results.map(normalizeTeamMedia).filter(Boolean), cache, cacheHit: true };
-  }
-
-  if (!options.apiKey) {
-    if (cached?.results?.length) return { results: cached.results.map(normalizeTeamMedia).filter(Boolean), cache, cacheHit: true, stale: true };
-    const error = new Error("API-Football не е конфигуриран. Добави API_FOOTBALL_KEY в environment variables.");
-    error.code = "API_FOOTBALL_NOT_CONFIGURED";
-    throw error;
-  }
-
-  let results = [];
-  let lastError = null;
-  for (const term of terms) {
-    try {
-      results = await fetchApiFootballTeams(term, options.apiKey, options.fetchImpl || fetch, options.requestImpl);
-      if (results.length) break;
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  if (!results.length && lastError) {
-    if (cached?.results?.length) return { results: cached.results.map(normalizeTeamMedia).filter(Boolean), cache, cacheHit: true, stale: true };
-    throw lastError;
-  }
-
-  results = [...new Map(results.map((team) => [team.id, team])).values()]
-    .sort((left, right) => teamSearchScore(left, cleanQuery) - teamSearchScore(right, cleanQuery))
-    .slice(0, 8);
-  cache.searches[cacheKey] = {
-    query: cleanQuery,
-    cachedAt: new Date(now).toISOString(),
-    expiresAt: now + TEAM_SEARCH_CACHE_TTL,
-    results
-  };
-  return { results, cache, cacheHit: false };
+  cache.searches[key] = { results, resolvedAt };
+  cache.searches = Object.fromEntries(Object.entries(cache.searches)
+    .sort(([, left], [, right]) => Date.parse(right?.resolvedAt || "") - Date.parse(left?.resolvedAt || ""))
+    .slice(0, TEAM_SEARCH_CACHE_MAX_ITEMS));
+  return results;
 }
 
 module.exports = {
-  API_FOOTBALL_BASE_URL,
-  TEAM_SEARCH_CACHE_TTL,
-  apiFootballSearchTerms,
+  TEAM_CATALOG_MAX_ITEMS,
+  TEAM_SEARCH_CACHE_MAX_ITEMS,
+  cachedTeamMediaSearch,
+  eventTeamMedia,
   normalizeTeamMedia,
   normalizeTeamSearch,
-  searchApiFootballTeams,
+  rememberTeamMedia,
+  rememberTeamMediaSearch,
+  rememberTeamsFromEvents,
+  safeTeamLogo,
+  searchTeamMediaCatalog,
+  theSportsDbTeamMedia,
   transliterateTeamSearch
 };

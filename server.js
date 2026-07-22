@@ -5,9 +5,16 @@ const path = require("path");
 const QRCode = require("qrcode");
 const { sendMessageEmail } = require("./server/message-email");
 const { readUtf8Body } = require("./server/request-body");
-const { apiFootballUsageSummary, requestApiFootball } = require("./server/api-football");
+const { requestTheSportsDb, theSportsDbUsageSummary } = require("./server/the-sports-db");
 const { synchronizeFootballContent } = require("./server/football-sync");
-const { searchApiFootballTeams } = require("./server/team-media");
+const {
+  cachedTeamMediaSearch,
+  normalizeTeamSearch,
+  rememberTeamMediaSearch,
+  rememberTeamsFromEvents,
+  searchTeamMediaCatalog,
+  theSportsDbTeamMedia
+} = require("./server/team-media");
 const {
   PRESS_NEWS_CACHE_VERSION,
   articleLooksLikeFootball,
@@ -67,9 +74,7 @@ const resendApiKey = String(process.env.RESEND_API_KEY || "").trim();
 const messageEmailFrom = String(process.env.MESSAGE_EMAIL_FROM || "").trim();
 const configuredGaMeasurementId = String(process.env.GA_MEASUREMENT_ID || "").trim().toUpperCase();
 const gaMeasurementId = /^G-[A-Z0-9]+$/.test(configuredGaMeasurementId) ? configuredGaMeasurementId : "";
-const apiFootballKey = String(process.env.API_FOOTBALL_KEY || "").trim();
-const apiFootballFixtureSyncEnabled = String(process.env.API_FOOTBALL_FIXTURE_SYNC_ENABLED || "").trim().toLowerCase() === "true";
-const apiFootballSyncSecret = String(process.env.API_FOOTBALL_SYNC_SECRET || "").trim();
+const footballSyncSecret = String(process.env.FOOTBALL_SYNC_SECRET || process.env.API_FOOTBALL_SYNC_SECRET || "").trim();
 const newsdataApiKey = String(process.env.NEWSDATA_API_KEY || "").trim();
 const pressNewsQuery = String(process.env.NEWSDATA_QUERY || "футбол").trim().slice(0, 100) || "футбол";
 const pressNewsBulgarianQuery = String(process.env.NEWSDATA_BULGARIAN_QUERY || "Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор").trim().slice(0, 100);
@@ -89,7 +94,7 @@ const giveawayRateLimits = new Map();
 const leagueIdentityRateLimits = new Map();
 let predictionLeagueMutation = Promise.resolve();
 let voteStoreMutation = Promise.resolve();
-let apiFootballStateMutation = Promise.resolve();
+let sportsDataStateMutation = Promise.resolve();
 let footballSyncMutation = Promise.resolve();
 let pressNewsRefreshPromise = null;
 
@@ -214,51 +219,45 @@ async function writeJsonFile(file, value, storageKey = path.basename(file, ".jso
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function withApiFootballState(operation) {
-  const run = apiFootballStateMutation.then(async () => {
-    const state = await readJsonFile(teamMediaCacheFile, { searches: {}, usage: {} }, "teamMediaCache");
+function withSportsDataState(operation) {
+  const run = sportsDataStateMutation.then(async () => {
+    const state = await readJsonFile(teamMediaCacheFile, { searches: {}, teams: {}, usage: {} }, "teamMediaCache");
     state.searches ||= {};
+    state.teams ||= {};
     try {
       return await operation(state);
     } finally {
       await writeJsonFile(teamMediaCacheFile, state, "teamMediaCache");
     }
   });
-  apiFootballStateMutation = run.catch(() => undefined);
+  sportsDataStateMutation = run.catch(() => undefined);
   return run;
 }
 
-function apiFootballRequest(state, endpoint, parameters = {}) {
-  return requestApiFootball(endpoint, parameters, {
-    apiKey: apiFootballKey,
-    state
-  });
+async function theSportsDbRequest(state, endpoint, parameters = {}) {
+  const result = await requestTheSportsDb(endpoint, parameters, { state });
+  if (result.events.length) rememberTeamsFromEvents(state, result.events);
+  return result;
 }
 
 function queueFootballSync(options = {}) {
   const run = footballSyncMutation.then(async () => {
-    if (!apiFootballFixtureSyncEnabled) {
-      const error = new Error("Автоматичното добавяне на мачове е изключено за текущия API-Football план.");
-      error.code = "API_FOOTBALL_FIXTURE_SYNC_DISABLED";
-      error.statusCode = 503;
-      throw error;
-    }
-    if (!apiFootballKey) {
-      const error = new Error("API-Football не е конфигуриран. Добави API_FOOTBALL_KEY в environment variables.");
-      error.code = "API_FOOTBALL_NOT_CONFIGURED";
-      error.statusCode = 503;
-      throw error;
-    }
     const content = await readContent();
+    const leagueStore = await readLeagueStore();
+    const archivedEventKeys = new Set(leagueStore.archivedMatches
+      .filter((match) => Number.isInteger(Number(match.externalEventId)) && Number(match.externalEventId) > 0)
+      .map((match) => `${normalizeLeagueId(match.leagueId)}:${Number(match.externalEventId)}`));
     let result;
     let usage;
-    await withApiFootballState(async (state) => {
+    await withSportsDataState(async (state) => {
       result = await synchronizeFootballContent(content, {
         leagueId: String(options.leagueId || ""),
+        round: Number(options.round) || undefined,
         forceSchedule: options.forceSchedule === true,
-        request: (endpoint, parameters) => apiFootballRequest(state, endpoint, parameters)
+        archivedEventKeys,
+        request: (endpoint, parameters) => theSportsDbRequest(state, endpoint, parameters)
       });
-      usage = apiFootballUsageSummary(state);
+      usage = theSportsDbUsageSummary(state);
     });
     if (result.changed) await writeContent(result.content);
     return { ...result, usage };
@@ -268,10 +267,10 @@ function queueFootballSync(options = {}) {
 }
 
 function internalFootballSyncAuthorized(request) {
-  if (!apiFootballSyncSecret) return false;
+  if (!footballSyncSecret) return false;
   const authorization = String(request.headers.authorization || "");
   const provided = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-  const expectedBuffer = Buffer.from(apiFootballSyncSecret);
+  const expectedBuffer = Buffer.from(footballSyncSecret);
   const providedBuffer = Buffer.from(provided);
   return providedBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(providedBuffer, expectedBuffer);
 }
@@ -281,7 +280,9 @@ function footballSyncMessage(summary = {}) {
   if (summary.added) parts.push(`${summary.added} добавени`);
   if (summary.updated) parts.push(`${summary.updated} обновени`);
   if (summary.settled) parts.push(`${summary.settled} приключени`);
-  return parts.length ? parts.join(" · ") : "Няма нови или променени мачове.";
+  if (summary.archived) parts.push(`${summary.archived} архивирани`);
+  if (summary.advanced) parts.push(`преминаване към следващ кръг`);
+  return parts.length ? parts.join(" · ") : summary.apiCalls ? "Кръгът е проверен. Няма нови или променени мачове." : "Няма активна TheSportsDB лига за синхронизиране.";
 }
 
 async function readPressNews() {
@@ -1042,10 +1043,11 @@ async function handleRequest(request, response) {
 
   if (url.pathname === "/api/football/status" && request.method === "GET") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
-    const usage = await withApiFootballState(async (state) => apiFootballUsageSummary(state));
+    const usage = await withSportsDataState(async (state) => theSportsDbUsageSummary(state));
     return sendJson(response, 200, {
-      configured: Boolean(apiFootballKey),
-      fixtureSyncEnabled: apiFootballFixtureSyncEnabled,
+      configured: true,
+      fixtureSyncEnabled: true,
+      provider: "TheSportsDB Free",
       usage
     }, { "Cache-Control": "no-store, max-age=0" });
   }
@@ -1054,7 +1056,7 @@ async function handleRequest(request, response) {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const payload = JSON.parse(await readBody(request) || "{}");
     try {
-      const result = await queueFootballSync({ leagueId: payload.leagueId, forceSchedule: true });
+      const result = await queueFootballSync({ leagueId: payload.leagueId, round: payload.round, forceSchedule: true });
       return sendJson(response, 200, {
         content: result.content,
         summary: result.summary,
@@ -1080,18 +1082,38 @@ async function handleRequest(request, response) {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const query = String(url.searchParams.get("q") || "").trim();
     try {
-      const result = await withApiFootballState(async (cache) => {
-        const searchResult = await searchApiFootballTeams(query, {
-          apiKey: apiFootballKey,
-          cache,
-          requestImpl: (term) => apiFootballRequest(cache, "/teams", { search: term })
-        });
-        return { ...searchResult, usage: apiFootballUsageSummary(cache) };
+      const result = await withSportsDataState(async (cache) => {
+        const cachedResults = cachedTeamMediaSearch(cache, query);
+        if (cachedResults) {
+          return { results: cachedResults, cacheHit: true, catalogSize: Object.keys(cache.teams || {}).length, usage: theSportsDbUsageSummary(cache) };
+        }
+        const searchResult = searchTeamMediaCatalog(query, { cache });
+        const normalizedQuery = normalizeTeamSearch(query);
+        const exactLocalResults = searchResult.results.filter((team) =>
+          normalizeTeamSearch(team.name) === normalizedQuery || normalizeTeamSearch(team.code) === normalizedQuery
+        );
+        if (exactLocalResults.length) {
+          const results = rememberTeamMediaSearch(cache, query, exactLocalResults);
+          return { results, cacheHit: true, catalogSize: Object.keys(cache.teams || {}).length, usage: theSportsDbUsageSummary(cache) };
+        }
+        let providerResults = [];
+        try {
+          const response = await requestTheSportsDb("searchteams.php", { t: query }, { state: cache });
+          providerResults = response.teams
+            .filter((team) => String(team.strSport || "").toLowerCase() === "soccer")
+            .map((team) => theSportsDbTeamMedia(team))
+            .filter(Boolean);
+        } catch (error) {
+          if (!searchResult.results.length) throw error;
+        }
+        const combined = [...new Map([...providerResults, ...searchResult.results].map((team) => [String(team.id), team])).values()];
+        const results = rememberTeamMediaSearch(cache, query, combined);
+        return { results, cacheHit: false, catalogSize: Object.keys(cache.teams || {}).length, usage: theSportsDbUsageSummary(cache) };
       });
       return sendJson(response, 200, {
         results: result.results,
         cached: Boolean(result.cacheHit),
-        stale: Boolean(result.stale),
+        catalogSize: result.catalogSize,
         usage: result.usage
       }, { "Cache-Control": "no-store, max-age=0" });
     } catch (error) {
@@ -1669,9 +1691,9 @@ http
   })
   .listen(port, () => {
     console.log(`D.I.S site running at http://127.0.0.1:${port}`);
-    if (apiFootballKey && apiFootballFixtureSyncEnabled) {
+    {
       const syncFootball = () => queueFootballSync().catch((error) => {
-        console.warn(`Scheduled API-Football sync failed: ${error.message}`);
+        console.warn(`Scheduled TheSportsDB sync failed: ${error.message}`);
       });
       const initialFootballSyncTimer = setTimeout(syncFootball, 45_000);
       initialFootballSyncTimer.unref();

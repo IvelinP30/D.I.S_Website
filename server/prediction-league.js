@@ -169,9 +169,9 @@ function resultForMatch(match = {}) {
 
 function matchStatus(match = {}, now = Date.now()) {
   if (resultForMatch(match)) return "settled";
-  const apiStatus = String(match.apiStatus || "").toUpperCase();
-  if (["CANC", "ABD", "AWD", "WO"].includes(apiStatus)) return "cancelled";
-  if (apiStatus === "PST") return "postponed";
+  const externalStatus = String(match.externalStatus || match.apiStatus || "").toUpperCase();
+  if (["CANC", "CANCELLED", "ABD", "AWD", "WO"].includes(externalStatus)) return "cancelled";
+  if (["PST", "POSTPONED"].includes(externalStatus)) return "postponed";
   const kickoff = match.kickoffAt ? new Date(match.kickoffAt).getTime() : NaN;
   return Number.isFinite(kickoff) && kickoff <= Number(now) ? "locked" : "open";
 }
@@ -217,21 +217,28 @@ function periodLabels(now = Date.now()) {
 }
 
 function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
-  const apiLeagueId = Number(value.apiFootball?.leagueId);
-  const apiSeason = Number(value.apiFootball?.season);
+  const hasTheSportsDbSettings = Boolean(value.theSportsDb && typeof value.theSportsDb === "object");
+  const providerSettings = hasTheSportsDbSettings ? value.theSportsDb : value.apiFootball || {};
+  const providerLeagueId = Number(providerSettings.leagueId);
+  const rawSeason = String(providerSettings.season || "").trim();
+  const providerSeason = /^\d{4}-\d{4}$/.test(rawSeason)
+    ? rawSeason
+    : /^\d{4}$/.test(rawSeason) ? `${rawSeason}-${Number(rawSeason) + 1}` : "";
+  const currentRound = Number(providerSettings.currentRound || 1);
   return {
     id: normalizeLeagueId(value.id, fallbackId),
     enabled: value.enabled !== false,
     title: String(value.title || "D.I.S Лига на прогнозите").trim(),
     description: String(value.description || "Прогнозирай резултата, печели точки и се изкачи в седмичната класация.").trim(),
     seasonLabel: String(value.seasonLabel || "D.I.S Сезон 2026/27").trim(),
-    apiFootball: {
-      enabled: value.apiFootball?.enabled === true,
-      leagueId: Number.isInteger(apiLeagueId) && apiLeagueId > 0 ? apiLeagueId : null,
-      season: Number.isInteger(apiSeason) && apiSeason >= 2000 && apiSeason <= 2100 ? apiSeason : null,
-      daysAhead: Math.max(1, Math.min(14, Number(value.apiFootball?.daysAhead) || 7)),
-      lastScheduleSyncAt: String(value.apiFootball?.lastScheduleSyncAt || ""),
-      lastResultSyncAt: String(value.apiFootball?.lastResultSyncAt || "")
+    theSportsDb: {
+      enabled: hasTheSportsDbSettings && providerSettings.enabled === true,
+      leagueId: hasTheSportsDbSettings && Number.isInteger(providerLeagueId) && providerLeagueId > 0 ? providerLeagueId : null,
+      season: providerSeason,
+      currentRound: Number.isInteger(currentRound) ? Math.max(1, Math.min(100, currentRound)) : 1,
+      daysAhead: Math.max(1, Math.min(14, Number(providerSettings.daysAhead) || 14)),
+      lastScheduleSyncAt: String(providerSettings.lastScheduleSyncAt || ""),
+      lastResultSyncAt: String(providerSettings.lastResultSyncAt || "")
     },
     trophies: normalizeTrophyDefinitions(value.trophies),
     matches: (Array.isArray(value.matches) ? value.matches : [])
@@ -250,9 +257,16 @@ function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
         apiFixtureId: Number.isInteger(Number(match.apiFixtureId)) && Number(match.apiFixtureId) > 0 ? Number(match.apiFixtureId) : null,
         apiStatus: String(match.apiStatus || ""),
         apiSyncedAt: String(match.apiSyncedAt || ""),
+        externalProvider: String(match.externalProvider || ""),
+        externalEventId: Number.isInteger(Number(match.externalEventId)) && Number(match.externalEventId) > 0 ? Number(match.externalEventId) : null,
+        externalRound: Number.isInteger(Number(match.externalRound)) && Number(match.externalRound) > 0 ? Number(match.externalRound) : null,
+        externalStatus: String(match.externalStatus || match.apiStatus || ""),
+        externalSyncedAt: String(match.externalSyncedAt || match.apiSyncedAt || ""),
+        legacyApiFootballId: Number.isInteger(Number(match.legacyApiFootballId)) && Number(match.legacyApiFootballId) > 0 ? Number(match.legacyApiFootballId) : null,
         resultSource: String(match.resultSource || ""),
         manualResult: match.manualResult === true,
-        apiDetailsLocked: match.apiDetailsLocked === true
+        externalDetailsLocked: match.externalDetailsLocked === true || match.apiDetailsLocked === true,
+        apiDetailsLocked: match.externalDetailsLocked === true || match.apiDetailsLocked === true
       }))
   };
 }
@@ -466,6 +480,7 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
         awayTeamMedia: match.awayTeamMedia,
         kickoffAt: match.kickoffAt,
         isDerby: match.isDerby,
+        dataSource: match.externalProvider === "TheSportsDB" ? "TheSportsDB" : "",
         status: matchStatus(match, now),
         result: resultForMatch(match),
         myPrediction: prediction ? {
