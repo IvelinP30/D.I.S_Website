@@ -65,3 +65,29 @@ test("team search shares cached aliases across Cyrillic and Latin queries", asyn
   assert.equal(second.cacheHit, true);
   assert.equal(second.results[0].id, 9);
 });
+
+test("team search reads a Cyrillic cache key before requiring or calling API-Football", async () => {
+  const cachedTeam = { id: 634, name: "Botev Plovdiv", country: "Bulgaria", national: false };
+  const cache = {
+    searches: {
+      "ботев пловдив": {
+        expiresAt: 10_000,
+        results: [cachedTeam]
+      }
+    }
+  };
+  let requests = 0;
+
+  const result = await searchApiFootballTeams("Ботев Пловдив", {
+    cache,
+    now: 1_000,
+    requestImpl: async () => {
+      requests += 1;
+      throw new Error("API-Football should not be called");
+    }
+  });
+
+  assert.equal(result.cacheHit, true);
+  assert.equal(result.results[0].id, 634);
+  assert.equal(requests, 0);
+});

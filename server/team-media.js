@@ -129,20 +129,29 @@ async function fetchApiFootballTeams(term, apiKey, fetchImpl, requestImpl) {
 async function searchApiFootballTeams(query, options = {}) {
   const cleanQuery = String(query || "").trim().slice(0, 80);
   if (normalizeTeamSearch(cleanQuery).length < 3) throw new Error("Въведи поне 3 символа за търсене.");
-  if (!options.apiKey) {
-    const error = new Error("API-Football не е конфигуриран. Добави API_FOOTBALL_KEY в environment variables.");
-    error.code = "API_FOOTBALL_NOT_CONFIGURED";
-    throw error;
-  }
 
   const now = Number(options.now || Date.now());
   const cache = options.cache && typeof options.cache === "object" ? options.cache : {};
   cache.searches ||= {};
   const terms = apiFootballSearchTerms(cleanQuery);
   const cacheKey = normalizeTeamSearch(terms[0] || cleanQuery);
-  const cached = cache.searches[cacheKey];
+  const cacheKeys = [...new Set([
+    normalizeTeamSearch(cleanQuery),
+    cacheKey,
+    transliterateTeamSearch(cleanQuery)
+  ].filter(Boolean))];
+  const cached = cacheKeys
+    .map((key) => cache.searches[key])
+    .find((entry) => entry && Array.isArray(entry.results));
   if (cached && Number(cached.expiresAt) > now && Array.isArray(cached.results)) {
     return { results: cached.results.map(normalizeTeamMedia).filter(Boolean), cache, cacheHit: true };
+  }
+
+  if (!options.apiKey) {
+    if (cached?.results?.length) return { results: cached.results.map(normalizeTeamMedia).filter(Boolean), cache, cacheHit: true, stale: true };
+    const error = new Error("API-Football не е конфигуриран. Добави API_FOOTBALL_KEY в environment variables.");
+    error.code = "API_FOOTBALL_NOT_CONFIGURED";
+    throw error;
   }
 
   let results = [];
