@@ -676,7 +676,11 @@ function showLeaguePlayerTooltip(trigger, { pinned = false } = {}) {
   leaguePlayerTooltip.innerHTML = `
     <div class="league-player-tooltip-heading">
       ${leagueLevelMarkup({ value: data.level, name: data.levelName, tier: data.levelTier, tierLabel: data.levelTierLabel })}
-      <div><span>Ниво ${escapeHTML(data.level)}</span><strong>${escapeHTML(data.nickname)}</strong><small>${escapeHTML(data.levelName || data.levelTierLabel)}</small>${specialStyle ? leagueSpecialBadgeMarkup(specialStyle) : (isHost ? leagueHostBadgeMarkup() : "")}</div>
+      <div>
+        <span>Ниво ${escapeHTML(data.level)}</span>
+        <div class="league-player-tooltip-identity"><strong>${escapeHTML(data.nickname)}</strong>${specialStyle ? leagueSpecialBadgeMarkup(specialStyle) : (isHost ? leagueHostBadgeMarkup() : "")}</div>
+        <small>${escapeHTML(data.levelName || data.levelTierLabel)}</small>
+      </div>
     </div>
     ${data.trophyLabel ? `<div class="league-player-tooltip-trophy">${leagueBadgeDisplayMarkup({ label: data.trophyLabel, tier: data.trophyTier })}<small>${escapeHTML(data.trophyDescription)}</small></div>` : ""}
     <div class="league-player-tooltip-ranks">

@@ -5586,6 +5586,13 @@ html.pwa-refreshing body {
 .league-player-tooltip-heading strong { font-size: 1.1rem; }
 .league-player-tooltip-heading small { color: var(--muted); font-size: 0.66rem; }
 
+.league-player-tooltip-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
 .league-profile-heading h3 > .league-host-badge,
 .league-player-tooltip-heading .league-host-badge {
   color: #f4d44d;
