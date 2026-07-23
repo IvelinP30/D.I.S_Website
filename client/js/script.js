@@ -491,6 +491,13 @@ let leagueTrophyTooltip = null;
 let leagueTrophyGlobalEventsBound = false;
 let leagueTrophyActiveTrigger = null;
 let leagueTrophyPinnedTrigger = null;
+let leagueTrophyHoverTimer = null;
+let leaguePlayerTooltip = null;
+let leaguePlayerGlobalEventsBound = false;
+let leaguePlayerActiveTrigger = null;
+let leaguePlayerPinnedTrigger = null;
+let leaguePlayerHoverTimer = null;
+const leagueTooltipHoverDelay = 280;
 
 function leaguePrimaryBadge(badges = []) {
   return [...badges].sort((left, right) => (leagueTrophyTierOrder[right.tier] || 0) - (leagueTrophyTierOrder[left.tier] || 0))[0];
@@ -504,7 +511,221 @@ function leagueBadgeMarkup(badge = {}, compact = false) {
   return `<span class="league-badge tier-${tier} ${compact ? "is-compact" : ""}" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false" data-league-trophy data-trophy-label="${escapeAttribute(label)}" data-trophy-description="${escapeAttribute(description)}" data-trophy-tier="${escapeAttribute(tierLabel)}" aria-label="${escapeAttribute(`${label}. ${description} Ниво: ${tierLabel}.`)}"><i aria-hidden="true"></i><span>${escapeHTML(label)}</span></span>`;
 }
 
+const leagueLevelTierStarts = Object.freeze({ starter: 1, bronze: 5, silver: 10, gold: 20, platinum: 30, diamond: 40, legendary: 50 });
+const leagueLevelColors = Object.freeze({
+  starter: "#6fcf8b",
+  bronze: "#df9a62",
+  silver: "#dce8f5",
+  gold: "#f4d44d",
+  platinum: "#64dcff",
+  diamond: "#9b8cff",
+  legendary: "#df9cff"
+});
+let leagueLevelSvgSequence = 0;
+const leagueLevelFramePaths = Object.freeze({
+  starter: "M50 5 A45 45 0 1 1 49.9 5 Z",
+  bronze: "M28 6 L72 6 L94 28 L94 72 L72 94 L28 94 L6 72 L6 28 Z",
+  silver: "M50 4 L87 16 L93 48 Q91 80 50 97 Q9 80 7 48 L13 16 Z",
+  gold: "M50 3 L78 11 L96 35 L90 72 L70 92 L50 99 L30 92 L10 72 L4 35 L22 11 Z",
+  platinum: "M50 2 L73 8 L94 26 L98 53 L84 80 L50 99 L16 80 L2 53 L6 26 L27 8 Z",
+  diamond: "M50 1 L66 10 L82 7 L91 24 L99 50 L90 76 L74 93 L50 99 L26 93 L10 76 L1 50 L9 24 L18 7 L34 10 Z",
+  legendary: "M50 1 L62 12 L81 6 L86 26 L99 50 L86 74 L94 94 L72 87 L50 99 L28 87 L6 94 L14 72 L1 50 L14 28 L6 6 L38 12 Z"
+});
+
+function leagueLevelVisual(level = {}) {
+  const value = Math.max(1, Number(level.value) || 1);
+  const tiers = new Set(Object.keys(leagueLevelTierStarts));
+  const tier = tiers.has(level.tier) ? level.tier : "starter";
+  const tierStep = Math.max(1, value - leagueLevelTierStarts[tier] + 1);
+  return {
+    value,
+    tier,
+    tierStep,
+    ornamentCount: ((tierStep - 1) % 5) + 1,
+    ornamentBand: Math.min(3, Math.floor((tierStep - 1) / 5)),
+    framePath: leagueLevelFramePaths[tier]
+  };
+}
+
+function leagueLevelSvgMarkup(visual) {
+  const progressX = [32, 41, 50, 59, 68].slice(0, visual.ornamentCount);
+  const progressMarks = progressX.map((x) => {
+    if (visual.tier === "starter") return `<path d="M${x - 3} 91 Q${x} 88 ${x + 3} 91"></path>`;
+    if (visual.tier === "bronze") return `<rect x="${x - 2.5}" y="88.5" width="5" height="5" rx=".8" transform="rotate(45 ${x} 91)"></rect>`;
+    if (visual.tier === "silver") return `<path d="M${x} 86.5 L${x + 1.4} 89.4 L${x + 4.4} 89.8 L${x + 2.1} 91.9 L${x + 2.8} 95 L${x} 93.3 L${x - 2.8} 95 L${x - 2.1} 91.9 L${x - 4.4} 89.8 L${x - 1.4} 89.4 Z"></path>`;
+    if (visual.tier === "gold") return `<path d="M${x} 85 L${x + 1.8} 89 L${x + 6} 89.4 L${x + 2.8} 92.2 L${x + 3.8} 96.5 L${x} 94 L${x - 3.8} 96.5 L${x - 2.8} 92.2 L${x - 6} 89.4 L${x - 1.8} 89 Z"></path>`;
+    if (visual.tier === "platinum") return `<polygon points="${x},85.5 ${x + 4.8},91 ${x},96.5 ${x - 4.8},91"></polygon><path d="M${x} 85.5 L${x} 96.5 M${x - 4.8} 91 L${x + 4.8} 91"></path>`;
+    if (visual.tier === "diamond") return `<polygon points="${x},84 ${x + 5.2},89 ${x + 3.2},96 ${x - 3.2},96 ${x - 5.2},89"></polygon><path d="M${x - 5.2} 89 L${x + 5.2} 89 M${x} 84 L${x - 3.2} 96 M${x} 84 L${x + 3.2} 96"></path>`;
+    return `<path d="M${x} 96 Q${x - 5} 91 ${x} 84 Q${x + 5} 91 ${x} 96 Z M${x} 93 Q${x - 2} 90 ${x} 87 Q${x + 2} 90 ${x} 93 Z"></path>`;
+  }).join("");
+  const bandOne = visual.ornamentBand >= 1
+    ? `<path d="M20 29 Q4 20 -7 34 L5 47 L-9 56 Q4 71 24 67 L31 47 Z"></path><path d="M80 29 Q96 20 107 34 L95 47 L109 56 Q96 71 76 67 L69 47 Z"></path><path class="level-svg-feather" d="M-2 35 L23 42 M-5 55 L23 54 M2 65 L24 60 M102 35 L77 42 M105 55 L77 54 M98 65 L76 60"></path>`
+    : "";
+  const bandTwo = visual.ornamentBand >= 2
+    ? `<path d="M17 25 Q0 20 -7 39 Q6 36 20 47 L27 34 Z"></path><path d="M83 25 Q100 20 107 39 Q94 36 80 47 L73 34 Z"></path><path d="M28 94 L72 94 L65 104 L35 104 Z"></path><path class="level-svg-feather" d="M-1 32 L18 35 M4 27 L21 31 M101 32 L82 35 M96 27 L79 31"></path>`
+    : "";
+  const bandThree = visual.ornamentBand >= 3
+    ? `<path d="M32 10 L37 -5 L48 5 L50 -8 L52 5 L63 -5 L68 10 L58 16 L42 16 Z"></path><circle cx="50" cy="-1" r="3"></circle>`
+    : "";
+  const phaseArt = `${visual.ornamentCount >= 2 ? `<path class="level-svg-phase-fill" d="M27 93 L73 93 L66 107 L34 107 Z"></path>` : ""}${visual.ornamentCount >= 3 ? `<path class="level-svg-phase-fill" d="M13 31 L-8 45 L4 63 L21 51 Z"></path><path class="level-svg-phase-fill" d="M87 31 L108 45 L96 63 L79 51 Z"></path>` : ""}${visual.ornamentCount >= 4 ? `<path class="level-svg-phase-fill" d="M34 10 L50 -9 L66 10 L58 20 L42 20 Z"></path>` : ""}${visual.ornamentCount >= 5 ? `<path class="level-svg-phase-rail" d="${visual.framePath}" transform="translate(50 50) scale(1.13) translate(-50 -50)"></path>` : ""}`;
+  const tierMotifs = {
+    starter: `<g class="level-svg-training-ball"><path d="M50 24 L62 33 L58 47 L42 47 L38 33 Z"></path><path d="M38 33 L25 31 L19 43 L29 54 L42 47 M62 33 L75 31 L81 43 L71 54 L58 47 M29 54 L28 69 L41 77 L50 66 L42 47 M71 54 L72 69 L59 77 L50 66 L58 47"></path><path class="level-svg-stitches" d="M31 25 L34 28 M23 36 L27 38 M20 51 L24 51 M27 64 L31 62 M69 25 L66 28 M77 36 L73 38 M80 51 L76 51 M73 64 L69 62"></path><path class="level-svg-leather-grain" d="M17 27 L22 24 M79 24 L84 28 M15 60 L20 63 M80 63 L85 60 M35 80 L39 83 M61 83 L65 80"></path></g>`,
+    bronze: `<g class="level-svg-rivets"><circle cx="23" cy="27" r="2.5"></circle><circle cx="77" cy="27" r="2.5"></circle><circle cx="23" cy="73" r="2.5"></circle><circle cx="77" cy="73" r="2.5"></circle></g><g class="level-svg-leather"><path d="M18 33 L30 21 M16 48 L39 25 M16 64 L27 53 M82 33 L70 21 M84 48 L61 25 M84 64 L73 53"></path><path class="level-svg-stitches" d="M31 12 L34 16 M42 10 L43 15 M58 10 L57 15 M69 12 L66 16"></path></g><path class="level-svg-plate" d="M28 78 L72 78 L64 89 L36 89 Z"></path>`,
+    silver: `<g class="level-svg-laurel"><path d="M23 70 Q8 50 20 27 M18 61 L9 56 M16 52 L7 46 M18 42 L10 35 M22 33 L17 24"></path><path d="M77 70 Q92 50 80 27 M82 61 L91 56 M84 52 L93 46 M82 42 L90 35 M78 33 L83 24"></path></g><path class="level-svg-crown" d="M41 14 L50 2 L59 14 L50 20 Z"></path><path class="level-svg-metal-cut" d="M32 23 L40 29 M68 23 L60 29 M22 75 L34 68 M78 75 L66 68"></path>`,
+    gold: `<path class="level-svg-crown" d="M31 17 L37 1 L50 12 L63 1 L69 17 L58 23 L42 23 Z"></path><path class="level-svg-gold-star" d="M50 24 L54 34 L65 35 L56 42 L59 53 L50 47 L41 53 L44 42 L35 35 L46 34 Z"></path><g class="level-svg-gold-wings"><path d="M31 37 Q17 26 8 34 L26 45 L9 43 Q14 58 31 57"></path><path d="M69 37 Q83 26 92 34 L74 45 L91 43 Q86 58 69 57"></path><path d="M14 35 L28 43 M13 48 L29 51 M86 35 L72 43 M87 48 L71 51"></path></g>`,
+    platinum: `<path class="level-svg-crystal" d="M50 3 L63 17 L56 32 L44 32 L37 17 Z"></path><g class="level-svg-facets"><polygon points="17,36 31,24 36,44 23,55"></polygon><polygon points="83,36 69,24 64,44 77,55"></polygon><polygon points="22,68 36,57 42,75 30,84"></polygon><polygon points="78,68 64,57 58,75 70,84"></polygon></g><g class="level-svg-rays"><path d="M25 24 L11 11 M75 24 L89 11 M17 50 L1 50 M83 50 L99 50 M29 80 L18 91 M71 80 L82 91"></path></g>`,
+    diamond: `<path class="level-svg-diamond" d="M50 1 L64 17 L57 34 L43 34 L36 17 Z"></path><g class="level-svg-diamond-wings"><path d="M35 35 L16 20 L5 39 L24 50 L7 58 L27 72 L40 55 Z"></path><path d="M65 35 L84 20 L95 39 L76 50 L93 58 L73 72 L60 55 Z"></path><path d="M16 20 L24 50 L7 58 M84 20 L76 50 L93 58"></path></g><path class="level-svg-diamond-base" d="M31 78 L50 92 L69 78 L61 94 L39 94 Z"></path>`,
+    legendary: `<path class="level-svg-crown" d="M25 20 L32 -1 L47 12 L50 -7 L53 12 L68 -1 L75 20 L61 28 L39 28 Z"></path><g class="level-svg-flames"><path d="M22 76 Q-2 57 15 25 Q13 48 30 43 Q19 59 32 70"></path><path d="M78 76 Q102 57 85 25 Q87 48 70 43 Q81 59 68 70"></path></g><path class="level-svg-trophy" d="M39 69 Q50 79 61 69 L58 82 L68 87 L65 92 L35 92 L32 87 L42 82 Z"></path>`
+  };
+  const svgId = `dis-level-${visual.tier}-${visual.value}-${++leagueLevelSvgSequence}`;
+  const tierColor = leagueLevelColors[visual.tier];
+  return `<svg class="league-level-svg" viewBox="-10 -10 120 120" aria-hidden="true" focusable="false">
+    <defs>
+      <linearGradient id="${svgId}-frame" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#ffffff" stop-opacity=".48"></stop>
+        <stop offset=".2" stop-color="${tierColor}" stop-opacity=".78"></stop>
+        <stop offset=".56" stop-color="#05090d" stop-opacity=".95"></stop>
+        <stop offset="1" stop-color="${tierColor}" stop-opacity=".58"></stop>
+      </linearGradient>
+      <radialGradient id="${svgId}-core" cx=".36" cy=".28" r=".78">
+        <stop offset="0" stop-color="#ffffff" stop-opacity=".22"></stop>
+        <stop offset=".34" stop-color="#101921" stop-opacity=".96"></stop>
+        <stop offset="1" stop-color="#020507"></stop>
+      </radialGradient>
+    </defs>
+    <g class="level-svg-band-art">${bandOne}${bandTwo}${bandThree}</g>
+    <g class="level-svg-phase-art">${phaseArt}</g>
+    <path class="level-svg-energy" d="${visual.framePath}" transform="translate(50 50) scale(1.07) translate(-50 -50)"></path>
+    <path class="level-svg-aura" d="${visual.framePath}"></path>
+    <path class="level-svg-frame-back" d="${visual.framePath}"></path>
+    <path class="level-svg-frame" d="${visual.framePath}" style="fill:url(#${svgId}-frame)"></path>
+    <path class="level-svg-frame-inner" d="${visual.framePath}" transform="translate(50 50) scale(.79) translate(-50 -50)"></path>
+    <circle class="level-svg-core" cx="50" cy="50" r="29" style="fill:url(#${svgId}-core)"></circle>
+    <path class="level-svg-shine" d="M29 39 Q50 19 71 39"></path>
+    <path class="level-svg-sheen" d="M12 86 L88 14"></path>
+    ${tierMotifs[visual.tier]}
+    <circle class="level-svg-number-plate" cx="50" cy="50" r="18"></circle>
+    <g class="level-svg-progress">${progressMarks}</g>
+  </svg>`;
+}
+
+function leagueLevelMarkup(level = {}, compact = false) {
+  const visual = leagueLevelVisual(level);
+  const levelName = level.name || level.tierLabel || "Дебютант";
+  return `<span class="league-level tier-${visual.tier} level-band-${visual.ornamentBand} ${compact ? "is-compact" : ""}" aria-label="Ниво ${visual.value}, ${escapeAttribute(levelName)}">${leagueLevelSvgMarkup(visual)}<b>${visual.value}</b></span>`;
+}
+
+function leagueHostBadgeMarkup(compact = false) {
+  return `<span class="league-host-badge ${compact ? "is-compact" : ""}"><i aria-hidden="true">◆</i>D.I.S Водещ</span>`;
+}
+
+function leagueRankLabel(value) {
+  return value ? `#${value}` : "—";
+}
+
+function hideLeaguePlayerTooltip() {
+  window.clearTimeout(leaguePlayerHoverTimer);
+  leaguePlayerHoverTimer = null;
+  leaguePlayerActiveTrigger?.setAttribute("aria-expanded", "false");
+  leaguePlayerActiveTrigger = null;
+  leaguePlayerPinnedTrigger = null;
+  if (!leaguePlayerTooltip) return;
+  leaguePlayerTooltip.classList.remove("is-visible");
+  leaguePlayerTooltip.setAttribute("aria-hidden", "true");
+}
+
+function showLeaguePlayerTooltip(trigger, { pinned = false } = {}) {
+  window.clearTimeout(leaguePlayerHoverTimer);
+  leaguePlayerHoverTimer = null;
+  if (leaguePlayerActiveTrigger && leaguePlayerActiveTrigger !== trigger) {
+    leaguePlayerActiveTrigger.setAttribute("aria-expanded", "false");
+  }
+  leaguePlayerActiveTrigger = trigger;
+  if (pinned) leaguePlayerPinnedTrigger = trigger;
+  trigger.setAttribute("aria-expanded", "true");
+  leaguePlayerTooltip ||= Object.assign(document.createElement("div"), { className: "league-player-tooltip" });
+  if (!leaguePlayerTooltip.isConnected) {
+    leaguePlayerTooltip.setAttribute("role", "tooltip");
+    document.body.appendChild(leaguePlayerTooltip);
+  }
+  const data = trigger.dataset;
+  leaguePlayerTooltip.innerHTML = `
+    <div class="league-player-tooltip-heading">
+      ${leagueLevelMarkup({ value: data.level, name: data.levelName, tier: data.levelTier, tierLabel: data.levelTierLabel })}
+      <div><span>Ниво ${escapeHTML(data.level)}</span><strong>${escapeHTML(data.nickname)}</strong><small>${escapeHTML(data.levelName || data.levelTierLabel)}</small>${data.isHost === "true" ? leagueHostBadgeMarkup(true) : ""}</div>
+    </div>
+    <div class="league-player-tooltip-ranks">
+      <span><b>${escapeHTML(leagueRankLabel(Number(data.rankWeek) || null))}</b>седмица</span>
+      <span><b>${escapeHTML(leagueRankLabel(Number(data.rankMonth) || null))}</b>месец</span>
+      <span><b>${escapeHTML(leagueRankLabel(Number(data.rankSeason) || null))}</b>D.I.S сезон</span>
+    </div>
+    <div class="league-player-tooltip-stats">
+      <span><b>${escapeHTML(data.currentStreak)}</b>текуща серия</span>
+      <span><b>${escapeHTML(data.exactScores)}</b>точни резултати</span>
+      <span><b>${escapeHTML(data.correctOutcomes)}</b>познати мачове</span>
+      <span><b>${escapeHTML(data.globalMatches)}</b>общо участия</span>
+      <span><b>${escapeHTML(data.leagueMatches)}</b>в тази лига</span>
+    </div>
+    <div class="league-player-tooltip-progress"><span style="width:${Math.max(0, Math.min(100, Number(data.levelProgress) || 0))}%"></span></div>
+    <small class="league-player-tooltip-next">Остават ${escapeHTML(data.matchesToNext)} ${Number(data.matchesToNext) === 1 ? "мач" : "мача"} до ниво ${Number(data.level) + 1}</small>`;
+  leaguePlayerTooltip.setAttribute("aria-hidden", "false");
+  leaguePlayerTooltip.style.left = "0px";
+  leaguePlayerTooltip.style.top = "0px";
+  leaguePlayerTooltip.classList.add("is-visible");
+  const triggerRect = trigger.getBoundingClientRect();
+  const tooltipRect = leaguePlayerTooltip.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - tooltipRect.width - 10, Math.max(10, triggerRect.left + triggerRect.width / 2 - tooltipRect.width / 2));
+  const preferredTop = triggerRect.top - tooltipRect.height - 10;
+  const top = preferredTop >= 10 ? preferredTop : Math.min(window.innerHeight - tooltipRect.height - 10, triggerRect.bottom + 10);
+  leaguePlayerTooltip.style.left = `${left}px`;
+  leaguePlayerTooltip.style.top = `${Math.max(10, top)}px`;
+}
+
+function bindLeaguePlayerTooltips(app) {
+  app.querySelectorAll("[data-league-player]").forEach((trigger) => {
+    trigger.addEventListener("mouseenter", () => {
+      if (leaguePlayerPinnedTrigger) return;
+      window.clearTimeout(leaguePlayerHoverTimer);
+      leaguePlayerHoverTimer = window.setTimeout(() => {
+        if (trigger.matches(":hover") && !leaguePlayerPinnedTrigger) showLeaguePlayerTooltip(trigger);
+      }, leagueTooltipHoverDelay);
+    });
+    trigger.addEventListener("mouseleave", () => {
+      if (!leaguePlayerPinnedTrigger) hideLeaguePlayerTooltip();
+    });
+    trigger.addEventListener("focus", () => showLeaguePlayerTooltip(trigger));
+    trigger.addEventListener("blur", () => {
+      if (!leaguePlayerPinnedTrigger) hideLeaguePlayerTooltip();
+    });
+    trigger.addEventListener("click", () => {
+      if (leaguePlayerPinnedTrigger === trigger) hideLeaguePlayerTooltip();
+      else showLeaguePlayerTooltip(trigger, { pinned: true });
+    });
+    trigger.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      trigger.click();
+    });
+  });
+  if (!app.dataset.playerTooltipBound) {
+    app.addEventListener("scroll", hideLeaguePlayerTooltip, true);
+    app.dataset.playerTooltipBound = "true";
+  }
+  if (!leaguePlayerGlobalEventsBound) {
+    window.addEventListener("resize", hideLeaguePlayerTooltip);
+    document.addEventListener("pointerdown", (event) => {
+      if (leaguePlayerPinnedTrigger && !event.target.closest?.("[data-league-player]")) hideLeaguePlayerTooltip();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") hideLeaguePlayerTooltip();
+    });
+    leaguePlayerGlobalEventsBound = true;
+  }
+}
+
 function hideLeagueTrophyTooltip() {
+  window.clearTimeout(leagueTrophyHoverTimer);
+  leagueTrophyHoverTimer = null;
   leagueTrophyActiveTrigger?.setAttribute("aria-expanded", "false");
   leagueTrophyActiveTrigger = null;
   leagueTrophyPinnedTrigger = null;
@@ -514,6 +735,8 @@ function hideLeagueTrophyTooltip() {
 }
 
 function showLeagueTrophyTooltip(trigger, { pinned = false } = {}) {
+  window.clearTimeout(leagueTrophyHoverTimer);
+  leagueTrophyHoverTimer = null;
   if (leagueTrophyActiveTrigger && leagueTrophyActiveTrigger !== trigger) {
     leagueTrophyActiveTrigger.setAttribute("aria-expanded", "false");
   }
@@ -542,7 +765,11 @@ function showLeagueTrophyTooltip(trigger, { pinned = false } = {}) {
 function bindLeagueTrophyTooltips(app) {
   app.querySelectorAll("[data-league-trophy]").forEach((trigger) => {
     trigger.addEventListener("mouseenter", () => {
-      if (!leagueTrophyPinnedTrigger) showLeagueTrophyTooltip(trigger);
+      if (leagueTrophyPinnedTrigger) return;
+      window.clearTimeout(leagueTrophyHoverTimer);
+      leagueTrophyHoverTimer = window.setTimeout(() => {
+        if (trigger.matches(":hover") && !leagueTrophyPinnedTrigger) showLeagueTrophyTooltip(trigger);
+      }, leagueTooltipHoverDelay);
     });
     trigger.addEventListener("mouseleave", () => {
       if (!leagueTrophyPinnedTrigger) hideLeagueTrophyTooltip();
@@ -618,30 +845,33 @@ function teamIdentityMarkup(name, media, className = "") {
   return `<span class="team-identity ${className}">${logo ? `<img src="${escapeAttribute(logo)}" alt="" loading="lazy" referrerpolicy="no-referrer" />` : ""}<span>${escapeHTML(name || "Отбор")}</span></span>`;
 }
 
-function leagueSelectedPeriod(state) {
-  const period = ["week", "month", "season"].includes(predictionLeaguePeriod) ? predictionLeaguePeriod : "week";
-  const labels = { week: "тази седмица", month: "този месец", season: "за сезона" };
-  return { period, label: labels[period], rank: state.me?.ranks?.[period] || null };
-}
-
 function leagueProfileMarkup(state) {
   const me = state.me;
-  const selectedPeriod = leagueSelectedPeriod(state);
   const badges = me.badges?.length
     ? me.badges.map((badge) => leagueBadgeMarkup(badge)).join("")
     : `<span class="league-badge-empty">Първият трофей те чака.</span>`;
+  const matchesToNext = Number(me.level?.matchesToNext) || 0;
   return `
     <article class="league-profile-card">
       <div class="league-profile-heading">
-        <div><span>Общ D.I.S профил</span><h3>${escapeHTML(me.nickname)}</h3><small>${escapeHTML(state.title)} · ${escapeHTML(state.seasonLabel)}</small></div>
+        <div><span>Общ D.I.S профил</span><h3 class="${me.isHost ? "is-host" : ""}">${leagueLevelMarkup(me.level)}<span>${escapeHTML(me.nickname)}</span>${me.isHost ? leagueHostBadgeMarkup() : ""}</h3><small>${escapeHTML(state.title)} · ${escapeHTML(state.seasonLabel)}</small></div>
         <strong>${me.totalPoints}<small>точки</small></strong>
       </div>
+      <div class="league-badges">${badges}</div>
       <div class="league-profile-stats">
-        <div><strong>${selectedPeriod.rank ? `#${selectedPeriod.rank}` : "—"}</strong><span>${selectedPeriod.label}</span></div>
+        <div><strong>${leagueRankLabel(me.ranks.week)}</strong><span>тази седмица</span></div>
+        <div><strong>${leagueRankLabel(me.ranks.month)}</strong><span>този месец</span></div>
+        <div><strong>${leagueRankLabel(me.ranks.season)}</strong><span>D.I.S сезон</span></div>
         <div><strong>${me.currentStreak}</strong><span>текуща серия</span></div>
         <div><strong>${me.exactScores}</strong><span>точни резултати</span></div>
+        <div><strong>${me.correctOutcomes}</strong><span>познати мачове</span></div>
       </div>
-      <div class="league-badges">${badges}</div>
+      <div class="league-level-progress-card">
+        <div><span>Ниво ${me.level.value} · ${escapeHTML(me.level.name)}</span><strong>Остават ${matchesToNext} ${matchesToNext === 1 ? "мач" : "мача"} до ниво ${me.level.value + 1}</strong></div>
+        <div class="league-level-progress"><span style="width:${me.level.progress}%"></span></div>
+        <small>${me.globalCompletedPredictions} общо завършени участия · ${me.completedPredictions} в тази лига</small>
+      </div>
+      <button class="league-profile-share" type="button" data-league-share-profile><span aria-hidden="true">↗</span> Сподели профила</button>
       <details class="league-profile-settings">
         <summary>Промени прякора</summary>
         <form class="league-inline-form" data-league-profile>
@@ -710,6 +940,78 @@ function leagueRecoveryModalMarkup(code) {
     </div>`;
 }
 
+function closeLeagueLevelUp() {
+  const celebration = document.querySelector("[data-league-level-up]");
+  if (!celebration) return;
+  celebration.classList.add("is-leaving");
+  window.setTimeout(() => celebration.remove(), 260);
+}
+
+async function shareLeagueLevelUp(state, button) {
+  const originalLabel = button?.innerHTML;
+  try {
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Създавам картинката…";
+    }
+    const result = await shareLeagueLevelUpImage(state);
+    if (button && result === "shared") button.textContent = "Споделено ✓";
+    if (button && result === "downloaded") button.textContent = "Картинката е свалена ✓";
+  } catch (error) {
+    if (button) button.textContent = "Опитай отново";
+  }
+  if (button) window.setTimeout(() => {
+    button.innerHTML = originalLabel;
+    button.disabled = false;
+  }, 1800);
+}
+
+function showLeagueLevelUp(state) {
+  const me = state.me;
+  closeLeagueLevelUp();
+  const confetti = Array.from({ length: 22 }, (_, index) =>
+    `<i style="--confetti-index:${index};--confetti-x:${(index * 47) % 101}%;--confetti-drift:${(index - 11) * 7}px;--confetti-delay:${(index % 7) * 42}ms" aria-hidden="true"></i>`
+  ).join("");
+  const celebration = document.createElement("div");
+  celebration.className = "league-level-up";
+  celebration.dataset.leagueLevelUp = "";
+  celebration.setAttribute("role", "status");
+  celebration.setAttribute("aria-live", "polite");
+  celebration.innerHTML = `
+    <div class="league-level-up-confetti">${confetti}</div>
+    <div class="league-level-up-card">
+      <button type="button" data-close-level-up aria-label="Затвори">×</button>
+      <span>Ново футболно ниво</span>
+      ${leagueLevelMarkup(me.level)}
+      <strong>Ниво ${me.level.value}</strong>
+      <h3>${escapeHTML(me.level.name)}</h3>
+      <small>${me.level.matchesToNext} ${me.level.matchesToNext === 1 ? "мач" : "мача"} до следващото ниво</small>
+      <button class="league-level-up-share" type="button" data-share-level-up><span aria-hidden="true">↗</span> Сподели нивото</button>
+    </div>`;
+  document.body.appendChild(celebration);
+  celebration.querySelector("[data-close-level-up]")?.addEventListener("click", closeLeagueLevelUp);
+  const shareButton = celebration.querySelector("[data-share-level-up]");
+  shareButton?.addEventListener("click", () => shareLeagueLevelUp(state, shareButton));
+  requestAnimationFrame(() => celebration.classList.add("is-visible"));
+}
+
+function detectLeagueLevelUp(state) {
+  const me = state?.me;
+  if (!me?.level?.value) return;
+  const storageKey = "dis-league-level-seen";
+  const current = { nickname: me.nickname, level: Number(me.level.value) };
+  let previous = null;
+  try {
+    previous = JSON.parse(localStorage.getItem(storageKey) || "null");
+    localStorage.setItem(storageKey, JSON.stringify(current));
+  } catch {
+    return;
+  }
+  if (previous?.nickname === current.nickname && Number(previous.level) < current.level) {
+    showLeagueLevelUp(state);
+  }
+}
+
 function leagueLeaderboardMarkup(state) {
   const period = predictionLeaguePeriod;
   const rows = state.leaderboards?.[period] || [];
@@ -726,7 +1028,30 @@ function leagueLeaderboardMarkup(state) {
         ${rows.length ? rows.slice(0, 50).map((row) => `
           <div class="league-table-row ${state.me?.nickname === row.nickname ? "is-me" : ""}">
             <strong>${row.rank}</strong>
-            <span><b>${escapeHTML(row.nickname)}</b>${row.badges?.length ? leagueBadgeMarkup(leaguePrimaryBadge(row.badges), true) : ""}</span>
+            <span>
+              <span class="league-player-summary" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false"
+                data-league-player
+                data-nickname="${escapeAttribute(row.nickname)}"
+                data-is-host="${row.isHost === true}"
+                data-level="${row.level.value}"
+                data-level-name="${escapeAttribute(row.level.name)}"
+                data-level-tier="${escapeAttribute(row.level.tier)}"
+                data-level-tier-label="${escapeAttribute(row.level.tierLabel)}"
+                data-level-progress="${row.level.progress}"
+                data-matches-to-next="${row.level.matchesToNext}"
+                data-rank-week="${row.ranks.week || ""}"
+                data-rank-month="${row.ranks.month || ""}"
+                data-rank-season="${row.ranks.season || ""}"
+                data-current-streak="${row.currentStreak}"
+                data-exact-scores="${row.totalExactScores}"
+                data-correct-outcomes="${row.totalCorrectOutcomes}"
+                data-global-matches="${row.globalCompletedPredictions}"
+                data-league-matches="${row.leagueCompletedPredictions}"
+                aria-label="${escapeAttribute(`${row.nickname}, ниво ${row.level.value}. Покажи статистика.`)}">
+                ${leagueLevelMarkup(row.level, true)}<b class="${row.isHost ? "is-host" : ""}">${escapeHTML(row.nickname)}</b>${row.isHost ? leagueHostBadgeMarkup(true) : ""}
+              </span>
+              ${row.badges?.length ? leagueBadgeMarkup(leaguePrimaryBadge(row.badges), true) : ""}
+            </span>
             <em>${row.points} т.</em>
           </div>`).join("") : `<div class="league-table-empty">Класацията чака първите прогнози.</div>`}
       </div>
@@ -795,6 +1120,8 @@ function renderPredictionLeagueApp() {
   section.hidden = false;
   setText("[data-league-title]", state.hubTitle || "D.I.S Лиги на прогнозите");
   setText("[data-league-description]", state.hubDescription || state.description || "");
+  hideLeaguePlayerTooltip();
+  hideLeagueTrophyTooltip();
   app.innerHTML = `
     ${predictionLeagueNotice ? `<div class="league-notice">${escapeHTML(predictionLeagueNotice)}</div>` : ""}
     ${predictionLeagueRecoveryCode ? leagueRecoveryModalMarkup(predictionLeagueRecoveryCode) : ""}
@@ -816,6 +1143,8 @@ function renderPredictionLeagueApp() {
   bindPredictionLeagueActions();
   bindLeagueRecoveryModal(app);
   bindLeagueTrophyTooltips(app);
+  bindLeaguePlayerTooltips(app);
+  detectLeagueLevelUp(state);
   const flashedMatchId = predictionLeagueFlashMatchId;
   predictionLeagueFlashMatchId = "";
   if (flashedMatchId) {
@@ -1060,6 +1389,22 @@ function bindPredictionLeagueActions() {
       }, 1600);
     });
   });
+  app.querySelector("[data-league-share-profile]")?.addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const originalLabel = button.textContent;
+    button.disabled = true;
+    button.textContent = "Подготвям…";
+    try {
+      const outcome = await shareLeagueProfile(predictionLeagueState);
+      button.textContent = outcome === "downloaded" ? "Профилът е свален ✓" : originalLabel;
+    } catch (error) {
+      button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
+    }
+    window.setTimeout(() => {
+      button.textContent = originalLabel;
+      button.disabled = false;
+    }, 1600);
+  });
 }
 
 async function renderPredictionLeague() {
@@ -1286,6 +1631,185 @@ function drawCanvasTeamLogo(context, image, x, y, size) {
   context.restore();
 }
 
+function drawCanvasLevelBadge(context, level = {}, x, y, size) {
+  const colors = {
+    starter: "#6fcf8b",
+    bronze: "#df9a62",
+    silver: "#dce8f5",
+    gold: "#f4d44d",
+    platinum: "#64dcff",
+    diamond: "#9b8cff",
+    legendary: "#df9cff"
+  };
+  const visual = leagueLevelVisual(level);
+  const color = colors[visual.tier] || colors.starter;
+  const frame = new Path2D(visual.framePath);
+  const bandPaths = [];
+  if (visual.ornamentBand >= 1) {
+    bandPaths.push(new Path2D("M20 29 Q4 20 -7 34 L5 47 L-9 56 Q4 71 24 67 L31 47 Z"), new Path2D("M80 29 Q96 20 107 34 L95 47 L109 56 Q96 71 76 67 L69 47 Z"));
+  }
+  if (visual.ornamentBand >= 2) {
+    bandPaths.push(new Path2D("M15 28 Q0 28 -5 44 Q8 42 18 49"), new Path2D("M85 28 Q100 28 105 44 Q92 42 82 49"));
+  }
+  if (visual.ornamentBand >= 3) bandPaths.push(new Path2D("M36 9 L42 -2 L50 7 L58 -2 L64 9"));
+  if (visual.ornamentCount >= 2) bandPaths.push(new Path2D("M27 93 L73 93 L66 107 L34 107 Z"));
+  if (visual.ornamentCount >= 3) bandPaths.push(new Path2D("M13 31 L-8 45 L4 63 L21 51 Z"), new Path2D("M87 31 L108 45 L96 63 L79 51 Z"));
+  if (visual.ornamentCount >= 4) bandPaths.push(new Path2D("M34 10 L50 -9 L66 10 L58 20 L42 20 Z"));
+  context.save();
+  context.translate(x, y);
+  context.scale(size / 100, size / 100);
+  context.shadowColor = color;
+  context.shadowBlur = 9;
+  const frameGradient = context.createLinearGradient(8, 5, 92, 96);
+  frameGradient.addColorStop(0, "rgba(255,255,255,0.42)");
+  frameGradient.addColorStop(0.22, color);
+  frameGradient.addColorStop(0.58, "#05090d");
+  frameGradient.addColorStop(1, color);
+  context.fillStyle = "#071016";
+  context.strokeStyle = color;
+  context.lineJoin = "round";
+  context.lineCap = "round";
+  context.lineWidth = visual.tier === "legendary" ? 5 : visual.tier === "diamond" ? 4.8 : visual.tier === "platinum" ? 4.6 : visual.tier === "gold" ? 4.4 : 3.8;
+  bandPaths.forEach((path) => {
+    context.fill(path);
+    context.stroke(path);
+  });
+  if (visual.ornamentCount >= 5) {
+    context.save();
+    context.translate(50, 50);
+    context.scale(1.13, 1.13);
+    context.translate(-50, -50);
+    context.globalAlpha = 0.82;
+    context.lineWidth = 2;
+    context.setLineDash([5, 2]);
+    context.stroke(frame);
+    context.restore();
+    context.setLineDash([]);
+    context.globalAlpha = 1;
+  }
+  context.fillStyle = frameGradient;
+  context.fill(frame);
+  context.stroke(frame);
+  context.shadowBlur = 0;
+
+  context.save();
+  context.translate(50, 50);
+  context.scale(0.79, 0.79);
+  context.translate(-50, -50);
+  context.globalAlpha = 0.68;
+  context.lineWidth = 1.5;
+  context.stroke(frame);
+  context.restore();
+
+  context.globalAlpha = 1;
+  const coreGradient = context.createRadialGradient(38, 31, 2, 50, 50, 32);
+  coreGradient.addColorStop(0, "rgba(255,255,255,0.24)");
+  coreGradient.addColorStop(0.34, "#101921");
+  coreGradient.addColorStop(1, "#020507");
+  context.fillStyle = coreGradient;
+  context.lineWidth = 1.6;
+  context.beginPath();
+  context.arc(50, 50, 29, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+
+  const motifStrokePaths = {
+    starter: ["M27 50 Q50 28 73 50 Q50 72 27 50", "M50 27 Q34 50 50 73 Q66 50 50 27"],
+    bronze: ["M18 33 L30 21 M16 48 L39 25 M16 64 L27 53 M82 33 L70 21 M84 48 L61 25 M84 64 L73 53"],
+    silver: ["M23 70 Q8 50 20 27 M18 61 L9 56 M16 52 L7 46 M18 42 L10 35 M22 33 L17 24", "M77 70 Q92 50 80 27 M82 61 L91 56 M84 52 L93 46 M82 42 L90 35 M78 33 L83 24"],
+    gold: ["M31 37 Q17 26 8 34 L26 45 L9 43 Q14 58 31 57", "M69 37 Q83 26 92 34 L74 45 L91 43 Q86 58 69 57"],
+    platinum: ["M25 24 L11 11 M75 24 L89 11 M17 50 L1 50 M83 50 L99 50 M29 80 L18 91 M71 80 L82 91"],
+    diamond: ["M35 35 L16 20 L5 39 L24 50 L7 58 L27 72 L40 55 Z", "M65 35 L84 20 L95 39 L76 50 L93 58 L73 72 L60 55 Z"],
+    legendary: ["M22 76 Q-2 57 15 25 Q13 48 30 43 Q19 59 32 70", "M78 76 Q102 57 85 25 Q87 48 70 43 Q81 59 68 70"]
+  };
+  context.strokeStyle = color;
+  context.globalAlpha = 0.72;
+  context.lineWidth = 1.7;
+  motifStrokePaths[visual.tier].forEach((path) => context.stroke(new Path2D(path)));
+
+  const motifFillPath = {
+    bronze: "M28 78 L72 78 L64 89 L36 89 Z",
+    silver: "M41 14 L50 2 L59 14 L50 20 Z",
+    gold: "M50 24 L54 34 L65 35 L56 42 L59 53 L50 47 L41 53 L44 42 L35 35 L46 34 Z",
+    platinum: "M50 3 L63 17 L56 32 L44 32 L37 17 Z",
+    diamond: "M50 1 L64 17 L57 34 L43 34 L36 17 Z",
+    legendary: "M25 20 L32 -1 L47 12 L50 -7 L53 12 L68 -1 L75 20 L61 28 L39 28 Z"
+  }[visual.tier];
+  if (motifFillPath) {
+    context.fillStyle = color;
+    context.globalAlpha = 0.34;
+    context.fill(new Path2D(motifFillPath));
+    context.globalAlpha = 0.9;
+    context.stroke(new Path2D(motifFillPath));
+  }
+
+  context.fillStyle = color;
+  const progressX = [32, 41, 50, 59, 68].slice(0, visual.ornamentCount);
+  progressX.forEach((progress) => {
+    context.save();
+    context.translate(progress, 91);
+    context.globalAlpha = 1;
+    if (visual.tier === "starter") {
+      context.lineWidth = 2.2;
+      context.beginPath();
+      context.arc(0, 1, 3, Math.PI * 1.16, Math.PI * 1.84);
+      context.stroke();
+    } else if (visual.tier === "bronze") {
+      context.rotate(Math.PI / 4);
+      context.fillRect(-2.4, -2.4, 4.8, 4.8);
+    } else if (visual.tier === "platinum") {
+      context.beginPath();
+      context.moveTo(0, -5.2);
+      context.lineTo(4.6, 0);
+      context.lineTo(0, 5.2);
+      context.lineTo(-4.6, 0);
+      context.closePath();
+      context.fill();
+    } else if (visual.tier === "diamond") {
+      context.beginPath();
+      context.moveTo(0, -6);
+      context.lineTo(5.2, -2);
+      context.lineTo(3.2, 5);
+      context.lineTo(-3.2, 5);
+      context.lineTo(-5.2, -2);
+      context.closePath();
+      context.fill();
+    } else {
+      const points = visual.tier === "gold" ? 5 : visual.tier === "silver" ? 6 : 4;
+      const outer = visual.tier === "legendary" ? 5.8 : 4.8;
+      const inner = outer * 0.43;
+      context.beginPath();
+      for (let index = 0; index < points * 2; index += 1) {
+        const radius = index % 2 === 0 ? outer : inner;
+        const angle = -Math.PI / 2 + (index * Math.PI) / points;
+        const px = Math.cos(angle) * radius;
+        const py = Math.sin(angle) * radius;
+        if (index === 0) context.moveTo(px, py);
+        else context.lineTo(px, py);
+      }
+      context.closePath();
+      context.fill();
+    }
+    context.restore();
+  });
+
+  context.fillStyle = "rgba(2,5,8,0.96)";
+  context.strokeStyle = "rgba(255,255,255,0.24)";
+  context.lineWidth = 1.25;
+  context.beginPath();
+  context.arc(50, 50, 18, 0, Math.PI * 2);
+  context.fill();
+  context.stroke();
+
+  context.fillStyle = "#ffffff";
+  context.globalAlpha = 1;
+  context.font = "900 34px Inter, Arial, sans-serif";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(String(visual.value), 50, 51);
+  context.restore();
+}
+
 function releaseCanvasMemory(canvas) {
   if (!canvas) return;
   const context = canvas.getContext("2d");
@@ -1330,6 +1854,117 @@ async function sharePngBlob(blob, { filename, title, text }) {
   }
   downloadShareImage(blob, filename);
   return "downloaded";
+}
+
+async function shareLeagueLevelUpImage(state) {
+  const me = state?.me;
+  if (!me?.level) throw new Error("Липсва футболно ниво за споделяне.");
+  const shareQrAssets = await loadShareQrAssets("/fan-zone");
+  const shareUrl = `${officialHomepageUrl.replace(/\/$/, "")}/fan-zone`;
+  const tierColor = leagueLevelColors[me.level.tier] || leagueLevelColors.starter;
+  const nextMatchWord = Number(me.level.matchesToNext) === 1 ? "МАЧ" : "МАЧА";
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const context = canvas.getContext("2d");
+
+  const background = context.createLinearGradient(0, 0, 1080, 1920);
+  background.addColorStop(0, "#07170f");
+  background.addColorStop(0.48, "#071019");
+  background.addColorStop(1, "#020405");
+  context.fillStyle = background;
+  context.fillRect(0, 0, 1080, 1920);
+
+  const glow = context.createRadialGradient(540, 570, 40, 540, 570, 560);
+  glow.addColorStop(0, `${tierColor}46`);
+  glow.addColorStop(0.5, `${tierColor}16`);
+  glow.addColorStop(1, "rgba(0,0,0,0)");
+  context.fillStyle = glow;
+  context.fillRect(0, 0, 1080, 1200);
+
+  context.save();
+  context.globalAlpha = 0.12;
+  context.strokeStyle = "#38f27f";
+  context.lineWidth = 4;
+  context.strokeRect(92, 250, 896, 1420);
+  context.beginPath();
+  context.arc(540, 760, 255, 0, Math.PI * 2);
+  context.stroke();
+  context.beginPath();
+  context.moveTo(92, 960);
+  context.lineTo(988, 960);
+  context.stroke();
+  context.restore();
+
+  for (let index = 0; index < 34; index += 1) {
+    const x = 72 + ((index * 137) % 936);
+    const y = 210 + ((index * 211) % 1050);
+    const size = 5 + (index % 4) * 3;
+    context.save();
+    context.translate(x, y);
+    context.rotate((index * Math.PI) / 9);
+    context.fillStyle = index % 3 === 0 ? "#f4d44d" : index % 3 === 1 ? "#38f27f" : tierColor;
+    context.globalAlpha = 0.72;
+    context.fillRect(-size, -size / 2, size * 2, size);
+    context.restore();
+  }
+
+  context.strokeStyle = tierColor;
+  context.lineWidth = 8;
+  context.strokeRect(38, 38, 1004, 1844);
+  context.fillStyle = "#38f27f";
+  context.font = "900 38px Inter, Arial, sans-serif";
+  context.fillText("D.I.S ЛИГА НА ПРОГНОЗИТЕ", 82, 112);
+  context.fillStyle = "#aab2c0";
+  drawCanvasFittedText(context, "ОБЩО НИВО ВЪВ ВСИЧКИ D.I.S ЛИГИ", 82, 166, 890, { weight: 800, maxSize: 27, minSize: 20 });
+
+  context.textAlign = "center";
+  context.fillStyle = "#38f27f";
+  context.font = "900 36px Inter, Arial, sans-serif";
+  context.fillText("НОВО ФУТБОЛНО НИВО", 540, 270);
+  drawCanvasLevelBadge(context, me.level, 350, 330, 380);
+
+  context.fillStyle = "#f4d44d";
+  context.font = "900 42px Inter, Arial, sans-serif";
+  context.fillText(`НИВО ${me.level.value}`, 540, 795);
+  context.fillStyle = "#ffffff";
+  drawCanvasFittedText(context, me.level.name || me.level.tierLabel || "Ново ниво", 540, 915, 880, { weight: 900, maxSize: 104, minSize: 54, align: "center" });
+  context.fillStyle = "#c2cad5";
+  drawCanvasFittedText(context, me.nickname, 540, 995, 800, { weight: 800, maxSize: 42, minSize: 28, align: "center" });
+
+  drawCanvasRoundRect(context, 105, 1070, 870, 340, 32, "rgba(255,255,255,0.045)", `${tierColor}70`);
+  context.fillStyle = "#aab2c0";
+  context.font = "800 23px Inter, Arial, sans-serif";
+  context.fillText("УЧАСТИЯ", 315, 1145);
+  context.fillText("ОСТАВАТ", 765, 1145);
+  context.fillStyle = "#ffffff";
+  context.font = "900 76px Inter, Arial, sans-serif";
+  context.fillText(String(me.globalCompletedPredictions || me.level.completedMatches || 0), 315, 1245);
+  context.fillStyle = "#38f27f";
+  context.fillText(String(me.level.matchesToNext || 0), 765, 1245);
+  context.fillStyle = "#aab2c0";
+  context.font = "800 21px Inter, Arial, sans-serif";
+  context.fillText("ОБЩО ЗАВЪРШЕНИ", 315, 1292);
+  context.fillText(`${nextMatchWord} ДО НИВО ${me.level.value + 1}`, 765, 1292);
+
+  drawCanvasRoundRect(context, 165, 1340, 750, 18, 9, "rgba(255,255,255,0.1)");
+  drawCanvasRoundRect(context, 165, 1340, Math.max(18, 750 * (Number(me.level.progress) || 0) / 100), 18, 9, tierColor);
+
+  context.fillStyle = "#ffffff";
+  context.font = "900 40px Inter, Arial, sans-serif";
+  context.fillText("Прогнозирай. Познай. Изкачи се.", 540, 1515);
+  context.textAlign = "left";
+  context.fillStyle = "#38f27f";
+  drawCanvasFittedText(context, shareUrl.replace(/^https:\/\//, ""), 82, 1770, 630, { weight: 900, maxSize: 28, minSize: 20 });
+  drawShareQrBadge(context, shareQrAssets, 770, 1570, 245);
+
+  const blob = await canvasToPngBlob(canvas);
+  const safeNickname = String(me.nickname || "player").replace(/[^a-z0-9а-я_-]+/gi, "-");
+  return sharePngBlob(blob, {
+    filename: `dis-level-${me.level.value}-${safeNickname}.png`,
+    title: "Ново D.I.S футболно ниво",
+    text: `Качих ниво ${me.level.value} „${me.level.name}“ в D.I.S Лигата на прогнозите! ${shareUrl}`
+  });
 }
 
 function leagueSharePeriod(state, period) {
@@ -1396,10 +2031,19 @@ async function shareLeagueAchievement(state, period = "week") {
   context.fillStyle = "#9ba6b5";
   context.font = "700 28px Inter, Arial, sans-serif";
   drawCanvasFittedText(context, `${state.title} · ${state.seasonLabel}`, 82, 182, 870, { weight: 700, maxSize: 30, minSize: 22 });
+  drawCanvasLevelBadge(context, state.me.level, 82, 235, 92);
+  context.fillStyle = "#aab2c0";
+  context.font = "800 22px Inter, Arial, sans-serif";
+  context.fillText(`НИВО ${state.me.level.value}`, 196, 242);
   context.fillStyle = "#f7f8fb";
-  drawCanvasFittedText(context, state.me.nickname, 82, 324, 916, { weight: 900, maxSize: 94, minSize: 42 });
+  drawCanvasFittedText(context, state.me.nickname, 196, 324, 802, { weight: 900, maxSize: 94, minSize: 42 });
+  if (state.me.isHost) {
+    context.fillStyle = "#f4d44d";
+    context.font = "900 22px Inter, Arial, sans-serif";
+    context.fillText("◆ D.I.S ВОДЕЩ", 196, 360);
+  }
   context.fillStyle = "#38f27f";
-  context.fillRect(82, 360, 230, 10);
+  context.fillRect(82, state.me.isHost ? 382 : 360, 230, 10);
 
   context.lineWidth = 2;
   drawCanvasRoundRect(context, 70, 420, 940, 540, 34, "rgba(255,255,255,0.045)", "rgba(56,242,127,0.32)");
@@ -1474,7 +2118,116 @@ async function shareLeagueAchievement(state, period = "week") {
   return sharePngBlob(blob, {
     filename: `dis-leaderboard-${safeNickname}.png`,
     title: "D.I.S Лига на прогнозите",
-    text: `Аз съм #${standing.rank} с ${standing.points} точки в ${state.title}! ${shareUrl}`
+    text: `Аз съм ниво ${state.me.level.value} и #${standing.rank} с ${standing.points} точки в ${state.title}! ${shareUrl}`
+  });
+}
+
+async function shareLeagueProfile(state) {
+  const me = state?.me;
+  if (!me) throw new Error("Липсва профил за споделяне.");
+  const shareQrAssets = await loadShareQrAssets("/fan-zone");
+  const shareUrl = `${officialHomepageUrl.replace(/\/$/, "")}/fan-zone`;
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1350;
+  const context = canvas.getContext("2d");
+  const background = context.createLinearGradient(0, 0, 1080, 1350);
+  background.addColorStop(0, "#07170f");
+  background.addColorStop(0.52, "#0a1118");
+  background.addColorStop(1, "#030506");
+  context.fillStyle = background;
+  context.fillRect(0, 0, 1080, 1350);
+  context.strokeStyle = me.isHost ? "#f4d44d" : "#38f27f";
+  context.lineWidth = 8;
+  context.strokeRect(38, 38, 1004, 1274);
+
+  context.fillStyle = "#38f27f";
+  context.font = "900 42px Inter, Arial, sans-serif";
+  context.fillText("МОЯТ D.I.S ПРОФИЛ", 84, 125);
+  context.fillStyle = "#9ba6b5";
+  context.font = "700 25px Inter, Arial, sans-serif";
+  drawCanvasFittedText(context, `${state.title} · ${state.seasonLabel}`, 84, 170, 880, { weight: 700, maxSize: 27, minSize: 20 });
+
+  drawCanvasLevelBadge(context, me.level, 84, 205, 112);
+  context.fillStyle = "#aab2c0";
+  context.font = "800 22px Inter, Arial, sans-serif";
+  context.fillText(`НИВО ${me.level.value} · ${String(me.level.name || me.level.tierLabel || "").toUpperCase()}`, 220, 235);
+  context.fillStyle = "#f7f8fb";
+  drawCanvasFittedText(context, me.nickname, 220, 310, 580, { weight: 900, maxSize: 72, minSize: 38 });
+  if (me.isHost) {
+    context.fillStyle = "#f4d44d";
+    context.font = "900 22px Inter, Arial, sans-serif";
+    context.fillText("◆ D.I.S ВОДЕЩ", 220, 352);
+  }
+  context.fillStyle = "#f4d44d";
+  context.textAlign = "right";
+  context.font = "900 92px Inter, Arial, sans-serif";
+  context.fillText(String(me.totalPoints || 0), 980, 285);
+  context.fillStyle = "#aab2c0";
+  context.font = "900 25px Inter, Arial, sans-serif";
+  context.fillText("ТОЧКИ", 980, 330);
+  context.textAlign = "left";
+
+  const rankItems = [
+    ["СЕДМИЦА", leagueRankLabel(me.ranks.week)],
+    ["МЕСЕЦ", leagueRankLabel(me.ranks.month)],
+    ["D.I.S СЕЗОН", leagueRankLabel(me.ranks.season)]
+  ];
+  rankItems.forEach(([label, value], index) => {
+    const x = 84 + index * 310;
+    drawCanvasRoundRect(context, x, 405, 282, 165, 22, "rgba(255,255,255,0.04)", "rgba(56,242,127,0.25)");
+    context.fillStyle = "#38f27f";
+    context.textAlign = "center";
+    context.font = "900 56px Inter, Arial, sans-serif";
+    context.fillText(value, x + 141, 485);
+    context.fillStyle = "#aab2c0";
+    context.font = "800 20px Inter, Arial, sans-serif";
+    context.fillText(label, x + 141, 535);
+  });
+  context.textAlign = "left";
+
+  const statItems = [
+    ["СЕРИЯ", me.currentStreak],
+    ["ТОЧНИ", me.exactScores],
+    ["ПОЗНАТИ", me.correctOutcomes],
+    ["ОБЩО МАЧОВЕ", me.globalCompletedPredictions],
+    ["В ЛИГАТА", me.completedPredictions]
+  ];
+  statItems.forEach(([label, value], index) => {
+    const x = 84 + index * 190;
+    drawCanvasRoundRect(context, x, 610, 172, 150, 18, "rgba(255,255,255,0.03)", "rgba(255,255,255,0.1)");
+    context.fillStyle = "#f7f8fb";
+    context.textAlign = "center";
+    context.font = "900 43px Inter, Arial, sans-serif";
+    context.fillText(String(value || 0), x + 86, 678);
+    context.fillStyle = "#aab2c0";
+    context.font = "800 16px Inter, Arial, sans-serif";
+    context.fillText(label, x + 86, 724);
+  });
+  context.textAlign = "left";
+
+  context.fillStyle = "#d7dde7";
+  context.font = "800 23px Inter, Arial, sans-serif";
+  context.fillText(`Остават ${me.level.matchesToNext} ${me.level.matchesToNext === 1 ? "мач" : "мача"} до ниво ${me.level.value + 1}`, 84, 825);
+  drawCanvasRoundRect(context, 84, 850, 650, 18, 9, "rgba(255,255,255,0.08)");
+  drawCanvasRoundRect(context, 84, 850, Math.max(18, 650 * (Number(me.level.progress) || 0) / 100), 18, 9, "#38f27f");
+  context.fillStyle = "#9ba6b5";
+  context.font = "700 21px Inter, Arial, sans-serif";
+  context.fillText(`${me.globalCompletedPredictions} общо завършени участия`, 84, 910);
+
+  context.fillStyle = "#f7f8fb";
+  context.font = "800 30px Inter, Arial, sans-serif";
+  context.fillText("Прогнозирай. Познай. Изкачи се.", 84, 1105);
+  context.fillStyle = "#38f27f";
+  drawCanvasFittedText(context, shareUrl.replace(/^https:\/\//, ""), 84, 1170, 650, { weight: 900, maxSize: 26, minSize: 20 });
+  drawShareQrBadge(context, shareQrAssets, 790, 900, 215);
+
+  const blob = await canvasToPngBlob(canvas);
+  const safeNickname = String(me.nickname).replace(/[^a-z0-9а-я_-]+/gi, "-");
+  return sharePngBlob(blob, {
+    filename: `dis-profile-${safeNickname}.png`,
+    title: "Моят D.I.S профил",
+    text: `Ниво ${me.level.value} „${me.level.name}“, ${me.totalPoints} точки и ${me.globalCompletedPredictions} завършени участия в D.I.S Лигата! ${shareUrl}`
   });
 }
 
@@ -1502,9 +2255,18 @@ async function shareLeagueResult(match, state, period = "week") {
   context.fillStyle = "#38f27f";
   context.font = "900 48px Inter, sans-serif";
   context.fillText("D.I.S ЛИГА НА ПРОГНОЗИТЕ", 84, 140);
+  drawCanvasLevelBadge(context, me.level, 84, 190, 76);
+  context.fillStyle = "#aab2c0";
+  context.font = "800 20px Inter, Arial, sans-serif";
+  context.fillText(`НИВО ${me.level.value}`, 180, 202);
   context.fillStyle = "#f7f8fb";
   context.font = "900 82px Inter, sans-serif";
-  context.fillText(me.nickname, 84, 270);
+  drawCanvasFittedText(context, me.nickname, 180, 270, 800, { weight: 900, maxSize: 82, minSize: 42 });
+  if (me.isHost) {
+    context.fillStyle = "#f4d44d";
+    context.font = "900 21px Inter, Arial, sans-serif";
+    context.fillText("◆ D.I.S ВОДЕЩ", 180, 312);
+  }
   context.fillStyle = "#aab2c0";
   context.font = "700 38px Inter, sans-serif";
   context.fillText(match.competition, 84, 350);
@@ -1534,7 +2296,7 @@ async function shareLeagueResult(match, state, period = "week") {
   return sharePngBlob(blob, {
     filename,
     title: "D.I.S Лига на прогнозите",
-    text: `Моята прогноза донесе +${match.myPrediction.scoring?.points || 0} точки! ${officialHomepageUrl.replace(/\/$/, "")}/fan-zone`
+    text: `Ниво ${me.level.value}: моята прогноза донесе +${match.myPrediction.scoring?.points || 0} точки! ${officialHomepageUrl.replace(/\/$/, "")}/fan-zone`
   });
 }
 

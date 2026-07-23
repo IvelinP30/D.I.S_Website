@@ -5,6 +5,9 @@ const {
   buildLeagueState,
   buildPredictionLeagueState,
   hashRecoveryCode,
+  isHostPlayer,
+  levelProgress,
+  levelRequirement,
   matchStatus,
   nicknameIsTaken,
   nicknameKey,
@@ -172,6 +175,10 @@ test("keeps points, trophies, matches, and leaderboards separate while sharing o
   assert.deepEqual(efbet.leaderboards.season.map((row) => row.nickname), ["IVAN1892"]);
   assert.deepEqual(england.leaderboards.season.map((row) => row.nickname), ["DANI", "IVAN1892"]);
   assert.equal(england.me.badges.some((badge) => badge.id === "exact"), false);
+  assert.equal(efbet.me.level.value, 2);
+  assert.equal(england.me.level.value, 2);
+  assert.equal(england.me.globalCompletedPredictions, 2);
+  assert.equal(england.me.completedPredictions, 1);
 });
 
 test("keeps legacy untagged predictions and archived matches only in the general league", () => {
@@ -234,12 +241,57 @@ test("adds the three-result streak bonus deterministically", () => {
 test("public state exposes only the current player's picks and no internal identities", () => {
   const state = buildLeagueState(sampleConfig(), sampleStore(), "p1", now);
   assert.equal(state.matches.find((match) => match.id === "m1").myPrediction.homeScore, 2);
+  assert.equal(state.matches.some((match) => "participantCount" in match), false);
   assert.equal(state.leaderboards.week.find((row) => row.nickname === "DANI").points, 3);
   assert.equal(state.leaderboards.week.some((row) => "playerId" in row), false);
   assert.doesNotMatch(JSON.stringify(state), /"p1"|"p2"|recoveryHash/);
 
   const anonymousState = buildLeagueState(sampleConfig(), sampleStore(), "", now);
   assert.equal(anonymousState.matches.every((match) => match.myPrediction === null), true);
+});
+
+test("levels start quickly, count only settled participation, and get progressively harder", () => {
+  assert.deepEqual([0, 1, 2, 3, 6, 10].map((matches) => levelProgress(matches).value), [1, 2, 2, 3, 4, 5]);
+  assert.deepEqual([0, 1, 3, 6, 45].map((matches) => levelProgress(matches).name), ["Дебютант", "Млад талант", "Голова надежда", "Титуляр", "Плеймейкър"]);
+  assert.equal(levelProgress(2).matchesToNext, 1);
+  assert.equal(levelProgress(10).matchesToNext, 5);
+  assert.equal(levelProgress(45).tier, "silver");
+  assert.deepEqual([10, 20, 30, 40, 50].map(levelRequirement), [45, 125, 245, 405, 605]);
+  assert.equal(levelProgress(125).value, 20);
+  assert.equal(levelProgress(245).tier, "platinum");
+  assert.equal(levelProgress(405).tier, "diamond");
+  assert.equal(levelProgress(604).matchesToNext, 1);
+  assert.equal(levelProgress(605).tier, "legendary");
+});
+
+test("keeps unique ranks and rewards equal league results achieved in fewer completed matches", () => {
+  const config = {
+    enabled: true,
+    matches: [
+      { id: "m1", homeTeam: "A", awayTeam: "B", kickoffAt: "2026-07-14T18:00:00.000Z", result: { homeScore: 2, awayScore: 1 } },
+      { id: "m2", homeTeam: "C", awayTeam: "D", kickoffAt: "2026-07-15T18:00:00.000Z", result: { homeScore: 1, awayScore: 0 } },
+      { id: "m3", homeTeam: "E", awayTeam: "F", kickoffAt: "2026-07-20T18:00:00.000Z" }
+    ]
+  };
+  const players = [
+    { id: "p1", nickname: "ZULU" },
+    { id: "p2", nickname: "ALPHA" }
+  ];
+  const predictions = [
+    { playerId: "p1", matchId: "m1", homeScore: 2, awayScore: 1 },
+    { playerId: "p1", matchId: "m2", homeScore: 0, awayScore: 2 },
+    { playerId: "p2", matchId: "m1", homeScore: 2, awayScore: 1 },
+    { playerId: "p2", matchId: "m3", homeScore: 1, awayScore: 0 }
+  ];
+
+  const state = buildLeagueState(config, { players, predictions }, "p1", now);
+
+  assert.deepEqual(state.leaderboards.season.map((row) => [row.nickname, row.rank]), [["ALPHA", 1], ["ZULU", 2]]);
+  assert.equal(state.leaderboards.season[0].leagueCompletedPredictions, 1);
+  assert.equal(state.leaderboards.season[1].leagueCompletedPredictions, 2);
+  assert.deepEqual(state.leaderboards.season[0].ranks, { week: 1, month: 1, season: 1 });
+  assert.ok(state.leaderboards.month[0].badges.some((badge) => badge.id === "oracle"));
+  assert.equal(state.leaderboards.month[1].badges.some((badge) => badge.id === "oracle"), false);
 });
 
 test("deleting settled matches hides them but preserves earned points", () => {
@@ -254,7 +306,30 @@ test("deleting settled matches hides them but preserves earned points", () => {
   assert.deepEqual(state.matches.map((match) => match.id), ["m3"]);
   assert.equal(state.me.totalPoints, 13);
   assert.equal(state.me.exactScores, 1);
+  assert.equal(state.me.correctOutcomes, 2);
+  assert.equal(state.me.completedPredictions, 2);
+  assert.equal(state.me.globalCompletedPredictions, 2);
+  assert.equal(state.me.level.value, 2);
   assert.equal(state.me.ranks.week, 1);
+});
+
+test("marks only the configured host player ids without exposing those ids publicly", () => {
+  const hostId = "19506ff2-a454-4be0-acb8-e511047babad";
+  const store = sampleStore();
+  store.players[0].id = hostId;
+  store.predictions.forEach((prediction) => {
+    if (prediction.playerId === "p1") prediction.playerId = hostId;
+  });
+
+  const state = buildLeagueState(sampleConfig(), store, hostId, now);
+
+  assert.equal(isHostPlayer(store.players[0]), true);
+  assert.equal(isHostPlayer({ id: "42fc9e3c-8e3f-4612-93b2-5cb774b98653" }), true);
+  assert.equal(state.me.isHost, true);
+  assert.equal(state.leaderboards.season.find((row) => row.nickname === "IVAN1892").isHost, true);
+  assert.equal(state.leaderboards.season.find((row) => row.nickname === "DANI").isHost, false);
+  assert.doesNotMatch(JSON.stringify(state), new RegExp(hostId));
+  assert.doesNotMatch(JSON.stringify(state), /recoveryHash/);
 });
 
 test("archived scoring survives later admin saves", () => {

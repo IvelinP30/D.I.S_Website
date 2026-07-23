@@ -4105,6 +4105,166 @@ html.pwa-refreshing body {
   padding: 24px;
 }
 
+.league-level-up {
+  position: fixed;
+  z-index: 10020;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: rgba(3, 7, 9, 0);
+  padding: 20px;
+  pointer-events: none;
+  transition: background 240ms ease;
+}
+
+.league-level-up.is-visible {
+  background: rgba(3, 7, 9, 0.78);
+  pointer-events: auto;
+}
+
+.league-level-up.is-leaving {
+  opacity: 0;
+  transition: opacity 240ms ease;
+}
+
+.league-level-up-card {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  width: min(360px, 100%);
+  border: 1px solid rgba(244, 212, 77, 0.5);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(56, 242, 127, 0.24), transparent 48%),
+    linear-gradient(145deg, #11231c, #080d11 58%, #171408);
+  box-shadow: 0 0 0 8px rgba(244, 212, 77, 0.05), 0 30px 100px rgba(0, 0, 0, 0.72);
+  padding: 38px 28px 32px;
+  text-align: center;
+  opacity: 0;
+  transform: translateY(24px) scale(0.82);
+}
+
+.league-level-up.is-visible .league-level-up-card {
+  animation: league-level-up-card 680ms cubic-bezier(0.2, 1.2, 0.3, 1) forwards;
+}
+
+.league-level-up-card > button:not(.league-level-up-share) {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: #c7ced8;
+  font: 700 1.35rem/1 sans-serif;
+  cursor: pointer;
+}
+
+.league-level-up-card > span:first-of-type {
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.league-level-up-card .league-level {
+  width: 94px;
+  height: 94px;
+  margin: 22px auto 18px;
+  font-size: 2.15rem;
+  animation: league-level-up-badge 1.2s 420ms ease-in-out both;
+}
+
+.league-level-up-card > strong {
+  color: #f4d44d;
+  font-size: 0.88rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.league-level-up-card h3 {
+  margin: 7px 0 12px;
+  color: #f7f8fb;
+  font-size: clamp(1.8rem, 8vw, 2.55rem);
+  letter-spacing: -0.04em;
+}
+
+.league-level-up-card small {
+  color: #aeb7c5;
+  font-weight: 700;
+}
+
+.league-level-up-share {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  justify-self: center;
+  margin-top: 18px;
+  border: 1px solid rgba(56, 242, 127, 0.4);
+  border-radius: 999px;
+  background: rgba(56, 242, 127, 0.09);
+  padding: 0 16px;
+  color: #dfffea;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.league-level-up-share:hover,
+.league-level-up-share:focus-visible {
+  border-color: var(--accent);
+  background: rgba(56, 242, 127, 0.16);
+}
+
+.league-level-up-confetti {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.league-level-up-confetti i {
+  position: absolute;
+  top: -24px;
+  left: var(--confetti-x);
+  width: 8px;
+  height: 20px;
+  border-radius: 3px;
+  background: hsl(calc(var(--confetti-index) * 47deg) 88% 61%);
+  opacity: 0;
+  transform: rotate(calc(var(--confetti-index) * 19deg));
+}
+
+.league-level-up.is-visible .league-level-up-confetti i {
+  animation: league-level-up-confetti 2.7s var(--confetti-delay) cubic-bezier(0.18, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes league-level-up-card {
+  0% { opacity: 0; transform: translateY(24px) scale(0.82); }
+  62% { opacity: 1; transform: translateY(-5px) scale(1.035); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes league-level-up-badge {
+  0%, 100% { filter: brightness(1); transform: scale(1); }
+  42% { filter: brightness(1.45); transform: scale(1.12) rotate(4deg); }
+  68% { transform: scale(0.98) rotate(-2deg); }
+}
+
+@keyframes league-level-up-confetti {
+  0% { opacity: 0; transform: translate3d(0, -10px, 0) rotate(0); }
+  12% { opacity: 1; }
+  100% { opacity: 0.85; transform: translate3d(var(--confetti-drift), 105vh, 0) rotate(620deg); }
+}
+
 .league-live-label {
   display: inline-flex;
   align-items: center;
@@ -4291,6 +4451,13 @@ html.pwa-refreshing body {
   margin-bottom: 0;
 }
 
+.league-profile-heading h3 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 11px;
+}
+
 .league-profile-heading > strong {
   color: var(--accent-2);
   font-size: clamp(2rem, 4vw, 3.4rem);
@@ -4314,6 +4481,11 @@ html.pwa-refreshing body {
   font-weight: 700;
 }
 
+.league-profile-heading div > small {
+  display: block;
+  margin-top: 16px;
+}
+
 .league-profile-stats {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -4334,6 +4506,705 @@ html.pwa-refreshing body {
   display: block;
 }
 
+.league-level {
+  --level-color: #6fcf8b;
+  --level-rgb: 111, 207, 139;
+  position: relative;
+  display: inline-grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  place-items: center;
+  border: 2px solid rgba(var(--level-rgb), 0.88);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.2), transparent 28%),
+    linear-gradient(145deg, rgba(var(--level-rgb), 0.28), rgba(5, 9, 11, 0.98) 70%);
+  box-shadow: inset 0 0 12px rgba(var(--level-rgb), 0.22), 0 0 16px rgba(var(--level-rgb), 0.18);
+  color: #f8fbff;
+  vertical-align: middle;
+  transition: filter 180ms ease, transform 180ms ease;
+}
+
+.league-level::before,
+.league-level::after {
+  position: absolute;
+  border: 1px solid rgba(var(--level-rgb), 0.46);
+  content: "";
+  pointer-events: none;
+}
+
+.league-level::before {
+  inset: 4px;
+  border-radius: 50%;
+}
+
+.league-level::after {
+  right: 5px;
+  bottom: -4px;
+  left: 5px;
+  height: 7px;
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: rgba(var(--level-rgb), 0.2);
+}
+
+.league-level > i {
+  position: absolute;
+  top: -3px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid rgba(var(--level-rgb), 0.82);
+  background: #07100c;
+  transform: rotate(45deg);
+}
+
+.league-level-ornaments {
+  position: absolute;
+  z-index: 2;
+  right: 4px;
+  bottom: -8px;
+  left: 4px;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  pointer-events: none;
+}
+
+.league-level-ornaments i {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border: 1px solid rgba(var(--level-rgb), 0.9);
+  border-radius: 50%;
+  background: #07100c;
+  box-shadow: 0 0 6px rgba(var(--level-rgb), 0.48);
+}
+
+.league-level.level-band-1 .league-level-ornaments::before,
+.league-level.level-band-1 .league-level-ornaments::after,
+.league-level.level-band-2 .league-level-ornaments::before,
+.league-level.level-band-2 .league-level-ornaments::after,
+.league-level.level-band-3 .league-level-ornaments::before,
+.league-level.level-band-3 .league-level-ornaments::after {
+  position: absolute;
+  bottom: 2px;
+  width: 11px;
+  height: 5px;
+  border-top: 2px solid rgba(var(--level-rgb), 0.82);
+  content: "";
+}
+
+.league-level.level-band-1 .league-level-ornaments::before,
+.league-level.level-band-2 .league-level-ornaments::before,
+.league-level.level-band-3 .league-level-ornaments::before {
+  left: -7px;
+  transform: rotate(-28deg);
+}
+
+.league-level.level-band-1 .league-level-ornaments::after,
+.league-level.level-band-2 .league-level-ornaments::after,
+.league-level.level-band-3 .league-level-ornaments::after {
+  right: -7px;
+  transform: rotate(28deg);
+}
+
+.league-level.level-band-2 .league-level-ornaments::before,
+.league-level.level-band-2 .league-level-ornaments::after {
+  width: 15px;
+  height: 8px;
+  border-top-width: 3px;
+  border-radius: 50%;
+}
+
+.league-level.level-band-3 .league-level-ornaments::before,
+.league-level.level-band-3 .league-level-ornaments::after {
+  width: 17px;
+  height: 10px;
+  border-top: 3px double rgba(var(--level-rgb), 0.92);
+  border-bottom: 1px solid rgba(var(--level-rgb), 0.52);
+}
+
+.league-level b {
+  position: relative;
+  z-index: 1;
+  color: var(--level-color);
+  font-size: 1rem;
+  font-weight: 950;
+  text-shadow: 0 0 10px rgba(var(--level-rgb), 0.46);
+}
+
+.league-level.tier-bronze { --level-color: #df9a62; --level-rgb: 223, 154, 98; }
+.league-level.tier-silver { --level-color: #dce8f5; --level-rgb: 220, 232, 245; }
+.league-level.tier-gold { --level-color: #f4d44d; --level-rgb: 244, 212, 77; }
+.league-level.tier-platinum { --level-color: #64dcff; --level-rgb: 100, 220, 255; }
+.league-level.tier-diamond { --level-color: #9b8cff; --level-rgb: 155, 140, 255; }
+.league-level.tier-legendary { --level-color: #df9cff; --level-rgb: 223, 156, 255; }
+
+.league-level.tier-bronze {
+  border-radius: 31%;
+  transform: rotate(var(--level-detail-turn));
+}
+
+.league-level.tier-bronze b,
+.league-level.tier-bronze > i,
+.league-level.tier-bronze .league-level-ornaments {
+  transform: rotate(var(--level-counter-turn));
+}
+
+.league-level.tier-bronze::before { border-radius: 24%; }
+.league-level.tier-bronze > i { border-radius: 50% 50% 0; }
+
+.league-level.tier-silver {
+  border-radius: 46% 46% 52% 52% / 32% 32% 68% 68%;
+  background:
+    linear-gradient(135deg, transparent 13%, rgba(var(--level-rgb), 0.24) 14% 20%, transparent 21%),
+    radial-gradient(circle at 36% 28%, rgba(255, 255, 255, 0.3), transparent 28%),
+    linear-gradient(145deg, rgba(var(--level-rgb), 0.22), rgba(5, 9, 11, 0.98) 70%);
+}
+
+.league-level.tier-silver::before { border-radius: 44% 44% 54% 54% / 30% 30% 70% 70%; }
+.league-level.tier-silver > i { width: 9px; height: 9px; clip-path: polygon(50% 0, 62% 36%, 100% 38%, 69% 59%, 79% 100%, 50% 74%, 21% 100%, 31% 59%, 0 38%, 38% 36%); transform: none; }
+
+.league-level.tier-gold,
+.league-level.tier-platinum,
+.league-level.tier-legendary {
+  border-width: 3px;
+  box-shadow: inset 0 0 16px rgba(var(--level-rgb), 0.34), 0 0 22px rgba(var(--level-rgb), 0.28);
+}
+
+.league-level.tier-gold {
+  border-radius: 48% 48% 25% 25% / 24% 24% 68% 68%;
+  background:
+    conic-gradient(from var(--level-turn), rgba(var(--level-rgb), 0.48), rgba(5, 9, 11, 0.96), rgba(var(--level-rgb), 0.32), rgba(5, 9, 11, 0.96), rgba(var(--level-rgb), 0.48));
+}
+
+.league-level.tier-gold::before { inset: 5px; border-radius: 22% 22% 38% 38%; }
+.league-level.tier-gold > i { top: 0; width: 10px; height: 10px; background: var(--level-color); clip-path: polygon(50% 0, 100% 100%, 0 100%); transform: none; }
+
+.league-level.tier-platinum {
+  border-radius: 24% 24% 48% 48% / 18% 18% 58% 58%;
+  background:
+    linear-gradient(120deg, transparent 18%, rgba(255,255,255,.28) 22%, transparent 28%),
+    conic-gradient(from var(--level-counter-turn), rgba(var(--level-rgb), 0.52), #081016, rgba(var(--level-rgb), 0.32), #081016, rgba(var(--level-rgb), 0.52));
+}
+
+.league-level.tier-platinum::before { inset: 6px; border: 2px double rgba(var(--level-rgb), 0.64); border-radius: 18%; }
+.league-level.tier-platinum > i { top: -1px; width: 12px; height: 8px; border-radius: 50% 50% 0 0; transform: none; }
+
+.league-level.tier-platinum::after,
+.league-level.tier-legendary::after {
+  right: 2px;
+  bottom: -7px;
+  left: 2px;
+  height: 10px;
+}
+
+.league-level.tier-legendary {
+  border-radius: 50% 18% 50% 18%;
+  background:
+    radial-gradient(circle at 34% 26%, rgba(255, 255, 255, 0.36), transparent 24%),
+    conic-gradient(from var(--level-turn), rgba(244, 212, 77, 0.38), rgba(var(--level-rgb), 0.58), rgba(56, 242, 127, 0.3), rgba(var(--level-rgb), 0.52));
+}
+
+.league-level.is-compact {
+  width: 33px;
+  height: 33px;
+  flex-basis: 33px;
+  margin-inline: 4px 2px;
+  border-width: 2px;
+}
+
+.league-level.is-compact::before { inset: 2px; }
+.league-level.is-compact::after { right: 3px; bottom: -3px; left: 3px; height: 5px; }
+.league-level.is-compact > i { top: -2px; width: 5px; height: 5px; }
+.league-level.is-compact .league-level-ornaments { right: 2px; bottom: -5px; left: 2px; gap: 1px; }
+.league-level.is-compact .league-level-ornaments i { width: 2px; height: 2px; }
+.league-level.is-compact.level-band-1 .league-level-ornaments::before,
+.league-level.is-compact.level-band-1 .league-level-ornaments::after,
+.league-level.is-compact.level-band-2 .league-level-ornaments::before,
+.league-level.is-compact.level-band-2 .league-level-ornaments::after,
+.league-level.is-compact.level-band-3 .league-level-ornaments::before,
+.league-level.is-compact.level-band-3 .league-level-ornaments::after { width: 7px; height: 3px; border-top-width: 1px; }
+.league-level.is-compact b { font-size: 0.7rem; }
+
+/* The same full SVG crest is used at every size. */
+.league-level,
+.league-level.tier-bronze,
+.league-level.tier-silver,
+.league-level.tier-gold,
+.league-level.tier-platinum,
+.league-level.tier-diamond,
+.league-level.tier-legendary {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  transform: none;
+}
+
+.league-level::before,
+.league-level::after,
+.league-level > i,
+.league-level > .league-level-ornaments {
+  display: none;
+}
+
+.league-level b,
+.league-level.tier-bronze b {
+  position: relative;
+  z-index: 4;
+  color: #ffffff;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.98), 0 0 9px rgba(var(--level-rgb), 0.7);
+  transform: none;
+}
+
+.league-level-svg {
+  position: absolute;
+  z-index: 1;
+  inset: -12%;
+  width: 124%;
+  height: 124%;
+  overflow: visible;
+  filter: drop-shadow(0 0 5px rgba(var(--level-rgb), 0.34));
+}
+
+.league-level-svg path,
+.league-level-svg circle {
+  vector-effect: non-scaling-stroke;
+}
+
+.level-svg-aura {
+  fill: none;
+  stroke: rgba(var(--level-rgb), 0.2);
+  stroke-width: 10;
+}
+
+.level-svg-frame-back {
+  fill: rgba(3, 7, 9, 0.98);
+  stroke: rgba(2, 4, 6, 0.96);
+  stroke-width: 8;
+}
+
+.level-svg-frame {
+  fill: rgba(var(--level-rgb), 0.16);
+  stroke: var(--level-color);
+  stroke-width: 3.5;
+}
+
+.level-svg-frame-inner {
+  fill: none;
+  stroke: rgba(var(--level-rgb), 0.68);
+  stroke-width: 1.5;
+}
+
+.level-svg-core {
+  fill: rgba(5, 10, 14, 0.96);
+  stroke: rgba(var(--level-rgb), 0.62);
+  stroke-width: 1.6;
+}
+
+.level-svg-shine {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.38);
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+
+.level-svg-progress {
+  fill: var(--level-color);
+  stroke: rgba(3, 7, 9, 0.96);
+  stroke-width: 1;
+}
+
+.league-level.tier-starter .level-svg-progress {
+  fill: none;
+  stroke: var(--level-color);
+  stroke-linecap: round;
+  stroke-width: 2.2;
+}
+
+.league-level.tier-platinum .level-svg-progress path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.7);
+}
+
+.level-svg-band-art {
+  fill: rgba(5, 10, 14, 0.98);
+  stroke: var(--level-color);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.level-svg-phase-fill {
+  fill: rgba(4, 9, 12, 0.98);
+  stroke: var(--level-color);
+  stroke-linejoin: round;
+  stroke-width: 3.2;
+}
+
+.level-svg-phase-rail {
+  fill: none;
+  stroke: rgba(var(--level-rgb), 0.9);
+  stroke-dasharray: 7 2;
+  stroke-linejoin: round;
+  stroke-width: 2.8;
+}
+
+.level-svg-feather {
+  fill: none;
+  stroke: rgba(var(--level-rgb), 0.88);
+  stroke-width: 2;
+}
+
+.league-level.level-band-1 .level-svg-band-art {
+  filter: drop-shadow(0 0 4px rgba(var(--level-rgb), 0.58));
+  stroke-width: 3.8;
+}
+
+.level-svg-training-ball {
+  fill: none;
+  stroke: rgba(218, 239, 223, 0.48);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.45;
+}
+
+.level-svg-leather-grain {
+  stroke: rgba(7, 24, 14, 0.72);
+  stroke-dasharray: 1 2;
+  stroke-width: 1.1;
+}
+
+.level-svg-motif,
+.level-svg-laurel,
+.level-svg-rays,
+.level-svg-flames,
+.level-svg-leather,
+.level-svg-metal-cut,
+.level-svg-gold-wings {
+  fill: none;
+  stroke: rgba(var(--level-rgb), 0.7);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.level-svg-stitches {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.64);
+  stroke-dasharray: 1.5 2;
+  stroke-width: 1.2;
+}
+
+.level-svg-leather {
+  stroke: rgba(86, 42, 22, 0.84);
+  stroke-dasharray: 2 3;
+  stroke-width: 1.1;
+}
+
+.level-svg-rivets {
+  fill: var(--level-color);
+  stroke: rgba(3, 7, 9, 0.9);
+  stroke-width: 1;
+}
+
+.level-svg-plate,
+.level-svg-crown,
+.level-svg-crystal,
+.level-svg-trophy,
+.level-svg-gold-star {
+  fill: rgba(var(--level-rgb), 0.3);
+  stroke: var(--level-color);
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.level-svg-gold-star {
+  fill: rgba(244, 212, 77, 0.46);
+  stroke-width: 1.5;
+}
+
+.level-svg-gold-wings {
+  fill: rgba(244, 212, 77, 0.12);
+  stroke-width: 1.6;
+}
+
+.level-svg-facets {
+  fill: rgba(100, 220, 255, 0.13);
+  stroke: rgba(210, 248, 255, 0.78);
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
+.level-svg-trophy {
+  fill: rgba(223, 156, 255, 0.18);
+}
+
+.level-svg-diamond,
+.level-svg-diamond-base {
+  fill: rgba(155, 140, 255, 0.28);
+  stroke: #d9d2ff;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.level-svg-diamond-wings {
+  fill: rgba(100, 220, 255, 0.11);
+  stroke: rgba(217, 210, 255, 0.86);
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.level-svg-number-plate {
+  fill: rgba(2, 5, 8, 0.96);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 1.25;
+}
+
+.level-svg-sheen {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.72);
+  stroke-dasharray: 16 150;
+  stroke-linecap: round;
+  stroke-width: 7;
+  opacity: 0;
+}
+
+.level-svg-energy {
+  fill: none;
+  stroke: rgba(var(--level-rgb), 0.52);
+  stroke-width: 2.2;
+  opacity: 0;
+}
+
+.league-level.tier-bronze .level-svg-frame {
+  fill: rgba(223, 154, 98, 0.2);
+  stroke-width: 4.2;
+}
+
+.league-level.tier-starter .level-svg-frame {
+  fill: rgba(25, 68, 42, 0.96) !important;
+  stroke: #79c991;
+  stroke-width: 3;
+}
+
+.league-level.tier-starter .level-svg-core {
+  fill: #102a1b !important;
+  stroke: rgba(184, 225, 195, 0.48);
+}
+
+.league-level.tier-starter .level-svg-aura {
+  stroke: rgba(111, 207, 139, 0.11);
+  stroke-width: 6;
+}
+
+.league-level.tier-starter .league-level-svg {
+  filter: drop-shadow(0 0 3px rgba(111, 207, 139, 0.24));
+}
+
+.league-level.tier-silver .level-svg-frame {
+  fill: rgba(220, 232, 245, 0.17);
+  stroke-width: 3.8;
+}
+
+.league-level.tier-gold .level-svg-frame {
+  fill: rgba(244, 212, 77, 0.22);
+  stroke-width: 4.4;
+}
+
+.league-level.tier-gold .level-svg-band-art,
+.league-level.tier-platinum .level-svg-band-art,
+.league-level.tier-diamond .level-svg-band-art,
+.league-level.tier-legendary .level-svg-band-art {
+  stroke-width: 4;
+}
+
+.league-level.tier-gold .level-svg-sheen {
+  animation: league-level-sheen 6.5s ease-in-out infinite;
+}
+
+.league-level.tier-platinum .level-svg-frame {
+  fill: rgba(100, 220, 255, 0.2);
+  stroke-width: 4.6;
+}
+
+.league-level.tier-platinum .league-level-svg {
+  filter: drop-shadow(0 0 7px rgba(100, 220, 255, 0.48));
+}
+
+.league-level.tier-platinum .level-svg-sheen {
+  animation: league-level-sheen 5.4s 700ms ease-in-out infinite;
+}
+
+.league-level.tier-diamond .level-svg-frame {
+  fill: rgba(155, 140, 255, 0.23);
+  stroke-width: 4.8;
+}
+
+.league-level.tier-diamond .level-svg-aura {
+  stroke: rgba(100, 220, 255, 0.15);
+  stroke-width: 11;
+}
+
+.league-level.tier-diamond .league-level-svg {
+  filter: drop-shadow(0 0 8px rgba(155, 140, 255, 0.58)) drop-shadow(0 0 3px rgba(100, 220, 255, 0.38));
+}
+
+.league-level.tier-diamond .level-svg-sheen {
+  animation: league-level-sheen 4.9s 500ms ease-in-out infinite;
+}
+
+.league-level.tier-legendary .level-svg-frame {
+  fill: rgba(223, 156, 255, 0.24);
+  stroke-width: 5;
+}
+
+.league-level.tier-legendary .level-svg-aura {
+  stroke: rgba(244, 212, 77, 0.22);
+  stroke-width: 13;
+}
+
+.league-level.tier-legendary .league-level-svg {
+  filter: drop-shadow(0 0 9px rgba(223, 156, 255, 0.64)) drop-shadow(0 0 4px rgba(244, 212, 77, 0.42));
+}
+
+.league-level.tier-legendary .level-svg-sheen {
+  animation: league-level-sheen 4.4s 300ms ease-in-out infinite;
+}
+
+.league-level.tier-legendary .level-svg-energy {
+  animation: league-level-living-aura 2.8s ease-in-out infinite;
+}
+
+@keyframes league-level-sheen {
+  0%, 48% { opacity: 0; stroke-dashoffset: 170; }
+  58% { opacity: 0.68; }
+  76% { opacity: 0.18; stroke-dashoffset: 18; }
+  100% { opacity: 0; stroke-dashoffset: -20; }
+}
+
+@keyframes league-level-living-aura {
+  0%, 100% { opacity: 0.18; stroke-width: 2; }
+  50% { opacity: 0.72; stroke-width: 4.6; }
+}
+
+.league-host-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgba(244, 212, 77, 0.52);
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(244, 212, 77, 0.16), rgba(56, 242, 127, 0.08));
+  box-shadow: inset 0 0 12px rgba(244, 212, 77, 0.06);
+  padding: 6px 9px;
+  color: #f4d44d;
+  font-size: 0.58rem;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.league-host-badge i {
+  color: var(--accent);
+  font-size: 0.54rem;
+  font-style: normal;
+}
+
+.league-host-badge.is-compact {
+  gap: 3px;
+  padding: 4px 6px;
+  font-size: 0.48rem;
+}
+
+.league-profile-heading h3.is-host > span:not(.league-level):not(.league-host-badge),
+.league-player-summary > b.is-host {
+  background: linear-gradient(90deg, #f4d44d, #38f27f);
+  background-clip: text;
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.league-level-progress-card {
+  display: grid;
+  gap: 8px;
+  margin: -5px 0 20px;
+  border: 1px solid rgba(56, 242, 127, 0.15);
+  border-radius: 9px;
+  background: rgba(56, 242, 127, 0.035);
+  padding: 13px 14px;
+}
+
+.league-level-progress-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.72rem;
+}
+
+.league-level-progress-card > div:first-child span { color: var(--accent); font-weight: 900; }
+.league-level-progress-card > div:first-child strong { color: #d7dde7; text-align: right; }
+.league-level-progress-card > small { color: var(--muted); font-size: 0.65rem; }
+
+.league-level-progress,
+.league-player-tooltip-progress {
+  overflow: hidden;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.league-level-progress span,
+.league-player-tooltip-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #38f27f, #f4d44d);
+  box-shadow: 0 0 12px rgba(56, 242, 127, 0.32);
+}
+
+.league-profile-share {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  margin: -7px 0 16px;
+  border: 1px solid rgba(56, 242, 127, 0.25);
+  border-radius: 999px;
+  background: rgba(56, 242, 127, 0.055);
+  padding: 7px 11px;
+  color: #dbe2ec;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.64rem;
+  font-weight: 900;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.league-profile-share span {
+  color: var(--accent);
+  font-size: 0.82rem;
+}
+
+.league-profile-share:hover,
+.league-profile-share:focus-visible {
+  border-color: rgba(56, 242, 127, 0.58);
+  background: rgba(56, 242, 127, 0.1);
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.league-profile-share:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .league-profile-stats strong {
   color: var(--accent);
   font-size: 1.25rem;
@@ -4349,6 +5220,7 @@ html.pwa-refreshing body {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin: 18px 0 -4px;
 }
 
 .league-badge {
@@ -4489,14 +5361,105 @@ html.pwa-refreshing body {
 }
 
 .league-table-row > span {
+  display: flex;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  align-items: center;
+  overflow: visible;
   white-space: nowrap;
 }
 
 .league-table-row b {
   font-size: 0.84rem;
+}
+
+.league-player-summary {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  border-radius: 7px;
+  outline: none;
+  cursor: help;
+}
+
+.league-player-summary > b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.league-player-summary:hover > b,
+.league-player-summary:focus-visible > b {
+  color: var(--accent);
+}
+
+.league-player-tooltip {
+  position: fixed;
+  z-index: 1320;
+  display: grid;
+  gap: 12px;
+  width: min(360px, calc(100vw - 20px));
+  border: 1px solid rgba(56, 242, 127, 0.28);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(7, 22, 14, 0.99), rgba(8, 12, 16, 0.99) 62%);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.56), 0 0 24px rgba(56, 242, 127, 0.08);
+  padding: 16px;
+  color: #f7f8fb;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.league-player-tooltip.is-visible { opacity: 1; transform: translateY(0); }
+
+.league-player-tooltip-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.league-player-tooltip-heading > div { display: grid; gap: 2px; }
+.league-player-tooltip-heading span { color: var(--accent); font-size: 0.62rem; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
+.league-player-tooltip-heading strong { font-size: 1.1rem; }
+.league-player-tooltip-heading small { color: var(--muted); font-size: 0.66rem; }
+
+.league-player-tooltip-ranks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.league-player-tooltip-ranks span,
+.league-player-tooltip-stats span {
+  display: grid;
+  gap: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 8px 6px;
+  color: var(--muted);
+  font-size: 0.57rem;
+  text-align: center;
+}
+
+.league-player-tooltip-ranks b,
+.league-player-tooltip-stats b {
+  color: var(--accent);
+  font-size: 0.86rem;
+}
+
+.league-player-tooltip-stats {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.league-player-tooltip-next {
+  color: #d7dde7;
+  font-size: 0.67rem;
+  font-weight: 800;
+  text-align: center;
 }
 
 .league-table-row em {
@@ -6406,7 +7369,15 @@ html.pwa-refreshing body {
   .home-league-card-action > b i,
   .home-league-promo-footer a b { transition: none; }
   .league-recovery-modal-backdrop,
-  .league-recovery-dialog { animation: none; }
+  .league-recovery-dialog,
+  .league-level-up-card,
+  .league-level-up-card .league-level,
+  .league-level-up-confetti i,
+  .level-svg-sheen,
+  .level-svg-energy { animation: none !important; }
+  .league-level-up.is-visible .league-level-up-card { opacity: 1; transform: none; }
+  .league-level-up-confetti { display: none; }
+  .league-level.tier-legendary .level-svg-energy { opacity: 0.32; }
 }
 
 @media (max-width: 860px) {
@@ -6487,6 +7458,9 @@ html.pwa-refreshing body {
   .league-inline-form .button { width: 100%; }
   .league-profile-stats { gap: 5px; }
   .league-profile-stats div { padding-inline: 6px; }
+  .league-level-progress-card > div:first-child { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .league-level-progress-card > div:first-child strong { text-align: left; }
+  .league-player-tooltip-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .league-table-heading,
   .league-match-list-heading { align-items: flex-start; flex-direction: column; gap: 6px; }
   .league-table-tabs button { padding-inline: 4px; font-size: 0.62rem; }

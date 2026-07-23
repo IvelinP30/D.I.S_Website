@@ -4,6 +4,37 @@ const { normalizeTeamMedia } = require("./team-media");
 const POINTS = Object.freeze({ outcome: 3, exactScore: 7, streakEvery: 3, streakBonus: 2 });
 const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const DEFAULT_LEAGUE_ID = "general";
+const HOST_PLAYER_IDS = new Set([
+  "19506ff2-a454-4be0-acb8-e511047babad",
+  "42fc9e3c-8e3f-4612-93b2-5cb774b98653"
+]);
+const LEVEL_TIERS = Object.freeze([
+  { id: "starter", minLevel: 1, label: "Стартово" },
+  { id: "bronze", minLevel: 5, label: "Бронзово" },
+  { id: "silver", minLevel: 10, label: "Сребърно" },
+  { id: "gold", minLevel: 20, label: "Златно" },
+  { id: "platinum", minLevel: 30, label: "Платинено" },
+  { id: "diamond", minLevel: 40, label: "Диамантено" },
+  { id: "legendary", minLevel: 50, label: "Легендарно" }
+]);
+const LEVEL_NAMES = Object.freeze([
+  { minLevel: 1, name: "Дебютант" },
+  { minLevel: 2, name: "Млад талант" },
+  { minLevel: 3, name: "Голова надежда" },
+  { minLevel: 4, name: "Титуляр" },
+  { minLevel: 5, name: "Теренен боец" },
+  { minLevel: 7, name: "Майстор на паса" },
+  { minLevel: 10, name: "Плеймейкър" },
+  { minLevel: 13, name: "Архитект на играта" },
+  { minLevel: 16, name: "Капитан" },
+  { minLevel: 20, name: "Златната обувка" },
+  { minLevel: 25, name: "Маестро" },
+  { minLevel: 30, name: "Шампион" },
+  { minLevel: 35, name: "Европейска класа" },
+  { minLevel: 40, name: "Футболен идол" },
+  { minLevel: 45, name: "Икона на играта" },
+  { minLevel: 50, name: "Безсмъртна легенда" }
+]);
 
 const TROPHY_TIERS = Object.freeze({
   bronze: "Бронзово",
@@ -148,6 +179,10 @@ function itemBelongsToLeague(item, leagueId) {
     : leagueId === DEFAULT_LEAGUE_ID;
 }
 
+function isHostPlayer(player = {}) {
+  return HOST_PLAYER_IDS.has(String(player.id || ""));
+}
+
 function scoreValue(value) {
   if (value === "" || value === null || value === undefined) return null;
   const score = Number(value);
@@ -165,6 +200,39 @@ function resultForMatch(match = {}) {
   const homeScore = scoreValue(match.result?.homeScore);
   const awayScore = scoreValue(match.result?.awayScore);
   return homeScore === null || awayScore === null ? null : { homeScore, awayScore };
+}
+
+function levelRequirement(level = 1) {
+  const target = Math.max(1, Math.floor(Number(level) || 1));
+  if (target <= 10) return ((target - 1) * target) / 2;
+  if (target <= 20) return 45 + ((target - 10) * 8);
+  if (target <= 30) return 125 + ((target - 20) * 12);
+  if (target <= 40) return 245 + ((target - 30) * 16);
+  if (target <= 50) return 405 + ((target - 40) * 20);
+  return 605 + ((target - 50) * 25);
+}
+
+function levelProgress(completedMatches = 0) {
+  const matches = Math.max(0, Math.floor(Number(completedMatches) || 0));
+  let level = matches >= 605 ? 50 + Math.floor((matches - 605) / 25) : 1;
+  while (matches >= levelRequirement(level + 1)) level += 1;
+  const currentRequirement = levelRequirement(level);
+  const nextRequirement = levelRequirement(level + 1);
+  const tier = [...LEVEL_TIERS].reverse().find((item) => level >= item.minLevel) || LEVEL_TIERS[0];
+  const levelName = [...LEVEL_NAMES].reverse().find((item) => level >= item.minLevel)?.name || LEVEL_NAMES[0].name;
+  return {
+    value: level,
+    name: levelName,
+    tier: tier.id,
+    tierLabel: tier.label,
+    completedMatches: matches,
+    currentRequirement,
+    nextRequirement,
+    matchesToNext: Math.max(0, nextRequirement - matches),
+    progress: nextRequirement > currentRequirement
+      ? Math.round(((matches - currentRequirement) / (nextRequirement - currentRequirement)) * 100)
+      : 100
+  };
 }
 
 function matchStatus(match = {}, now = Date.now()) {
@@ -305,6 +373,33 @@ function allCollectionMatches(value = {}) {
   );
 }
 
+function buildGlobalParticipationStats(rawCollection, rawStore) {
+  const store = normalizeLeagueStore(rawStore);
+  const matchesByKey = new Map();
+  allCollectionMatches(rawCollection).forEach((match) => {
+    matchesByKey.set(`${normalizeLeagueId(match.leagueId)}:${match.id}`, match);
+  });
+  store.archivedMatches.forEach((match) => {
+    const leagueId = normalizeLeagueId(match.leagueId, DEFAULT_LEAGUE_ID);
+    const key = `${leagueId}:${match.id}`;
+    if (!matchesByKey.has(key)) matchesByKey.set(key, { ...match, leagueId });
+  });
+
+  const completedByPlayer = new Map();
+  store.predictions.forEach((prediction) => {
+    const leagueId = normalizeLeagueId(prediction.leagueId, DEFAULT_LEAGUE_ID);
+    const key = `${leagueId}:${prediction.matchId}`;
+    if (!resultForMatch(matchesByKey.get(key))) return;
+    if (!completedByPlayer.has(prediction.playerId)) completedByPlayer.set(prediction.playerId, new Set());
+    completedByPlayer.get(prediction.playerId).add(key);
+  });
+
+  return new Map(store.players.map((player) => {
+    const completedMatches = completedByPlayer.get(player.id)?.size || 0;
+    return [player.id, { completedMatches, level: levelProgress(completedMatches) }];
+  }));
+}
+
 function archiveDeletedLeagueMatches(rawPreviousConfig, rawNextConfig, rawStore) {
   const store = normalizeLeagueStore(rawStore);
   const previousMatches = allCollectionMatches(rawPreviousConfig);
@@ -388,6 +483,7 @@ function scoreEvents(config, store) {
     });
 
     const totalPredictions = (predictionsByPlayer.get(player.id) || []).length;
+    const completedPredictions = predictions.length;
     const trophyStats = { exactScores, derbyCorrect, maxStreak, totalPredictions };
     const badges = config.trophies.filter((trophy) => {
       if (trophy.condition === "exact") return trophyStats.exactScores >= 1;
@@ -397,12 +493,12 @@ function scoreEvents(config, store) {
       return false;
     });
     events.set(player.id, playerEvents);
-    stats.set(player.id, { points, exactScores, correctOutcomes, derbyCorrect, currentStreak: streak, maxStreak, totalPredictions, badges });
+    stats.set(player.id, { points, exactScores, correctOutcomes, derbyCorrect, currentStreak: streak, maxStreak, totalPredictions, completedPredictions, badges });
   });
   return { events, stats };
 }
 
-function buildLeaderboard(period, config, store, scoring, now) {
+function buildLeaderboard(period, config, store, scoring, globalParticipation, now) {
   const [start, end] = periodRanges(now)[period];
   const matchIds = new Set(config.matches.filter((match) => {
     const timestamp = matchTimestamp(match);
@@ -410,17 +506,30 @@ function buildLeaderboard(period, config, store, scoring, now) {
   }).map((match) => match.id));
 
   const rows = store.players.map((player) => {
-    const playerPredictions = store.predictions.filter((prediction) => prediction.playerId === player.id && matchIds.has(prediction.matchId));
+    const playerPredictions = store.predictions.filter((prediction) =>
+      prediction.playerId === player.id &&
+      itemBelongsToLeague(prediction, config.id) &&
+      matchIds.has(prediction.matchId)
+    );
     const playerEvents = scoring.events.get(player.id) || new Map();
     const periodEvents = [...playerEvents.entries()].filter(([matchId]) => matchIds.has(matchId)).map(([, event]) => event);
+    const playerStats = scoring.stats.get(player.id);
+    const globalStats = globalParticipation.get(player.id) || { completedMatches: 0, level: levelProgress(0) };
     return {
       playerId: player.id,
       nickname: player.nickname,
+      isHost: isHostPlayer(player),
       points: periodEvents.reduce((sum, event) => sum + event.points, 0),
       exactScores: periodEvents.filter((event) => event.exactScore).length,
       correctOutcomes: periodEvents.filter((event) => event.correctOutcome).length,
       predictions: playerPredictions.length,
-      badges: scoring.stats.get(player.id)?.badges || []
+      currentStreak: playerStats?.currentStreak || 0,
+      totalExactScores: playerStats?.exactScores || 0,
+      totalCorrectOutcomes: playerStats?.correctOutcomes || 0,
+      leagueCompletedPredictions: playerStats?.completedPredictions || 0,
+      globalCompletedPredictions: globalStats.completedMatches,
+      level: globalStats.level,
+      badges: playerStats?.badges || []
     };
   }).filter((row) => row.predictions > 0);
 
@@ -428,14 +537,16 @@ function buildLeaderboard(period, config, store, scoring, now) {
     right.points - left.points ||
     right.exactScores - left.exactScores ||
     right.correctOutcomes - left.correctOutcomes ||
+    left.leagueCompletedPredictions - right.leagueCompletedPredictions ||
     left.nickname.localeCompare(right.nickname, "bg-BG")
   );
   return rows.map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
-function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) {
+function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), options = {}) {
   const config = normalizeLeagueConfig(rawConfig);
   const store = normalizeLeagueStore(rawStore);
+  const globalParticipation = options.globalParticipation || buildGlobalParticipationStats({ leagues: [{ ...rawConfig, id: config.id }] }, store);
   const activeMatchIds = new Set(normalizeAllLeagueMatches(rawConfig).map((match) => match.id));
   const archivedMatches = normalizeAllLeagueMatches({
     ...config,
@@ -444,10 +555,19 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
   const scoringConfig = { ...config, matches: [...normalizeAllLeagueMatches(rawConfig), ...archivedMatches] };
   const scoring = scoreEvents(scoringConfig, store);
   const leaderboards = {
-    week: buildLeaderboard("week", scoringConfig, store, scoring, now),
-    month: buildLeaderboard("month", scoringConfig, store, scoring, now),
-    season: buildLeaderboard("season", scoringConfig, store, scoring, now)
+    week: buildLeaderboard("week", scoringConfig, store, scoring, globalParticipation, now),
+    month: buildLeaderboard("month", scoringConfig, store, scoring, globalParticipation, now),
+    season: buildLeaderboard("season", scoringConfig, store, scoring, globalParticipation, now)
   };
+  Object.values(leaderboards).forEach((rows) => {
+    rows.forEach((row) => {
+      row.ranks = {
+        week: leaderboards.week.find((item) => item.playerId === row.playerId)?.rank || null,
+        month: leaderboards.month.find((item) => item.playerId === row.playerId)?.rank || null,
+        season: leaderboards.season.find((item) => item.playerId === row.playerId)?.rank || null
+      };
+    });
+  });
   const monthlyChampionTrophies = config.trophies.filter((trophy) => trophy.condition === "monthlyChampion");
   if (leaderboards.month[0]?.points > 0 && monthlyChampionTrophies.length) {
     const championId = leaderboards.month[0].playerId;
@@ -495,11 +615,13 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
 
   let me = null;
   if (player) {
-    const stats = scoring.stats.get(player.id) || { points: 0, exactScores: 0, correctOutcomes: 0, currentStreak: 0, maxStreak: 0, totalPredictions: 0, badges: [] };
+    const stats = scoring.stats.get(player.id) || { points: 0, exactScores: 0, correctOutcomes: 0, currentStreak: 0, maxStreak: 0, totalPredictions: 0, completedPredictions: 0, badges: [] };
+    const globalStats = globalParticipation.get(player.id) || { completedMatches: 0, level: levelProgress(0) };
     const rankFor = (period) => leaderboards[period].find((row) => row.playerId === player.id)?.rank || null;
     const pointsFor = (period) => leaderboards[period].find((row) => row.playerId === player.id)?.points || 0;
     me = {
       nickname: player.nickname,
+      isHost: isHostPlayer(player),
       totalPoints: stats.points,
       weeklyPoints: pointsFor("week"),
       monthlyPoints: pointsFor("month"),
@@ -507,6 +629,9 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
       currentStreak: stats.currentStreak,
       maxStreak: stats.maxStreak,
       totalPredictions: stats.totalPredictions,
+      completedPredictions: stats.completedPredictions,
+      globalCompletedPredictions: globalStats.completedMatches,
+      level: globalStats.level,
       correctOutcomes: stats.correctOutcomes,
       exactScores: stats.exactScores,
       badges: stats.badges
@@ -535,6 +660,7 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now()) 
 function buildPredictionLeagueState(rawCollection, rawStore, playerId = "", requestedLeagueId = "", now = Date.now()) {
   const collection = normalizeLeagueCollection(rawCollection);
   const store = normalizeLeagueStore(rawStore);
+  const globalParticipation = buildGlobalParticipationStats(rawCollection, store);
   const visibleLeagues = collection.enabled ? collection.leagues.filter((league) => league.enabled) : [];
   const requestedId = normalizeLeagueId(requestedLeagueId, visibleLeagues[0]?.id || DEFAULT_LEAGUE_ID);
   const selectedLeague = visibleLeagues.find((league) => league.id === requestedId) || visibleLeagues[0] || null;
@@ -573,7 +699,7 @@ function buildPredictionLeagueState(rawCollection, rawStore, playerId = "", requ
   }
 
   return {
-    ...buildLeagueState(selectedLeague, store, playerId, now),
+    ...buildLeagueState(selectedLeague, store, playerId, now, { globalParticipation }),
     hubTitle: collection.title,
     hubDescription: collection.description,
     leagues,
@@ -587,11 +713,15 @@ module.exports = {
   POINTS,
   TROPHY_CONDITIONS,
   TROPHY_TIERS,
+  buildGlobalParticipationStats,
   archiveDeletedLeagueMatches,
   buildLeagueState,
   buildPredictionLeagueState,
   createRecoveryCode,
   hashRecoveryCode,
+  isHostPlayer,
+  levelProgress,
+  levelRequirement,
   matchStatus,
   nicknameIsTaken,
   nicknameKey,

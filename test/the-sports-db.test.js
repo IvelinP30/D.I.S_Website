@@ -12,10 +12,11 @@ function response(payload = { events: [] }, status = 200) {
 
 test("free TheSportsDB client requests one full round and tracks local usage", async () => {
   const state = {};
+  const now = Date.parse("2026-07-22T08:00:00Z");
   let requestedUrl = "";
   const result = await requestTheSportsDb("eventsround.php", { id: 4328, r: 1, s: "2026-2027" }, {
     state,
-    now: Date.parse("2026-07-22T08:00:00Z"),
+    now,
     fetchImpl: async (url) => {
       requestedUrl = String(url);
       return response({ events: [{ idEvent: "2494000" }] });
@@ -24,7 +25,7 @@ test("free TheSportsDB client requests one full round and tracks local usage", a
   assert.equal(result.events[0].idEvent, "2494000");
   assert.match(requestedUrl, /\/api\/v1\/json\/123\/eventsround\.php/);
   assert.match(requestedUrl, /id=4328/);
-  assert.equal(theSportsDbUsageSummary(state).used, 1);
+  assert.equal(theSportsDbUsageSummary(state, now).used, 1);
 });
 
 test("free TheSportsDB client supports one team badge lookup by name", async () => {
