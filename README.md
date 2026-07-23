@@ -330,7 +330,15 @@ The current local JSON and upload storage remains suitable for development only.
 
 When all Supabase variables are present, the Node backend automatically stores content, inbox messages, votes, Prediction League data, and uploaded media in Supabase. Without them, local development continues to use `data/*.json` and `uploads/`. Production startup intentionally fails when Supabase is missing, preventing accidental data loss on an ephemeral host.
 
-Production giveaway participants are stored in the protected Supabase `app_state` row whose key is `giveawayEntries`. Local development uses the ignored `data/giveaway-entries.json` file, so local tests do not touch production unless `USE_SUPABASE_LOCAL=true` is set intentionally. No additional Supabase table or migration is required.
+Production giveaway participants are stored as private rows in `giveaway_entries`. Campaign settings remain in `app_state.content`, while each registration gets an atomic insert with database-enforced uniqueness per campaign for both the normalized email hash and signed browser hash. RLS and explicit grants keep names, emails, social handles and consent hashes service-role-only. Winner assignment uses one locked database function so concurrent admin actions cannot create two draws or partially assign prizes. Local development keeps using the ignored `data/giveaway-entries.json` file unless `USE_SUPABASE_LOCAL=true` is set intentionally.
+
+Before a large campaign, run:
+
+```bash
+npm run backup:giveaway
+```
+
+The command exports both the retired `app_state.giveawayEntries` value and all relational rows into a checksum-protected gzip file under ignored `backups/`. Treat it as private personal data. The public form, participant counter, eligibility controls, CSV export, winner draw, reset and deletion endpoints keep the same browser-facing API.
 
 Prediction League v2 uses `league_players`, `league_matches`, `league_predictions`, `league_scoring_versions` and `league_score_events`. Every table has RLS enabled, grants only the server-side `service_role`, database constraints, targeted indexes and restrictive foreign keys. One prediction save is an atomic SQL upsert and never rewrites the full season.
 

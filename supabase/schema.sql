@@ -401,3 +401,177 @@ grant execute on function public.league_leaderboard_rows(text, timestamptz, time
 grant execute on function public.league_database_usage() to service_role;
 grant execute on function public.league_player_participation(uuid) to service_role;
 grant execute on function public.league_ids_for_scoring() to service_role;
+
+-- Giveaway entries v2
+--
+-- Campaign configuration remains in app_state.content. Participant records are
+-- relational because they contain private data and may be created concurrently.
+
+create table if not exists public.giveaway_entries (
+  id uuid primary key,
+  giveaway_id text not null,
+  name text not null,
+  email text not null,
+  social_handle text not null default '',
+  email_hash text not null,
+  browser_hash text not null,
+  rules_hash text not null,
+  eligible boolean not null default true,
+  winner_rank smallint,
+  prize_id text not null default '',
+  prize_name text not null default '',
+  prize_image text not null default '',
+  drawn_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint giveaway_entries_name_length check (char_length(name) between 1 and 100),
+  constraint giveaway_entries_email_length check (char_length(email) between 3 and 180),
+  constraint giveaway_entries_social_handle_length check (char_length(social_handle) <= 180),
+  constraint giveaway_entries_email_hash check (char_length(email_hash) = 64),
+  constraint giveaway_entries_browser_hash check (char_length(browser_hash) = 64),
+  constraint giveaway_entries_rules_hash check (char_length(rules_hash) = 64),
+  constraint giveaway_entries_winner_rank check (winner_rank between 1 and 20),
+  constraint giveaway_entries_draw_state check (
+    (winner_rank is null and drawn_at is null)
+    or (winner_rank is not null and drawn_at is not null)
+  )
+);
+
+create unique index if not exists giveaway_entries_one_email
+  on public.giveaway_entries (giveaway_id, email_hash);
+create unique index if not exists giveaway_entries_one_browser
+  on public.giveaway_entries (giveaway_id, browser_hash);
+create unique index if not exists giveaway_entries_one_winner_rank
+  on public.giveaway_entries (giveaway_id, winner_rank)
+  where winner_rank is not null;
+create index if not exists giveaway_entries_campaign_created
+  on public.giveaway_entries (giveaway_id, created_at desc);
+create index if not exists giveaway_entries_campaign_eligible
+  on public.giveaway_entries (giveaway_id, eligible)
+  where winner_rank is null;
+
+alter table public.giveaway_entries enable row level security;
+revoke all on table public.giveaway_entries from anon, authenticated;
+grant select, insert, update, delete on table public.giveaway_entries to service_role;
+
+create or replace function public.giveaway_participant_count(p_giveaway_id text)
+returns bigint
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select count(*)::bigint
+  from public.giveaway_entries
+  where giveaway_id = p_giveaway_id and eligible;
+$$;
+
+create or replace function public.giveaway_assign_winners(
+  p_giveaway_id text,
+  p_assignments jsonb,
+  p_drawn_at timestamptz
+)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  assignment_count integer;
+  distinct_entry_count integer;
+  distinct_rank_count integer;
+  minimum_rank integer;
+  maximum_rank integer;
+  eligible_count integer;
+  updated_count integer;
+begin
+  if jsonb_typeof(p_assignments) is distinct from 'array' then
+    raise exception 'Winner assignments must be a JSON array';
+  end if;
+
+  assignment_count := jsonb_array_length(p_assignments);
+  if assignment_count < 1 or assignment_count > 20 then
+    raise exception 'Winner assignment count must be between 1 and 20';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtextextended(p_giveaway_id, 0));
+
+  if exists (
+    select 1 from public.giveaway_entries
+    where giveaway_id = p_giveaway_id and winner_rank is not null
+  ) then
+    raise exception 'Giveaway already has winners';
+  end if;
+
+  select
+    count(distinct assignment.id),
+    count(distinct assignment.winner_rank),
+    min(assignment.winner_rank),
+    max(assignment.winner_rank)
+  into distinct_entry_count, distinct_rank_count, minimum_rank, maximum_rank
+  from jsonb_to_recordset(p_assignments) as assignment(
+    id uuid,
+    winner_rank integer,
+    prize_id text,
+    prize_name text,
+    prize_image text
+  );
+
+  if distinct_entry_count <> assignment_count
+    or distinct_rank_count <> assignment_count
+    or minimum_rank <> 1
+    or maximum_rank <> assignment_count
+  then
+    raise exception 'Winner assignments contain duplicate or invalid entries';
+  end if;
+
+  select count(*) into eligible_count
+  from public.giveaway_entries entry
+  join jsonb_to_recordset(p_assignments) as assignment(
+    id uuid,
+    winner_rank integer,
+    prize_id text,
+    prize_name text,
+    prize_image text
+  ) on assignment.id = entry.id
+  where entry.giveaway_id = p_giveaway_id
+    and entry.eligible
+    and entry.winner_rank is null;
+
+  if eligible_count <> assignment_count then
+    raise exception 'One or more selected participants are not eligible';
+  end if;
+
+  update public.giveaway_entries entry
+  set
+    winner_rank = assignment.winner_rank,
+    prize_id = left(coalesce(assignment.prize_id, ''), 180),
+    prize_name = left(coalesce(assignment.prize_name, ''), 180),
+    prize_image = left(coalesce(assignment.prize_image, ''), 1000),
+    drawn_at = p_drawn_at,
+    updated_at = p_drawn_at
+  from jsonb_to_recordset(p_assignments) as assignment(
+    id uuid,
+    winner_rank integer,
+    prize_id text,
+    prize_name text,
+    prize_image text
+  )
+  where entry.id = assignment.id
+    and entry.giveaway_id = p_giveaway_id
+    and entry.eligible
+    and entry.winner_rank is null;
+
+  get diagnostics updated_count = row_count;
+  if updated_count <> assignment_count then
+    raise exception 'Winner assignment was not completed';
+  end if;
+
+  return updated_count;
+end;
+$$;
+
+revoke all on function public.giveaway_participant_count(text) from public, anon, authenticated;
+revoke all on function public.giveaway_assign_winners(text, jsonb, timestamptz) from public, anon, authenticated;
+grant execute on function public.giveaway_participant_count(text) to service_role;
+grant execute on function public.giveaway_assign_winners(text, jsonb, timestamptz) to service_role;

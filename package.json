@@ -5,6 +5,7 @@
   "scripts": {
     "start": "node server.js",
     "test": "node --test",
+    "backup:giveaway": "node scripts/backup-giveaway.js",
     "backup:league": "node scripts/backup-league.js",
     "load-test:league": "node scripts/load-test-league.js"
   },

@@ -24,6 +24,7 @@ const {
 } = require("./server/press-news");
 const { downloadPressNewsThumbnail, pressNewsImageFilename } = require("./server/press-news-image");
 const { applyChoice, choiceState, pruneEngagementStore } = require("./server/engagement");
+const { createGiveawayRelationalStorage } = require("./server/giveaway-relational-storage");
 const { createLeagueRelationalStorage } = require("./server/league-relational-storage");
 const {
   archiveDeletedLeagueMatches,
@@ -172,6 +173,13 @@ const relationalLeagueStorage = createLeagueRelationalStorage({
   logger: console
 });
 
+const relationalGiveawayStorage = createGiveawayRelationalStorage({
+  enabled: cloudStorageEnabled,
+  url: supabaseUrl,
+  requestHeaders: supabaseHeaders,
+  logger: console
+});
+
 async function readContent() {
   return readJsonFile(dataFile, {}, "content");
 }
@@ -179,6 +187,7 @@ async function readContent() {
 async function writeContent(content) {
   const previousContent = await readContent();
   const relationalReady = await ensureRelationalLeagueStorage(previousContent);
+  const relationalGiveawayReady = await ensureRelationalGiveawayStorage();
   if (!relationalReady) {
     await mutateLeagueStore((leagueStore) => {
       const archivedStore = archiveDeletedLeagueMatches(previousContent.predictionLeague, content.predictionLeague, leagueStore);
@@ -202,10 +211,14 @@ async function writeContent(content) {
     predictionIds: (content.predictions || []).map((prediction) => String(prediction.id || "")).filter(Boolean)
   });
   if (JSON.stringify(nextVotes) !== JSON.stringify(storedVotes)) await writeJsonFile(votesFile, nextVotes);
-  const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
   const validGiveawayId = content.giveaway?.id || "";
-  const nextEntries = validGiveawayId ? entries.filter((entry) => entry.giveawayId === validGiveawayId) : [];
-  if (nextEntries.length !== entries.length) await writeJsonFile(giveawayEntriesFile, nextEntries, "giveawayEntries");
+  if (relationalGiveawayReady) {
+    await relationalGiveawayStorage.keepOnlyGiveaway(validGiveawayId);
+  } else {
+    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    const nextEntries = validGiveawayId ? entries.filter((entry) => entry.giveawayId === validGiveawayId) : [];
+    if (nextEntries.length !== entries.length) await writeJsonFile(giveawayEntriesFile, nextEntries, "giveawayEntries");
+  }
 }
 
 async function readJsonFile(file, fallback, storageKey = path.basename(file, ".json")) {
@@ -673,6 +686,11 @@ async function readLeagueStore() {
 
 async function readLegacyLeagueStore() {
   return normalizeLeagueStore(await readJsonFile(predictionLeagueFile, { players: [], predictions: [] }, "predictionLeague"));
+}
+
+async function ensureRelationalGiveawayStorage() {
+  if (!cloudStorageEnabled) return false;
+  return relationalGiveawayStorage.probe();
 }
 
 async function ensureRelationalLeagueStorage(content = null) {
@@ -1611,10 +1629,6 @@ async function handleRequest(request, response) {
     } catch (error) {
       return sendJson(response, 400, { error: error.message });
     }
-    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
-    if (entries.some((entry) => entry.giveawayId === giveaway.id && (entry.emailHash === normalized.emailHash || entry.browserHash === normalized.browserHash))) {
-      return sendJson(response, 409, { error: "Вече имаш записано участие в този giveaway." });
-    }
     const entry = {
       id: crypto.randomUUID(),
       giveawayId: giveaway.id,
@@ -1624,8 +1638,23 @@ async function handleRequest(request, response) {
       drawnAt: "",
       createdAt: new Date().toISOString()
     };
-    entries.unshift(entry);
-    await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    if (await ensureRelationalGiveawayStorage()) {
+      try {
+        await relationalGiveawayStorage.createEntry(entry);
+      } catch (error) {
+        if (error.statusCode === 409) {
+          return sendJson(response, 409, { error: "Вече имаш записано участие в този giveaway." });
+        }
+        throw error;
+      }
+    } else {
+      const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+      if (entries.some((item) => item.giveawayId === giveaway.id && (item.emailHash === normalized.emailHash || item.browserHash === normalized.browserHash))) {
+        return sendJson(response, 409, { error: "Вече имаш записано участие в този giveaway." });
+      }
+      entries.unshift(entry);
+      await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    }
     return sendJson(response, 201, { ok: true, id: entry.id }, existingToken ? {} : {
       "Set-Cookie": `dis_giveaway=${token}; HttpOnly; SameSite=Lax; Max-Age=${oneYear}; Path=/`
     });
@@ -1638,23 +1667,31 @@ async function handleRequest(request, response) {
     if (!giveaway || giveaway.id !== giveawayId || !giveawayIsOpen(giveaway)) {
       return sendJson(response, 404, { error: "Този giveaway не е активен в момента." });
     }
-    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
-    const participantCount = entries.filter((entry) => entry.giveawayId === giveaway.id && entry.eligible !== false).length;
+    const participantCount = await ensureRelationalGiveawayStorage()
+      ? await relationalGiveawayStorage.participantCount(giveaway.id)
+      : (await readJsonFile(giveawayEntriesFile, [], "giveawayEntries"))
+          .filter((entry) => entry.giveawayId === giveaway.id && entry.eligible !== false).length;
     return sendJson(response, 200, { participantCount }, { "Cache-Control": "no-store, max-age=0" });
   }
 
   if (url.pathname === "/api/giveaway/entries" && request.method === "GET") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const giveawayId = url.searchParams.get("giveawayId") || "";
-    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    const entries = await ensureRelationalGiveawayStorage()
+      ? await relationalGiveawayStorage.entries(giveawayId)
+      : await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
     return sendJson(response, 200, { entries: entries.filter((entry) => entry.giveawayId === giveawayId).map(publicGiveawayEntry) });
   }
 
   if (url.pathname === "/api/giveaway/entries" && request.method === "DELETE") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const giveawayId = url.searchParams.get("giveawayId") || "";
-    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
-    await writeJsonFile(giveawayEntriesFile, entries.filter((entry) => entry.giveawayId !== giveawayId), "giveawayEntries");
+    if (await ensureRelationalGiveawayStorage()) {
+      await relationalGiveawayStorage.deleteGiveaway(giveawayId);
+    } else {
+      const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+      await writeJsonFile(giveawayEntriesFile, entries.filter((entry) => entry.giveawayId !== giveawayId), "giveawayEntries");
+    }
     return send(response, 204, "");
   }
 
@@ -1662,8 +1699,17 @@ async function handleRequest(request, response) {
   if (giveawayEntryMatch && request.method === "PATCH") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const payload = JSON.parse(await readBody(request));
+    const entryId = decodeURIComponent(giveawayEntryMatch[1]);
+    if (await ensureRelationalGiveawayStorage()) {
+      const existing = await relationalGiveawayStorage.entry(entryId);
+      if (!existing) return sendJson(response, 404, { error: "Участникът не е намерен." });
+      if (existing.winnerRank) return sendJson(response, 409, { error: "Първо нулирай резултата от тегленето." });
+      const updated = await relationalGiveawayStorage.setEligibility(entryId, payload.eligible);
+      if (!updated) return sendJson(response, 409, { error: "Участникът е променен едновременно. Презареди списъка." });
+      return sendJson(response, 200, publicGiveawayEntry(updated));
+    }
     const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
-    const entry = entries.find((item) => item.id === decodeURIComponent(giveawayEntryMatch[1]));
+    const entry = entries.find((item) => item.id === entryId);
     if (!entry) return sendJson(response, 404, { error: "Участникът не е намерен." });
     if (entry.winnerRank) return sendJson(response, 409, { error: "Първо нулирай резултата от тегленето." });
     entry.eligible = Boolean(payload.eligible);
@@ -1673,11 +1719,19 @@ async function handleRequest(request, response) {
 
   if (giveawayEntryMatch && request.method === "DELETE") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
-    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
     const entryId = decodeURIComponent(giveawayEntryMatch[1]);
-    const entry = entries.find((item) => item.id === entryId);
-    if (entry?.winnerRank) return sendJson(response, 409, { error: "Първо нулирай резултата от тегленето, преди да изтриеш победител." });
-    await writeJsonFile(giveawayEntriesFile, entries.filter((entry) => entry.id !== entryId), "giveawayEntries");
+    if (await ensureRelationalGiveawayStorage()) {
+      const entry = await relationalGiveawayStorage.entry(entryId);
+      if (entry?.winnerRank) return sendJson(response, 409, { error: "Първо нулирай резултата от тегленето, преди да изтриеш победител." });
+      if (entry && !await relationalGiveawayStorage.deleteEntry(entryId)) {
+        return sendJson(response, 409, { error: "Участникът е променен едновременно. Презареди списъка." });
+      }
+    } else {
+      const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+      const entry = entries.find((item) => item.id === entryId);
+      if (entry?.winnerRank) return sendJson(response, 409, { error: "Първо нулирай резултата от тегленето, преди да изтриеш победител." });
+      await writeJsonFile(giveawayEntriesFile, entries.filter((entry) => entry.id !== entryId), "giveawayEntries");
+    }
     return send(response, 204, "");
   }
 
@@ -1688,7 +1742,10 @@ async function handleRequest(request, response) {
     const giveaway = content.giveaway;
     if (!giveaway || giveaway.id !== payload.giveawayId) return sendJson(response, 404, { error: "Първо запази giveaway настройките." });
     if (giveawayIsOpen(giveaway)) return sendJson(response, 409, { error: "Спри записването или изчакай крайния срок преди тегленето." });
-    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+    const relationalGiveawayReady = await ensureRelationalGiveawayStorage();
+    const entries = relationalGiveawayReady
+      ? await relationalGiveawayStorage.entries(giveaway.id)
+      : await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
     const giveawayEntries = entries.filter((entry) => entry.giveawayId === giveaway.id);
     if (giveawayEntries.some((entry) => entry.winnerRank)) return sendJson(response, 409, { error: "Вече има изтеглен победител. Нулирай резултата само ако наистина трябва да теглиш отново." });
     const eligible = giveawayEntries.filter((entry) => entry.eligible !== false);
@@ -1698,12 +1755,31 @@ async function handleRequest(request, response) {
     const winners = drawRandomEntries(eligible, winnerCount);
     const randomizedPrizeSlots = drawRandomEntries(prizeSlots, prizeSlots.length);
     const drawnAt = new Date().toISOString();
+    const assignments = winners.map((winner, index) => ({
+      id: winner.id,
+      winnerRank: index + 1,
+      prizeId: randomizedPrizeSlots[index].id,
+      prizeName: randomizedPrizeSlots[index].name,
+      prizeImage: randomizedPrizeSlots[index].image
+    }));
+    if (relationalGiveawayReady) {
+      try {
+        await relationalGiveawayStorage.assignWinners(giveaway.id, assignments, drawnAt);
+      } catch (error) {
+        return sendJson(response, 409, { error: "Тегленето не беше записано, защото данните са променени. Презареди участниците и опитай отново." });
+      }
+      const savedEntries = await relationalGiveawayStorage.entries(giveaway.id);
+      return sendJson(response, 200, {
+        winners: savedEntries.filter((entry) => entry.winnerRank).sort((a, b) => a.winnerRank - b.winnerRank).map(publicGiveawayEntry),
+        drawnAt
+      });
+    }
     winners.forEach((winner, index) => {
-      winner.winnerRank = index + 1;
+      winner.winnerRank = assignments[index].winnerRank;
       winner.drawnAt = drawnAt;
-      winner.prizeId = randomizedPrizeSlots[index].id;
-      winner.prizeName = randomizedPrizeSlots[index].name;
-      winner.prizeImage = randomizedPrizeSlots[index].image;
+      winner.prizeId = assignments[index].prizeId;
+      winner.prizeName = assignments[index].prizeName;
+      winner.prizeImage = assignments[index].prizeImage;
     });
     await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
     return sendJson(response, 200, { winners: winners.map(publicGiveawayEntry), drawnAt });
@@ -1712,15 +1788,19 @@ async function handleRequest(request, response) {
   if (url.pathname === "/api/giveaway/reset" && request.method === "POST") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const payload = JSON.parse(await readBody(request));
-    const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
-    entries.filter((entry) => entry.giveawayId === payload.giveawayId).forEach((entry) => {
-      entry.winnerRank = null;
-      entry.drawnAt = "";
-      entry.prizeId = "";
-      entry.prizeName = "";
-      entry.prizeImage = "";
-    });
-    await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    if (await ensureRelationalGiveawayStorage()) {
+      await relationalGiveawayStorage.resetWinners(payload.giveawayId);
+    } else {
+      const entries = await readJsonFile(giveawayEntriesFile, [], "giveawayEntries");
+      entries.filter((entry) => entry.giveawayId === payload.giveawayId).forEach((entry) => {
+        entry.winnerRank = null;
+        entry.drawnAt = "";
+        entry.prizeId = "";
+        entry.prizeName = "";
+        entry.prizeImage = "";
+      });
+      await writeJsonFile(giveawayEntriesFile, entries, "giveawayEntries");
+    }
     return sendJson(response, 200, { ok: true });
   }
 
