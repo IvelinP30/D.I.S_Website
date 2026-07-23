@@ -79,7 +79,7 @@ const newsdataApiKey = String(process.env.NEWSDATA_API_KEY || "").trim();
 const pressNewsQuery = String(process.env.NEWSDATA_QUERY || "футбол").trim().slice(0, 100) || "футбол";
 const pressNewsBulgarianQuery = String(process.env.NEWSDATA_BULGARIAN_QUERY || "Левски OR ЦСКА OR Лудогорец OR efbet лига OR национален отбор").trim().slice(0, 100);
 const pressNewsLanguage = String(process.env.NEWSDATA_LANGUAGE || "bg").trim().toLowerCase().slice(0, 8) || "bg";
-const pressNewsMaxItems = Math.min(20, Math.max(10, Number(process.env.NEWSDATA_MAX_ITEMS || 20) || 20));
+const pressNewsFetchLimit = Math.min(20, Math.max(10, Number(process.env.NEWSDATA_MAX_ITEMS || 20) || 20));
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
@@ -295,21 +295,20 @@ async function readPressNews() {
     limit: Number.POSITIVE_INFINITY,
     sortMode: "newest"
   }).map(withoutPressImageSource);
-  const currentItems = retainedItems.slice(0, pressNewsMaxItems);
   const currentCache = { ...cache, items: retainedItems };
   if (JSON.stringify(retainedItems) !== JSON.stringify(previousCachedItems)) {
     await writeJsonFile(pressNewsCacheFile, currentCache, "pressNewsCache");
     await cleanupExpiredPressNewsImages(previousCachedItems, retainedItems);
   }
   if (pressNewsCacheIsFresh(currentCache, now)) {
-    return { items: currentItems, refreshedAt: cache.refreshedAt, stale: false, configured: true };
+    return { items: retainedItems, refreshedAt: cache.refreshedAt, stale: false, configured: true };
   }
 
   if (!newsdataApiKey) {
     return {
-      items: currentItems,
+      items: retainedItems,
       refreshedAt: cache.refreshedAt || "",
-      stale: Boolean(currentItems.length),
+      stale: Boolean(retainedItems.length),
       configured: false
     };
   }
@@ -320,7 +319,7 @@ async function readPressNews() {
         apiKey: newsdataApiKey,
         queries: [pressNewsBulgarianQuery, pressNewsQuery],
         language: pressNewsLanguage,
-        limit: 20,
+        limit: pressNewsFetchLimit,
         now
       });
       const fetchedWithImages = await cachePressNewsImages(fetchedItems, retainedItems);
@@ -335,7 +334,7 @@ async function readPressNews() {
         refreshedAt: new Date(now).toISOString()
       };
       await writeJsonFile(pressNewsCacheFile, nextCache, "pressNewsCache");
-      return { ...nextCache, items: retainedWithNewItems.slice(0, pressNewsMaxItems) };
+      return nextCache;
     })().finally(() => {
       pressNewsRefreshPromise = null;
     });
@@ -345,8 +344,8 @@ async function readPressNews() {
     const refreshed = await pressNewsRefreshPromise;
     return { ...refreshed, stale: false, configured: true };
   } catch (error) {
-    if (currentItems.length) {
-      return { items: currentItems, refreshedAt: cache.refreshedAt || "", stale: true, configured: true };
+    if (retainedItems.length) {
+      return { items: retainedItems, refreshedAt: cache.refreshedAt || "", stale: true, configured: true };
     }
     throw error;
   }
