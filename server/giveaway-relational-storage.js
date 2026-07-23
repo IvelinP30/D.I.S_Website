@@ -83,7 +83,7 @@ function createGiveawayRelationalStorage(options = {}) {
       availability = !result.missing;
     } catch (error) {
       logger.warn(`Relational giveaway storage unavailable: ${error.message}`);
-      availability = false;
+      throw error;
     }
     return availability;
   }

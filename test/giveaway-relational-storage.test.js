@@ -75,3 +75,32 @@ test("participant count uses the protected aggregate RPC", async () => {
   assert.match(calls[0].url, /rpc\/giveaway_participant_count$/);
   assert.deepEqual(JSON.parse(calls[0].options.body), { p_giveaway_id: "campaign-1" });
 });
+
+test("giveaway probe falls back only for a missing table and fails closed on operational errors", async () => {
+  const silentLogger = { warn() {} };
+  const missingStorage = createGiveawayRelationalStorage({
+    enabled: true,
+    url: "https://example.supabase.co",
+    requestHeaders: (headers) => headers,
+    logger: silentLogger,
+    fetchImpl: async () => ({
+      ok: false,
+      status: 404,
+      text: async () => "missing"
+    })
+  });
+  assert.equal(await missingStorage.probe(), false);
+
+  const failingStorage = createGiveawayRelationalStorage({
+    enabled: true,
+    url: "https://example.supabase.co",
+    requestHeaders: (headers) => headers,
+    logger: silentLogger,
+    fetchImpl: async () => ({
+      ok: false,
+      status: 503,
+      text: async () => "temporarily unavailable"
+    })
+  });
+  await assert.rejects(failingStorage.probe(), /503/);
+});
