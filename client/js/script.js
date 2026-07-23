@@ -622,7 +622,22 @@ function leagueLevelMarkup(level = {}, compact = false) {
 }
 
 function leagueHostBadgeMarkup(compact = false) {
-  return `<span class="league-host-badge ${compact ? "is-compact" : ""}"><i aria-hidden="true">◆</i>D.I.S Водещ</span>`;
+  return `<span class="league-host-badge ${compact ? "is-compact" : ""}"><i aria-hidden="true">★</i>D.I.S Водещ</span>`;
+}
+
+function leagueSpecialPlayerStyle(value) {
+  return ["developer", "pink"].includes(value) ? value : "";
+}
+
+function leagueSpecialBadgeMarkup(style, compact = false) {
+  const variants = {
+    developer: { icon: "&lt;/&gt;", label: "D.I.S Dev" },
+    pink: { icon: "♛", label: "D.I.S Queen" }
+  };
+  const variant = variants[leagueSpecialPlayerStyle(style)];
+  if (!variant) return "";
+  const label = compact && variant.compactLabel ? variant.compactLabel : variant.label;
+  return `<span class="league-special-badge is-${style} ${compact ? "is-compact" : ""}" aria-label="${escapeAttribute(variant.label)}"><i aria-hidden="true">${variant.icon}</i>${label}</span>`;
 }
 
 function leagueRankLabel(value) {
@@ -655,10 +670,13 @@ function showLeaguePlayerTooltip(trigger, { pinned = false } = {}) {
     document.body.appendChild(leaguePlayerTooltip);
   }
   const data = trigger.dataset;
+  const specialStyle = leagueSpecialPlayerStyle(data.specialStyle);
+  const isHost = data.isHost === "true";
+  leaguePlayerTooltip.className = `league-player-tooltip${specialStyle ? ` is-special-${specialStyle}` : (isHost ? " is-host-player" : "")}`;
   leaguePlayerTooltip.innerHTML = `
     <div class="league-player-tooltip-heading">
       ${leagueLevelMarkup({ value: data.level, name: data.levelName, tier: data.levelTier, tierLabel: data.levelTierLabel })}
-      <div><span>Ниво ${escapeHTML(data.level)}</span><strong>${escapeHTML(data.nickname)}</strong><small>${escapeHTML(data.levelName || data.levelTierLabel)}</small>${data.isHost === "true" ? leagueHostBadgeMarkup(true) : ""}</div>
+      <div><span>Ниво ${escapeHTML(data.level)}</span><strong>${escapeHTML(data.nickname)}</strong><small>${escapeHTML(data.levelName || data.levelTierLabel)}</small>${specialStyle ? leagueSpecialBadgeMarkup(specialStyle) : (isHost ? leagueHostBadgeMarkup() : "")}</div>
     </div>
     ${data.trophyLabel ? `<div class="league-player-tooltip-trophy">${leagueBadgeDisplayMarkup({ label: data.trophyLabel, tier: data.trophyTier })}<small>${escapeHTML(data.trophyDescription)}</small></div>` : ""}
     <div class="league-player-tooltip-ranks">
@@ -854,14 +872,15 @@ function teamIdentityMarkup(name, media, className = "") {
 
 function leagueProfileMarkup(state) {
   const me = state.me;
+  const specialStyle = leagueSpecialPlayerStyle(me.specialStyle);
   const badges = me.badges?.length
     ? me.badges.map((badge) => leagueBadgeMarkup(badge)).join("")
     : `<span class="league-badge-empty">Първият трофей те чака.</span>`;
   const matchesToNext = Number(me.level?.matchesToNext) || 0;
   return `
-    <article class="league-profile-card">
+    <article class="league-profile-card ${specialStyle ? `has-special-${specialStyle}` : (me.isHost ? "has-host-player" : "")}">
       <div class="league-profile-heading">
-        <div><span>Общ D.I.S профил</span><h3 class="${me.isHost ? "is-host" : ""}">${leagueLevelMarkup(me.level)}<span>${escapeHTML(me.nickname)}</span>${me.isHost ? leagueHostBadgeMarkup() : ""}</h3><small>${escapeHTML(state.title)} · ${escapeHTML(state.seasonLabel)}</small></div>
+        <div><span>Общ D.I.S профил</span><h3 class="${me.isHost ? "is-host" : ""} ${specialStyle ? `is-special-${specialStyle}` : ""}">${leagueLevelMarkup(me.level)}<span>${escapeHTML(me.nickname)}</span>${specialStyle ? leagueSpecialBadgeMarkup(specialStyle) : (me.isHost ? leagueHostBadgeMarkup() : "")}</h3><small>${escapeHTML(state.title)} · ${escapeHTML(state.seasonLabel)}</small></div>
         <strong>${me.totalPoints}<small>точки</small></strong>
       </div>
       <div class="league-badges">${badges}</div>
@@ -1034,14 +1053,16 @@ function leagueLeaderboardMarkup(state) {
       <div class="league-table">
         ${rows.length ? rows.slice(0, 50).map((row) => {
           const trophy = leaguePrimaryBadge(row.badges || []);
+          const specialStyle = leagueSpecialPlayerStyle(row.specialStyle);
           return `
-          <div class="league-table-row ${state.me?.nickname === row.nickname ? "is-me" : ""}">
+          <div class="league-table-row ${state.me?.nickname === row.nickname ? "is-me" : ""} ${specialStyle ? `has-special-${specialStyle}` : (row.isHost ? "has-host-player" : "")}">
             <strong>${row.rank}</strong>
             <span>
-              <span class="league-player-summary" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false"
+              <span class="league-player-summary ${specialStyle ? `is-special-${specialStyle}` : (row.isHost ? "is-host-player" : "")}" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false"
                 data-league-player
                 data-nickname="${escapeAttribute(row.nickname)}"
                 data-is-host="${row.isHost === true}"
+                data-special-style="${escapeAttribute(specialStyle)}"
                 data-level="${row.level.value}"
                 data-level-name="${escapeAttribute(row.level.name)}"
                 data-level-tier="${escapeAttribute(row.level.tier)}"
@@ -1060,7 +1081,7 @@ function leagueLeaderboardMarkup(state) {
                 data-trophy-description="${escapeAttribute(trophy?.description || "")}"
                 data-trophy-tier="${escapeAttribute(trophy?.tier || "")}"
                 aria-label="${escapeAttribute(`${row.nickname}, ниво ${row.level.value}. Покажи статистика.`)}">
-                ${leagueLevelMarkup(row.level, true)}<b class="${row.isHost ? "is-host" : ""}">${escapeHTML(row.nickname)}</b>${row.isHost ? leagueHostBadgeMarkup(true) : ""}
+                ${leagueLevelMarkup(row.level, true)}<b class="${row.isHost ? "is-host" : ""} ${specialStyle ? `is-special-${specialStyle}` : ""}">${escapeHTML(row.nickname)}</b>${specialStyle ? leagueSpecialBadgeMarkup(specialStyle, true) : (row.isHost ? leagueHostBadgeMarkup(true) : "")}
               </span>
             </span>
             <em>${row.points} т.</em>

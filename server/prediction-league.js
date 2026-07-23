@@ -8,6 +8,10 @@ const HOST_PLAYER_IDS = new Set([
   "19506ff2-a454-4be0-acb8-e511047babad",
   "42fc9e3c-8e3f-4612-93b2-5cb774b98653"
 ]);
+const SPECIAL_PLAYER_STYLES = new Map([
+  ["ad9af2c0-6712-46db-89ed-4b2f17047523", "developer"],
+  ["cc90357d-52a1-4a94-8669-365de3aa821f", "pink"]
+]);
 const LEVEL_TIERS = Object.freeze([
   { id: "starter", minLevel: 1, label: "Стартово" },
   { id: "bronze", minLevel: 5, label: "Бронзово" },
@@ -181,6 +185,10 @@ function itemBelongsToLeague(item, leagueId) {
 
 function isHostPlayer(player = {}) {
   return HOST_PLAYER_IDS.has(String(player.id || ""));
+}
+
+function specialPlayerStyle(player = {}) {
+  return SPECIAL_PLAYER_STYLES.get(String(player.id || "")) || "";
 }
 
 function scoreValue(value) {
@@ -519,6 +527,7 @@ function buildLeaderboard(period, config, store, scoring, globalParticipation, n
       playerId: player.id,
       nickname: player.nickname,
       isHost: isHostPlayer(player),
+      specialStyle: specialPlayerStyle(player),
       points: periodEvents.reduce((sum, event) => sum + event.points, 0),
       exactScores: periodEvents.filter((event) => event.exactScore).length,
       correctOutcomes: periodEvents.filter((event) => event.correctOutcome).length,
@@ -622,6 +631,7 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
     me = {
       nickname: player.nickname,
       isHost: isHostPlayer(player),
+      specialStyle: specialPlayerStyle(player),
       totalPoints: stats.points,
       weeklyPoints: pointsFor("week"),
       monthlyPoints: pointsFor("month"),
@@ -720,6 +730,7 @@ module.exports = {
   createRecoveryCode,
   hashRecoveryCode,
   isHostPlayer,
+  specialPlayerStyle,
   levelProgress,
   levelRequirement,
   matchStatus,

@@ -16,7 +16,8 @@ const {
   normalizeNickname,
   normalizePrediction,
   normalizeTrophyDefinitions,
-  rotatePlayerRecoveryCode
+  rotatePlayerRecoveryCode,
+  specialPlayerStyle
 } = require("../server/prediction-league");
 
 const now = Date.parse("2026-07-17T12:00:00.000Z");
@@ -330,6 +331,29 @@ test("marks only the configured host player ids without exposing those ids publi
   assert.equal(state.leaderboards.season.find((row) => row.nickname === "DANI").isHost, false);
   assert.doesNotMatch(JSON.stringify(state), new RegExp(hostId));
   assert.doesNotMatch(JSON.stringify(state), /recoveryHash/);
+});
+
+test("keeps the developer and queen roles in production without exposing ids", () => {
+  const developerId = "ad9af2c0-6712-46db-89ed-4b2f17047523";
+  const queenId = "cc90357d-52a1-4a94-8669-365de3aa821f";
+  assert.equal(specialPlayerStyle({ id: developerId }), "developer");
+  assert.equal(specialPlayerStyle({ id: queenId }), "pink");
+  assert.equal(specialPlayerStyle({ id: "e335d091-2c81-4b28-beed-2b5cc4d9b533" }), "");
+
+  const state = buildLeagueState(sampleConfig(), {
+    players: [
+      { id: developerId, nickname: "DEV" },
+      { id: queenId, nickname: "QUEEN" }
+    ],
+    predictions: [
+      { playerId: developerId, matchId: "m1", homeScore: 2, awayScore: 1, submittedAt: "2026-07-13T10:00:00.000Z" },
+      { playerId: queenId, matchId: "m1", homeScore: 1, awayScore: 0, submittedAt: "2026-07-13T11:00:00.000Z" }
+    ]
+  }, queenId, now);
+
+  assert.equal(state.me.specialStyle, "pink");
+  assert.equal(state.leaderboards.season.find((row) => row.nickname === "DEV").specialStyle, "developer");
+  assert.doesNotMatch(JSON.stringify(state), new RegExp(`${developerId}|${queenId}`));
 });
 
 test("archived scoring survives later admin saves", () => {

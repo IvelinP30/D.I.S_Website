@@ -5095,10 +5095,10 @@ html.pwa-refreshing body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  border: 1px solid rgba(244, 212, 77, 0.52);
+  border: 1px solid rgba(244, 212, 77, 0.62);
   border-radius: 999px;
-  background: linear-gradient(135deg, rgba(244, 212, 77, 0.16), rgba(56, 242, 127, 0.08));
-  box-shadow: inset 0 0 12px rgba(244, 212, 77, 0.06);
+  background: linear-gradient(135deg, rgba(244, 212, 77, 0.2), rgba(255, 165, 61, 0.08));
+  box-shadow: inset 0 0 14px rgba(244, 212, 77, 0.08), 0 0 18px rgba(244, 212, 77, 0.08);
   padding: 6px 9px;
   color: #f4d44d;
   font-size: 0.58rem;
@@ -5110,9 +5110,11 @@ html.pwa-refreshing body {
 }
 
 .league-host-badge i {
-  color: var(--accent);
-  font-size: 0.54rem;
+  color: #ffe783;
+  font-size: 0.72rem;
   font-style: normal;
+  line-height: 0.8;
+  text-shadow: 0 0 9px rgba(244, 212, 77, 0.55);
 }
 
 .league-host-badge.is-compact {
@@ -5121,13 +5123,139 @@ html.pwa-refreshing body {
   font-size: 0.48rem;
 }
 
-.league-profile-heading h3.is-host > span:not(.league-level):not(.league-host-badge),
+.league-profile-heading h3.is-host > span:not(.league-level):not(.league-host-badge):not(.league-special-badge),
 .league-player-summary > b.is-host {
-  background: linear-gradient(90deg, #f4d44d, #38f27f);
+  background: linear-gradient(100deg, #fff8cf 4%, #f4d44d 38%, #ffb84d 68%, #fff0a3 94%);
+  background-size: 220% 100%;
   background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(244, 212, 77, 0.25));
   color: transparent;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  animation: league-special-name-sheen 5.5s 250ms ease-in-out infinite;
+}
+
+.league-profile-heading h3 > span:not(.league-level):not(.league-host-badge):not(.league-special-badge) {
+  background: none;
+  color: #fff;
+  font-size: clamp(1.65rem, 3vw, 2.35rem);
+  letter-spacing: -0.025em;
+  line-height: 1;
+  -webkit-text-fill-color: currentColor;
+}
+
+.league-special-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--special-border);
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--special-bg-strong), var(--special-bg));
+  box-shadow: inset 0 0 14px var(--special-glow), 0 0 18px var(--special-glow);
+  padding: 6px 10px;
+  color: var(--special-color);
+  font-size: 0.58rem;
+  font-weight: 950;
+  letter-spacing: 0.055em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.league-special-badge i {
+  color: var(--special-icon);
+  font-size: 0.62rem;
+  font-style: normal;
+  text-shadow: 0 0 10px var(--special-color);
+}
+
+.league-special-badge.is-pink i {
+  font-size: 0.95rem;
+  line-height: 0.75;
+}
+
+.league-special-badge.is-compact {
+  gap: 4px;
+  padding: 4px 7px;
+  font-size: 0.48rem;
+}
+
+.league-profile-heading h3 > .league-special-badge,
+.league-player-tooltip-heading .league-special-badge {
+  color: var(--special-color);
+  font-size: 0.58rem;
+  letter-spacing: 0.055em;
+  line-height: 1;
+  -webkit-text-fill-color: currentColor;
+}
+
+.league-special-badge.is-developer,
+.league-profile-card.has-special-developer,
+.league-table-row.has-special-developer,
+.league-player-summary.is-special-developer,
+.league-player-tooltip.is-special-developer {
+  --special-color: #83f6ff;
+  --special-icon: #d9fdff;
+  --special-border: rgba(79, 225, 255, 0.55);
+  --special-bg: rgba(41, 127, 255, 0.08);
+  --special-bg-strong: rgba(68, 229, 255, 0.18);
+  --special-glow: rgba(58, 221, 255, 0.13);
+}
+
+.league-special-badge.is-pink,
+.league-profile-card.has-special-pink,
+.league-table-row.has-special-pink,
+.league-player-summary.is-special-pink,
+.league-player-tooltip.is-special-pink {
+  --special-color: #ff91cf;
+  --special-icon: #ffe1f2;
+  --special-border: rgba(255, 91, 177, 0.58);
+  --special-bg: rgba(170, 36, 113, 0.1);
+  --special-bg-strong: rgba(255, 83, 173, 0.2);
+  --special-glow: rgba(255, 65, 164, 0.14);
+}
+
+.league-profile-heading h3.is-special-developer > span:not(.league-level):not(.league-host-badge):not(.league-special-badge),
+.league-player-summary > b.is-special-developer,
+.league-player-tooltip.is-special-developer .league-player-tooltip-heading strong {
+  background: linear-gradient(100deg, #f5feff 5%, #76f4ff 38%, #479eff 68%, #d8fcff 92%);
+  background-size: 220% 100%;
+  background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(68, 225, 255, 0.28));
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: league-special-name-sheen 5.5s ease-in-out infinite;
+}
+
+.league-profile-heading h3.is-special-pink > span:not(.league-level):not(.league-host-badge):not(.league-special-badge),
+.league-player-summary > b.is-special-pink,
+.league-player-tooltip.is-special-pink .league-player-tooltip-heading strong {
+  background: linear-gradient(100deg, #fff6fb 4%, #ffabd8 36%, #ff4fa7 68%, #ffd6eb 94%);
+  background-size: 220% 100%;
+  background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(255, 72, 170, 0.3));
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: league-special-name-sheen 5.5s 550ms ease-in-out infinite;
+}
+
+.league-player-tooltip.is-host-player .league-player-tooltip-heading strong,
+.league-profile-card.has-host-player .league-profile-heading h3 > span:not(.league-level):not(.league-host-badge) {
+  background: linear-gradient(100deg, #fff8cf 4%, #f4d44d 38%, #ffb84d 68%, #fff0a3 94%);
+  background-size: 220% 100%;
+  background-clip: text;
+  filter: drop-shadow(0 0 8px rgba(244, 212, 77, 0.25));
+  color: transparent;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: league-special-name-sheen 5.5s 250ms ease-in-out infinite;
+}
+
+@keyframes league-special-name-sheen {
+  0%, 34%, 100% { background-position: 0 50%; }
+  62% { background-position: 100% 50%; }
 }
 
 .league-level-progress-card {
@@ -5166,6 +5294,11 @@ html.pwa-refreshing body {
   border-radius: inherit;
   background: linear-gradient(90deg, #38f27f, #f4d44d);
   box-shadow: 0 0 12px rgba(56, 242, 127, 0.32);
+}
+
+.league-player-tooltip.is-host-player .league-player-tooltip-progress span {
+  background: linear-gradient(90deg, #ffb84d, #f4d44d, #fff0a3);
+  box-shadow: 0 0 12px rgba(244, 212, 77, 0.3);
 }
 
 .league-profile-share {
@@ -5355,6 +5488,17 @@ html.pwa-refreshing body {
   background: rgba(56, 242, 127, 0.07);
 }
 
+.league-table-row.has-special-developer,
+.league-table-row.has-special-pink {
+  background: linear-gradient(90deg, var(--special-bg-strong), transparent 72%);
+  box-shadow: inset 2px 0 0 var(--special-color);
+}
+
+.league-table-row.has-host-player {
+  background: linear-gradient(90deg, rgba(244, 212, 77, 0.11), transparent 72%);
+  box-shadow: inset 2px 0 0 #f4d44d;
+}
+
 .league-table-row > strong {
   color: var(--accent-2);
   font-size: 0.84rem;
@@ -5413,6 +5557,24 @@ html.pwa-refreshing body {
 
 .league-player-tooltip.is-visible { opacity: 1; transform: translateY(0); }
 
+.league-player-tooltip.is-special-developer {
+  border-color: var(--special-border);
+  background: linear-gradient(145deg, #0a2228, #080c10 58%);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.56), 0 0 30px var(--special-glow);
+}
+
+.league-player-tooltip.is-special-pink {
+  border-color: var(--special-border);
+  background: linear-gradient(145deg, #28101f, #080c10 58%);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.56), 0 0 30px var(--special-glow);
+}
+
+.league-player-tooltip.is-host-player {
+  border-color: rgba(244, 212, 77, 0.58);
+  background: linear-gradient(145deg, #242009, #080c10 58%);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.56), 0 0 30px rgba(244, 212, 77, 0.14);
+}
+
 .league-player-tooltip-heading {
   display: flex;
   align-items: center;
@@ -5423,6 +5585,21 @@ html.pwa-refreshing body {
 .league-player-tooltip-heading span { color: var(--accent); font-size: 0.62rem; font-weight: 900; letter-spacing: 0.06em; text-transform: uppercase; }
 .league-player-tooltip-heading strong { font-size: 1.1rem; }
 .league-player-tooltip-heading small { color: var(--muted); font-size: 0.66rem; }
+
+.league-profile-heading h3 > .league-host-badge,
+.league-player-tooltip-heading .league-host-badge {
+  color: #f4d44d;
+  font-size: 0.58rem;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  -webkit-text-fill-color: currentColor;
+}
+
+.league-player-tooltip.is-host-player .league-player-tooltip-heading > div > span,
+.league-player-tooltip.is-host-player .league-player-tooltip-ranks b,
+.league-player-tooltip.is-host-player .league-player-tooltip-stats b {
+  color: #f4d44d;
+}
 
 .league-player-tooltip-trophy {
   display: flex;
