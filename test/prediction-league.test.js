@@ -3,6 +3,8 @@ const test = require("node:test");
 const {
   archiveDeletedLeagueMatches,
   buildLeagueState,
+  buildLeagueStateFromAggregates,
+  buildLeagueScoreRows,
   buildPredictionLeagueState,
   hashRecoveryCode,
   isHostPlayer,
@@ -385,4 +387,62 @@ test("hiding a settled match keeps its scoring without showing it publicly", () 
   assert.equal(state.matches.some((match) => match.id === "m1"), false);
   assert.equal(state.me.totalPoints, 13);
   assert.equal(state.me.exactScores, 1);
+});
+
+test("relational aggregate state preserves legacy points, ranks, levels, trophies, and private picks", () => {
+  const config = sampleConfig();
+  const store = sampleStore();
+  const scoreRows = buildLeagueScoreRows(config, store);
+  const aggregates = store.players.map((player) => {
+    const state = buildLeagueState(config, store, player.id, now);
+    const season = state.leaderboards.season.find((row) => row.nickname === player.nickname);
+    const week = state.leaderboards.week.find((row) => row.nickname === player.nickname);
+    const month = state.leaderboards.month.find((row) => row.nickname === player.nickname);
+    return {
+      playerId: player.id,
+      nickname: player.nickname,
+      totalPredictions: state.me.totalPredictions,
+      weekPredictions: week?.predictions || 0,
+      monthPredictions: month?.predictions || 0,
+      totalPoints: state.me.totalPoints,
+      weekPoints: state.me.weeklyPoints,
+      monthPoints: state.me.monthlyPoints,
+      totalExactScores: state.me.exactScores,
+      weekExactScores: week?.exactScores || 0,
+      monthExactScores: month?.exactScores || 0,
+      totalCorrectOutcomes: state.me.correctOutcomes,
+      weekCorrectOutcomes: week?.correctOutcomes || 0,
+      monthCorrectOutcomes: month?.correctOutcomes || 0,
+      derbyCorrect: scoreRows.filter((row) => row.playerId === player.id && row.derbyCorrect).length,
+      currentStreak: state.me.currentStreak,
+      maxStreak: state.me.maxStreak,
+      completedPredictions: state.me.completedPredictions,
+      globalCompletedPredictions: state.me.globalCompletedPredictions,
+      seasonPredictions: season?.predictions || 0
+    };
+  });
+  const relational = buildLeagueStateFromAggregates(
+    config,
+    aggregates,
+    "p1",
+    store.predictions.filter((prediction) => prediction.playerId === "p1"),
+    scoreRows.filter((row) => row.playerId === "p1"),
+    now
+  );
+  const legacy = buildLeagueState(config, store, "p1", now);
+
+  assert.deepEqual(relational.me, legacy.me);
+  assert.deepEqual(relational.leaderboards, legacy.leaderboards);
+  assert.deepEqual(relational.matches, legacy.matches);
+  assert.doesNotMatch(JSON.stringify(relational), /"p1"|"p2"|recoveryHash/);
+});
+
+test("relational score rows preserve settled archived scoring without retaining it in the public match list", () => {
+  const previousConfig = sampleConfig();
+  const nextConfig = { ...previousConfig, matches: previousConfig.matches.filter((match) => match.id === "m3") };
+  const archivedStore = archiveDeletedLeagueMatches(previousConfig, nextConfig, sampleStore());
+  const rows = buildLeagueScoreRows(nextConfig, archivedStore);
+
+  assert.equal(rows.filter((row) => row.playerId === "p1").reduce((sum, row) => sum + row.points, 0), 13);
+  assert.deepEqual(rows.filter((row) => row.playerId === "p1").map((row) => row.matchId), ["m1", "m2"]);
 });

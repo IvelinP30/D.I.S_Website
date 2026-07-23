@@ -648,7 +648,7 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
     };
   }
 
-  const safeLeaderboard = (rows) => rows.slice(0, 50).map(({ playerId: _playerId, ...row }) => row);
+  const safeLeaderboard = (rows) => rows.slice(0, 100).map(({ playerId: _playerId, ...row }) => row);
   return {
     id: config.id,
     enabled: config.enabled,
@@ -665,6 +665,225 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
       season: safeLeaderboard(leaderboards.season)
     }
   };
+}
+
+function trophiesForAggregate(config, aggregate = {}) {
+  return config.trophies.filter((trophy) => {
+    if (trophy.condition === "exact") return Number(aggregate.totalExactScores) >= 1;
+    if (trophy.condition === "voice") return Number(aggregate.totalPredictions) >= 10;
+    if (trophy.condition === "derby") return Number(aggregate.derbyCorrect) >= 3;
+    if (trophy.condition === "streak") return Number(aggregate.maxStreak) >= 5;
+    return false;
+  });
+}
+
+function buildLeagueStateFromAggregates(rawConfig, aggregateRows = [], playerId = "", playerPredictions = [], playerScoreEvents = [], now = Date.now()) {
+  const config = normalizeLeagueConfig(rawConfig);
+  const scoreByMatch = new Map((Array.isArray(playerScoreEvents) ? playerScoreEvents : []).map((event) => [
+    String(event.matchId),
+    {
+      points: Number(event.points) || 0,
+      outcomePoints: Number(event.outcomePoints) || 0,
+      exactScorePoints: Number(event.exactScorePoints) || 0,
+      streakBonus: Number(event.streakBonus) || 0,
+      correctOutcome: Boolean(event.correctOutcome),
+      exactScore: Boolean(event.exactScore),
+      streakAfter: Number(event.streakAfter) || 0
+    }
+  ]));
+  const predictionByMatch = new Map((Array.isArray(playerPredictions) ? playerPredictions : []).map((prediction) => [
+    String(prediction.matchId),
+    prediction
+  ]));
+  const normalizedRows = (Array.isArray(aggregateRows) ? aggregateRows : []).map((row) => ({
+    playerId: String(row.playerId || ""),
+    nickname: String(row.nickname || ""),
+    isHost: isHostPlayer({ id: row.playerId }),
+    specialStyle: specialPlayerStyle({ id: row.playerId }),
+    totalPredictions: Number(row.totalPredictions) || 0,
+    weekPredictions: Number(row.weekPredictions) || 0,
+    monthPredictions: Number(row.monthPredictions) || 0,
+    totalPoints: Number(row.totalPoints) || 0,
+    weekPoints: Number(row.weekPoints) || 0,
+    monthPoints: Number(row.monthPoints) || 0,
+    totalExactScores: Number(row.totalExactScores) || 0,
+    weekExactScores: Number(row.weekExactScores) || 0,
+    monthExactScores: Number(row.monthExactScores) || 0,
+    totalCorrectOutcomes: Number(row.totalCorrectOutcomes) || 0,
+    weekCorrectOutcomes: Number(row.weekCorrectOutcomes) || 0,
+    monthCorrectOutcomes: Number(row.monthCorrectOutcomes) || 0,
+    derbyCorrect: Number(row.derbyCorrect) || 0,
+    currentStreak: Number(row.currentStreak) || 0,
+    maxStreak: Number(row.maxStreak) || 0,
+    completedPredictions: Number(row.completedPredictions) || 0,
+    globalCompletedPredictions: Number(row.globalCompletedPredictions) || 0
+  }));
+
+  normalizedRows.forEach((row) => {
+    row.badges = trophiesForAggregate(config, row);
+    row.level = levelProgress(row.globalCompletedPredictions);
+  });
+
+  const periodRows = (period) => {
+    const prefix = period === "season" ? "total" : period;
+    const rows = normalizedRows
+      .filter((row) => row[`${prefix}Predictions`] > 0)
+      .map((row) => ({
+        playerId: row.playerId,
+        nickname: row.nickname,
+        isHost: row.isHost,
+        specialStyle: row.specialStyle,
+        points: row[`${prefix}Points`],
+        exactScores: row[`${prefix}ExactScores`],
+        correctOutcomes: row[`${prefix}CorrectOutcomes`],
+        predictions: row[`${prefix}Predictions`],
+        currentStreak: row.currentStreak,
+        totalExactScores: row.totalExactScores,
+        totalCorrectOutcomes: row.totalCorrectOutcomes,
+        leagueCompletedPredictions: row.completedPredictions,
+        globalCompletedPredictions: row.globalCompletedPredictions,
+        level: row.level,
+        badges: row.badges
+      }));
+    rows.sort((left, right) =>
+      right.points - left.points ||
+      right.exactScores - left.exactScores ||
+      right.correctOutcomes - left.correctOutcomes ||
+      left.leagueCompletedPredictions - right.leagueCompletedPredictions ||
+      left.nickname.localeCompare(right.nickname, "bg-BG")
+    );
+    return rows.map((row, index) => ({ ...row, rank: index + 1 }));
+  };
+
+  const leaderboards = {
+    week: periodRows("week"),
+    month: periodRows("month"),
+    season: periodRows("season")
+  };
+  Object.values(leaderboards).forEach((rows) => {
+    rows.forEach((row) => {
+      row.ranks = {
+        week: leaderboards.week.find((item) => item.playerId === row.playerId)?.rank || null,
+        month: leaderboards.month.find((item) => item.playerId === row.playerId)?.rank || null,
+        season: leaderboards.season.find((item) => item.playerId === row.playerId)?.rank || null
+      };
+    });
+  });
+
+  const monthlyChampionTrophies = config.trophies.filter((trophy) => trophy.condition === "monthlyChampion");
+  if (leaderboards.month[0]?.points > 0 && monthlyChampionTrophies.length) {
+    const championId = leaderboards.month[0].playerId;
+    normalizedRows.find((row) => row.playerId === championId)?.badges.push(...monthlyChampionTrophies);
+    Object.values(leaderboards).forEach((rows) => {
+      const row = rows.find((item) => item.playerId === championId);
+      if (!row) return;
+      monthlyChampionTrophies.forEach((trophy) => {
+        if (!row.badges.some((badge) => badge.id === trophy.id)) row.badges = [...row.badges, trophy];
+      });
+    });
+  }
+
+  const publicMatches = [...config.matches]
+    .sort((left, right) => matchTimestamp(left) - matchTimestamp(right))
+    .map((match) => {
+      const prediction = predictionByMatch.get(match.id);
+      return {
+        id: match.id,
+        competition: match.competition,
+        homeTeam: match.homeTeam,
+        awayTeam: match.awayTeam,
+        homeTeamMedia: match.homeTeamMedia,
+        awayTeamMedia: match.awayTeamMedia,
+        kickoffAt: match.kickoffAt,
+        isDerby: match.isDerby,
+        dataSource: match.externalProvider === "TheSportsDB" ? "TheSportsDB" : "",
+        status: matchStatus(match, now),
+        result: resultForMatch(match),
+        myPrediction: prediction ? {
+          homeScore: Number(prediction.homeScore),
+          awayScore: Number(prediction.awayScore),
+          submittedAt: prediction.submittedAt,
+          updatedAt: prediction.updatedAt,
+          scoring: scoreByMatch.get(match.id) || null
+        } : null
+      };
+    });
+
+  const aggregate = normalizedRows.find((row) => row.playerId === playerId);
+  const me = aggregate ? {
+    nickname: aggregate.nickname,
+    isHost: aggregate.isHost,
+    specialStyle: aggregate.specialStyle,
+    totalPoints: aggregate.totalPoints,
+    weeklyPoints: aggregate.weekPoints,
+    monthlyPoints: aggregate.monthPoints,
+    ranks: {
+      week: leaderboards.week.find((row) => row.playerId === playerId)?.rank || null,
+      month: leaderboards.month.find((row) => row.playerId === playerId)?.rank || null,
+      season: leaderboards.season.find((row) => row.playerId === playerId)?.rank || null
+    },
+    currentStreak: aggregate.currentStreak,
+    maxStreak: aggregate.maxStreak,
+    totalPredictions: aggregate.totalPredictions,
+    completedPredictions: aggregate.completedPredictions,
+    globalCompletedPredictions: aggregate.globalCompletedPredictions,
+    level: aggregate.level,
+    correctOutcomes: aggregate.totalCorrectOutcomes,
+    exactScores: aggregate.totalExactScores,
+    badges: aggregate.badges
+  } : null;
+
+  const safeLeaderboard = (rows) => rows.slice(0, 100).map(({ playerId: _playerId, ...row }) => row);
+  return {
+    id: config.id,
+    enabled: config.enabled,
+    title: config.title,
+    description: config.description,
+    seasonLabel: config.seasonLabel,
+    points: POINTS,
+    periods: periodLabels(now),
+    matches: publicMatches,
+    me,
+    leaderboards: {
+      week: safeLeaderboard(leaderboards.week),
+      month: safeLeaderboard(leaderboards.month),
+      season: safeLeaderboard(leaderboards.season)
+    }
+  };
+}
+
+function buildLeagueScoreRows(rawConfig, rawStore) {
+  const config = normalizeLeagueConfig(rawConfig);
+  const store = normalizeLeagueStore(rawStore);
+  const activeMatchIds = new Set(normalizeAllLeagueMatches(rawConfig).map((match) => match.id));
+  const archivedMatches = normalizeAllLeagueMatches({
+    ...config,
+    matches: store.archivedMatches.filter((match) => itemBelongsToLeague(match, config.id))
+  }).filter((match) => !activeMatchIds.has(match.id));
+  const scoringConfig = { ...config, matches: [...normalizeAllLeagueMatches(rawConfig), ...archivedMatches] };
+  const matches = new Map(scoringConfig.matches.map((match) => [match.id, match]));
+  const scoring = scoreEvents(scoringConfig, store);
+  const rows = [];
+  scoring.events.forEach((events, playerId) => {
+    events.forEach((event, matchId) => {
+      const match = matches.get(matchId);
+      rows.push({
+        playerId,
+        leagueId: config.id,
+        matchId,
+        kickoffAt: match?.kickoffAt || null,
+        points: event.points,
+        outcomePoints: event.outcomePoints,
+        exactScorePoints: event.exactScorePoints,
+        streakBonus: event.streakBonus,
+        correctOutcome: event.correctOutcome,
+        exactScore: event.exactScore,
+        derbyCorrect: Boolean(event.correctOutcome && match?.isDerby),
+        streakAfter: event.streakAfter
+      });
+    });
+  });
+  return rows;
 }
 
 function buildPredictionLeagueState(rawCollection, rawStore, playerId = "", requestedLeagueId = "", now = Date.now()) {
@@ -723,9 +942,12 @@ module.exports = {
   POINTS,
   TROPHY_CONDITIONS,
   TROPHY_TIERS,
+  allCollectionMatches,
   buildGlobalParticipationStats,
   archiveDeletedLeagueMatches,
   buildLeagueState,
+  buildLeagueStateFromAggregates,
+  buildLeagueScoreRows,
   buildPredictionLeagueState,
   createRecoveryCode,
   hashRecoveryCode,
@@ -744,6 +966,8 @@ module.exports = {
   normalizePrediction,
   normalizeRecoveryCode,
   normalizeTrophyDefinitions,
+  periodLabels,
+  periodRanges,
   rotatePlayerRecoveryCode,
   resultForMatch
 };

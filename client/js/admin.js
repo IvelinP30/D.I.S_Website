@@ -54,6 +54,7 @@ let winnerAnimationTimer = null;
 let adminSelectedLeagueId = "";
 let footballUsage = null;
 let footballFixtureSyncEnabled = false;
+let leagueStorageStatus = null;
 const teamMediaSearchResults = new WeakMap();
 const leagueTrophyConditions = Object.freeze([
   ["exact", "Поне 1 точен резултат", "Познал си точния резултат в поне един мач."],
@@ -272,6 +273,38 @@ async function loadFootballStatus() {
   }
 }
 
+function leagueStorageStatusMarkup() {
+  if (!leagueStorageStatus) {
+    return `<div class="wide football-sync-panel"><p>Проверка на защитеното хранилище…</p></div>`;
+  }
+  if (leagueStorageStatus.mode !== "relational-v2") {
+    return `<div class="wide football-sync-panel"><p>Хранилище: защитен legacy JSON режим</p><small>Релационната League схема още не е активна. Данните продължават да се пазят по стария начин и не са изтрити.</small></div>`;
+  }
+  const usage = leagueStorageStatus.usage || {};
+  const usedMb = (Number(usage.databaseBytes) / 1024 / 1024).toFixed(1);
+  const percent = Number(usage.percentOfFreePlanDatabase) || 0;
+  const label = usage.status === "critical"
+    ? "Критично: необходимо е освобождаване на място или по-висок план."
+    : usage.status === "warning"
+      ? "Предупреждение: провери растежа и направи backup."
+      : "Здравословен запас за Free плана.";
+  return `<div class="wide football-sync-panel">
+    <p>Supabase League база: ${usedMb} MB от 500 MB · ${percent}%</p>
+    <small>${label} Прогнозите са в атомарни редове, а наследеният JSON остава резервно копие от миграцията.</small>
+  </div>`;
+}
+
+async function loadLeagueStorageStatus() {
+  try {
+    const response = await fetch("/api/league/storage-status", { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!response.ok) return;
+    leagueStorageStatus = await response.json();
+    renderEditors();
+  } catch {
+    // Storage monitoring must never block the rest of the admin.
+  }
+}
+
 function askConfirmation(message, options = {}) {
   confirmTitle.textContent = options.title || "Сигурен ли си?";
   confirmMessage.textContent = message;
@@ -397,7 +430,7 @@ async function loadAdminContent({ rethrow = false } = {}) {
   adminConfig = withDefaults(adminConfig);
   savedConfig = structuredClone(adminConfig);
   renderEditors();
-  await Promise.all([loadMessages(), loadFootballStatus()]);
+  await Promise.all([loadMessages(), loadFootballStatus(), loadLeagueStorageStatus()]);
 }
 
 function withDefaults(config) {
@@ -907,6 +940,7 @@ function renderEditors() {
       ${checkboxField("Покажи лигите на прогнозите във Фен зоната", "hubEnabled", predictionLeague.enabled !== false)}
       ${field("Общо заглавие", "hubTitle", predictionLeague.title || "D.I.S Лиги на прогнозите")}
       ${textarea("Общо описание", "hubDescription", predictionLeague.description || "", 3)}
+      ${leagueStorageStatusMarkup()}
     </article>
     ${selectedLeague ? `<article class="editor-card" data-league-settings>
       <h3>${escapeValue(selectedLeague.title)}</h3>

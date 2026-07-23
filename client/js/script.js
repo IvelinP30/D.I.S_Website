@@ -1055,7 +1055,7 @@ function leagueLeaderboardMarkup(state) {
         ${Object.entries(labels).map(([key, label]) => `<button class="${period === key ? "is-active" : ""}" type="button" data-league-period="${key}" role="tab" aria-selected="${period === key}">${label}</button>`).join("")}
       </div>
       <div class="league-table">
-        ${rows.length ? rows.slice(0, 50).map((row) => {
+        ${rows.length ? rows.slice(0, 100).map((row) => {
           const trophy = leaguePrimaryBadge(row.badges || []);
           const specialStyle = leagueSpecialPlayerStyle(row.specialStyle);
           return `

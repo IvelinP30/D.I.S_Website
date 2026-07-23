@@ -21,6 +21,8 @@ services:
         sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: dis-media
+      - key: LEAGUE_STORAGE_MODE
+        value: auto
       - key: RESEND_API_KEY
         sync: false
       - key: MESSAGE_EMAIL_FROM

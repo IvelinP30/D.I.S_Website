@@ -108,11 +108,11 @@ Prediction Leagues use one shared nickname instead of separate accounts. Creatin
 
 The shared profile also has one cross-league level based only on predictions whose matches already have final results. Early levels use quick triangular thresholds, followed by progressively larger steps; levels 10, 20, 30, 40 and 50 require 45, 125, 245, 405 and 605 completed participations. Every level carries a football progression title, from Debutant and Young Talent through Playmaker, Captain, Maestro and Immortal Legend. Each successive level adds tier-specific rim symbols instead of generic dots, the second half of every ten-level rank unlocks larger layered wings, and the following levels add a lower plate, shoulder blades, top crest and expanded outer rail. Color ranks progress through starter, bronze, silver, gold, platinum, diamond and legendary silhouettes with distinct materials and football motifs. Gold and higher ranks receive a restrained moving sheen, while reduced-motion preferences disable all continuous effects. The exact same full-detail vector crest is scaled in the profile, leaderboard, tooltips and level-up celebration rather than swapping to a simplified compact asset. After the first baseline visit, the browser remembers the latest seen level and celebrates a genuine increase with an accessible level-up card and reduced-motion fallback. The card remains open until dismissed and exports a branded PNG Story card with the shared level, progress and QR destination through the same native file-share/download fallback as the other share cards. Leaderboard ties keep unique positions and are ordered by points, exact scores, correct outcomes, fewer completed participation attempts in the selected league, then nickname. The public leaderboard exposes only aggregate playing statistics for its profile tooltip and never another player's individual picks.
 
-Existing predictions and archived results are recalculated into points, exact scores, correct outcomes, streaks, completed participation and level whenever league state is built, so the progression system applies retroactively without a data migration. The two configured D.I.S host player IDs receive a public `isHost` marker used only for a verified-host badge and visual treatment; recovery hashes and player IDs remain absent from public responses. Recognized players can export a profile Story card containing their level, points, ranks and aggregate statistics.
+Existing predictions and archived results are converted into versioned score events whenever match results change. The active score version is switched atomically only after the replacement is complete, so visitors never receive a half-recalculated table. Points, exact scores, correct outcomes, streaks, completed participation and levels remain retroactive. The two configured D.I.S host player IDs receive a public `isHost` marker used only for a verified-host badge and visual treatment; recovery hashes and player IDs remain absent from public responses. Recognized players can export a profile Story card containing their level, points, ranks and aggregate statistics.
 
-The public league endpoint accepts a league ID and exposes only that league's standings and the current visitor's predictions. It also returns a small catalogue for switching leagues. It never exposes recovery hashes, player IDs, or another participant's score picks. Local data uses `data/prediction-league.json`; production uses the protected `predictionLeague` row in Supabase `app_state` through the existing storage abstraction.
+The public league endpoint accepts a league ID and exposes only that league's standings and the current visitor's predictions. It also returns a small catalogue for switching leagues. It never exposes recovery hashes, player IDs, or another participant's score picks. Local data uses `data/prediction-league.json`. Production uses normalized, RLS-protected Supabase tables for players, matches, predictions and versioned score events. The former protected `predictionLeague` row in `app_state` is retained unchanged as the migration rollback snapshot.
 
-Deleting a settled match or removing its league from the admin archives the result with its league ID instead of deleting its scoring history. The match disappears from the public page and admin editor, while earned points and statistics remain preserved. Deleting a match without a final result removes its unearned predictions.
+Deleting a settled match or removing its league from the admin soft-archives the result with its league ID instead of deleting its scoring history. The match disappears from the public page and admin editor, while the minimal prediction and score ledger preserves earned points, exact results, streaks, period positions and levels. Deleting a match without a final result removes its unearned predictions. `ON DELETE RESTRICT` prevents accidental player or scoring-history cascades.
 
 Leagues and their trophies are managed from the Fan Zone admin page. Admins can create, select, hide or remove leagues and edit each league's own settings, matches and trophies. Trophy ownership is derived only from statistics in that league, so changing or deleting a trophy recalculates its awards without changing participant points.
 
@@ -319,12 +319,12 @@ The policy text is a practical transparency baseline and not a substitute for ad
 - `GET /health` is available for hosting health checks.
 - Do not commit real inbox messages, voter identifiers, passwords, or API keys.
 
-The current local JSON and upload storage remains suitable for development only. A free host such as Render uses an ephemeral filesystem, so production deployment must move editable content, messages, votes, and uploaded media to persistent external storage before the admin panel is used publicly. The planned setup is Supabase for structured data and Supabase Storage or Cloudinary for uploaded media.
+The current local JSON and upload storage remains suitable for development only. A free host such as Render uses an ephemeral filesystem, so production uses Supabase for structured data and Supabase Storage for uploaded media.
 
 ### Supabase Setup
 
 1. Create a Supabase project.
-2. Open SQL Editor and run `supabase/schema.sql` once.
+2. Open SQL Editor and run `supabase/schema.sql`. The file is additive and idempotent, so it is safe to run again after schema updates.
 3. Copy the Project URL and service-role key into the hosting environment variables shown in `.env.example`.
 4. Never expose `SUPABASE_SECRET_KEY` in frontend code or commit it to Git.
 
@@ -332,7 +332,34 @@ When all Supabase variables are present, the Node backend automatically stores c
 
 Production giveaway participants are stored in the protected Supabase `app_state` row whose key is `giveawayEntries`. Local development uses the ignored `data/giveaway-entries.json` file, so local tests do not touch production unless `USE_SUPABASE_LOCAL=true` is set intentionally. No additional Supabase table or migration is required.
 
-Prediction League participants and predictions use the same protected `app_state` table under the `predictionLeague` key. Existing single-league content is migrated in memory to the `general` league, while new predictions include a league ID, so no additional Supabase migration is required.
+Prediction League v2 uses `league_players`, `league_matches`, `league_predictions`, `league_scoring_versions` and `league_score_events`. Every table has RLS enabled, grants only the server-side `service_role`, database constraints, targeted indexes and restrictive foreign keys. One prediction save is an atomic SQL upsert and never rewrites the full season.
+
+The first production request after the v2 schema exists performs an idempotent import from the old protected `app_state.predictionLeague` JSON. It imports matches before predictions, reads the rows back, compares exact counts and a deterministic player/prediction fingerprint, and marks the migration complete only after verification. Until that point `LEAGUE_STORAGE_MODE=auto` keeps the working legacy path available. The old JSON row is never deleted or updated after cutover.
+
+Use `LEAGUE_STORAGE_MODE` as follows:
+
+- `auto` (default) — use the relational schema when available and safely remain on legacy storage if the schema has not been installed or the import cannot be verified.
+- `legacy` — emergency pre-cutover fallback. Do not use it after accepting new relational predictions unless those rows have first been exported.
+- `relational` — fail closed unless the v2 schema and verified migration are available. Set this only after production verification.
+
+After applying the schema, open the Fan Zone admin editor or request `/api/league`. Then inspect authenticated `GET /api/league/storage-status`. `mode: relational-v2` confirms the verified cutover. The response and admin card show total database usage against the 500 MB Free-plan reference, warning at 60% and becoming critical at 80%.
+
+Free Supabase projects do not provide automatic database backups. Run:
+
+```bash
+npm run backup:league
+```
+
+The command exports the immutable legacy snapshot plus all relational League tables into a gzip file under ignored `backups/`, sets restrictive local file permissions and embeds a SHA-256 checksum. Copy backups to a separate protected device or encrypted storage; do not commit them because they contain recovery hashes and private predictions.
+
+Capacity and correctness checks are reproducible:
+
+```bash
+npm run load-test:league
+node --test test/prediction-league.test.js test/league-relational-storage.test.js
+```
+
+`test/sql/league-schema-smoke.sql` validates the real PostgreSQL functions, permissions and aggregates. `test/sql/league-capacity.sql` creates the full target of 100 players × 5 leagues × 1000 predictions in a disposable PostgreSQL database and reports actual table/index size.
 
 Local development uses JSON files and the local `uploads/` directory even when Supabase credentials exist in `.env`. Set `USE_SUPABASE_LOCAL=true` only when intentionally testing against the production Supabase project. Render uses Supabase automatically because `NODE_ENV=production`.
 

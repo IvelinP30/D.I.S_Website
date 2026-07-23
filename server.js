@@ -24,9 +24,12 @@ const {
 } = require("./server/press-news");
 const { downloadPressNewsThumbnail, pressNewsImageFilename } = require("./server/press-news-image");
 const { applyChoice, choiceState, pruneEngagementStore } = require("./server/engagement");
+const { createLeagueRelationalStorage } = require("./server/league-relational-storage");
 const {
   archiveDeletedLeagueMatches,
+  buildLeagueStateFromAggregates,
   buildPredictionLeagueState,
+  POINTS,
   createRecoveryCode,
   hashRecoveryCode,
   matchStatus,
@@ -37,6 +40,7 @@ const {
   normalizeLeagueStore,
   normalizeNickname,
   normalizePrediction,
+  periodLabels,
   rotatePlayerRecoveryCode
 } = require("./server/prediction-league");
 
@@ -81,6 +85,9 @@ const pressNewsBulgarianQuery = String(process.env.NEWSDATA_BULGARIAN_QUERY || "
 const pressNewsLanguage = String(process.env.NEWSDATA_LANGUAGE || "bg").trim().toLowerCase().slice(0, 8) || "bg";
 const pressNewsFetchLimit = Math.min(20, Math.max(10, Number(process.env.NEWSDATA_MAX_ITEMS || 20) || 20));
 const cloudStorageEnabled = Boolean(supabaseUrl && supabaseKey) && (isProduction || process.env.USE_SUPABASE_LOCAL === "true");
+const leagueStorageMode = ["auto", "legacy", "relational"].includes(String(process.env.LEAGUE_STORAGE_MODE || "").toLowerCase())
+  ? String(process.env.LEAGUE_STORAGE_MODE).toLowerCase()
+  : "auto";
 const oneDay = 60 * 60 * 24;
 const oneYear = oneDay * 365;
 const leagueCookieLifetime = oneDay * 400;
@@ -97,6 +104,7 @@ let voteStoreMutation = Promise.resolve();
 let sportsDataStateMutation = Promise.resolve();
 let footballSyncMutation = Promise.resolve();
 let pressNewsRefreshPromise = null;
+let relationalLeagueFailure = null;
 
 if (isProduction && adminPassword === "change-this-password") {
   throw new Error("ADMIN_PASSWORD must be configured in production.");
@@ -157,19 +165,36 @@ function supabaseHeaders(extra = {}) {
   return headers;
 }
 
+const relationalLeagueStorage = createLeagueRelationalStorage({
+  enabled: cloudStorageEnabled && leagueStorageMode !== "legacy",
+  url: supabaseUrl,
+  requestHeaders: supabaseHeaders,
+  logger: console
+});
+
 async function readContent() {
   return readJsonFile(dataFile, {}, "content");
 }
 
 async function writeContent(content) {
   const previousContent = await readContent();
-  await mutateLeagueStore((leagueStore) => {
-    const archivedStore = archiveDeletedLeagueMatches(previousContent.predictionLeague, content.predictionLeague, leagueStore);
-    leagueStore.players = archivedStore.players;
-    leagueStore.predictions = archivedStore.predictions;
-    leagueStore.archivedMatches = archivedStore.archivedMatches;
-  });
+  const relationalReady = await ensureRelationalLeagueStorage(previousContent);
+  if (!relationalReady) {
+    await mutateLeagueStore((leagueStore) => {
+      const archivedStore = archiveDeletedLeagueMatches(previousContent.predictionLeague, content.predictionLeague, leagueStore);
+      leagueStore.players = archivedStore.players;
+      leagueStore.predictions = archivedStore.predictions;
+      leagueStore.archivedMatches = archivedStore.archivedMatches;
+    });
+  } else {
+    await relationalLeagueStorage.prepareContent(content);
+  }
   await writeJsonFile(dataFile, content, "content");
+  if (relationalReady) {
+    relationalLeagueStorage.ensureContent(content).catch((error) => {
+      console.warn(`Deferred Prediction League cleanup will retry automatically: ${error.message}`);
+    });
+  }
   const storedVotes = await readJsonFile(votesFile, { polls: {} });
   const nextVotes = pruneEngagementStore(storedVotes, {
     pollIds: (content.polls || []).map((poll) => poll.id),
@@ -243,10 +268,12 @@ async function theSportsDbRequest(state, endpoint, parameters = {}) {
 function queueFootballSync(options = {}) {
   const run = footballSyncMutation.then(async () => {
     const content = await readContent();
-    const leagueStore = await readLeagueStore();
-    const archivedEventKeys = new Set(leagueStore.archivedMatches
-      .filter((match) => Number.isInteger(Number(match.externalEventId)) && Number(match.externalEventId) > 0)
-      .map((match) => `${normalizeLeagueId(match.leagueId)}:${Number(match.externalEventId)}`));
+    const relationalReady = await ensureRelationalLeagueStorage(content);
+    const archivedEventKeys = relationalReady
+      ? await relationalLeagueStorage.archivedExternalEventKeys()
+      : new Set((await readLeagueStore()).archivedMatches
+        .filter((match) => Number.isInteger(Number(match.externalEventId)) && Number(match.externalEventId) > 0)
+        .map((match) => `${normalizeLeagueId(match.leagueId)}:${Number(match.externalEventId)}`));
     let result;
     let usage;
     await withSportsDataState(async (state) => {
@@ -641,7 +668,33 @@ function getLeaguePlayerId(request) {
 }
 
 async function readLeagueStore() {
+  return readLegacyLeagueStore();
+}
+
+async function readLegacyLeagueStore() {
   return normalizeLeagueStore(await readJsonFile(predictionLeagueFile, { players: [], predictions: [] }, "predictionLeague"));
+}
+
+async function ensureRelationalLeagueStorage(content = null) {
+  if (!cloudStorageEnabled || leagueStorageMode === "legacy") return false;
+  if (relationalLeagueFailure && Date.now() - relationalLeagueFailure.at < 5 * 60 * 1000) {
+    if (leagueStorageMode === "relational") throw relationalLeagueFailure.error;
+    return false;
+  }
+  const currentContent = content || await readContent();
+  try {
+    const ready = await relationalLeagueStorage.ensureReady(currentContent, readLegacyLeagueStore);
+    relationalLeagueFailure = null;
+    if (!ready && leagueStorageMode === "relational") {
+      throw new Error("LEAGUE_STORAGE_MODE requires the relational Supabase schema, but it is unavailable.");
+    }
+    return ready;
+  } catch (error) {
+    relationalLeagueFailure = { at: Date.now(), error };
+    if (leagueStorageMode === "relational") throw error;
+    console.warn(`Prediction League remains on the safe legacy store: ${error.message}`);
+    return false;
+  }
 }
 
 async function mutateLeagueStore(mutator) {
@@ -665,6 +718,55 @@ function requestedLeagueId(request) {
 
 async function leagueState(request, storeOverride = null, playerIdOverride = null, leagueIdOverride = null) {
   const content = await readContent();
+  if (storeOverride === null && await ensureRelationalLeagueStorage(content)) {
+    const collection = normalizeLeagueCollection(content.predictionLeague);
+    const visibleLeagues = collection.enabled ? collection.leagues.filter((league) => league.enabled) : [];
+    const requestedId = normalizeLeagueId(
+      leagueIdOverride === null ? requestedLeagueId(request) : leagueIdOverride,
+      visibleLeagues[0]?.id || "general"
+    );
+    const selectedLeague = visibleLeagues.find((league) => league.id === requestedId) || visibleLeagues[0] || null;
+    const requestedPlayerId = playerIdOverride === null ? getLeaguePlayerId(request) : playerIdOverride;
+    const currentPlayer = requestedPlayerId ? await relationalLeagueStorage.player(requestedPlayerId) : null;
+    const playerId = currentPlayer?.id || "";
+    if (!selectedLeague) {
+      return {
+        enabled: false,
+        hubTitle: collection.title,
+        hubDescription: collection.description,
+        leagues: [],
+        selectedLeagueId: "",
+        me: currentPlayer ? { nickname: currentPlayer.nickname } : null,
+        matches: [],
+        leaderboards: { week: [], month: [], season: [] },
+        points: POINTS,
+        periods: periodLabels()
+      };
+    }
+    const data = await relationalLeagueStorage.stateData(content, playerId, selectedLeague.id);
+    const state = buildLeagueStateFromAggregates(
+      selectedLeague,
+      data.aggregates,
+      playerId,
+      data.predictions,
+      data.scoreEvents
+    );
+    return {
+      ...state,
+      hubTitle: collection.title,
+      hubDescription: collection.description,
+      leagues: visibleLeagues.map((league) => ({
+        id: league.id,
+        title: league.title,
+        description: league.description,
+        seasonLabel: league.seasonLabel,
+        matchCount: league.matches.length,
+        openMatchCount: league.matches.filter((match) => matchStatus(match) === "open").length,
+        participating: Boolean(data.participation[league.id])
+      })),
+      selectedLeagueId: selectedLeague.id
+    };
+  }
   const store = storeOverride || await readLeagueStore();
   const requestedPlayerId = playerIdOverride === null ? getLeaguePlayerId(request) : playerIdOverride;
   const playerId = store.players.some((player) => player.id === requestedPlayerId) ? requestedPlayerId : "";
@@ -1051,6 +1153,29 @@ async function handleRequest(request, response) {
     }, { "Cache-Control": "no-store, max-age=0" });
   }
 
+  if (url.pathname === "/api/league/storage-status" && request.method === "GET") {
+    if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
+    const content = await readContent();
+    const relational = await ensureRelationalLeagueStorage(content);
+    if (!relational) {
+      return sendJson(response, 200, {
+        mode: "legacy-json",
+        relationalSchemaAvailable: false
+      }, { "Cache-Control": "no-store, max-age=0" });
+    }
+    const usage = await relationalLeagueStorage.usage();
+    const ratio = usage.freePlanLimitBytes ? usage.databaseBytes / usage.freePlanLimitBytes : 0;
+    return sendJson(response, 200, {
+      mode: "relational-v2",
+      relationalSchemaAvailable: true,
+      usage: {
+        ...usage,
+        percentOfFreePlanDatabase: Math.round(ratio * 1000) / 10,
+        status: ratio >= 0.8 ? "critical" : ratio >= 0.6 ? "warning" : "healthy"
+      }
+    }, { "Cache-Control": "no-store, max-age=0" });
+  }
+
   if (url.pathname === "/api/football/sync" && request.method === "POST") {
     if (!isAuthenticated(request)) return sendJson(response, 401, { error: "Unauthorized" });
     const payload = JSON.parse(await readBody(request) || "{}");
@@ -1134,8 +1259,12 @@ async function handleRequest(request, response) {
       return sendJson(response, 429, { error: "Твърде много опити. Опитай отново по-късно." });
     }
     const currentPlayerId = getLeaguePlayerId(request);
-    const currentStore = await readLeagueStore();
-    if (currentStore.players.some((player) => player.id === currentPlayerId)) {
+    const content = await readContent();
+    const relationalReady = await ensureRelationalLeagueStorage(content);
+    const currentPlayer = relationalReady
+      ? await relationalLeagueStorage.player(currentPlayerId)
+      : (await readLeagueStore()).players.find((player) => player.id === currentPlayerId);
+    if (currentPlayer) {
       return sendJson(response, 409, { error: "Вече имаш активно участие в Лигата на прогнозите в този браузър." });
     }
     let nickname;
@@ -1146,6 +1275,29 @@ async function handleRequest(request, response) {
     }
 
     try {
+      if (relationalReady) {
+        const key = nicknameKey(nickname);
+        if (await relationalLeagueStorage.playerByNicknameKey(key)) {
+          throw new Error("Този прякор или негов вариант вече участва. Избери друг или използвай кода си за възстановяване.");
+        }
+        let recoveryCode = createRecoveryCode();
+        let recoveryHash = hashRecoveryCode(recoveryCode, sessionSecret);
+        while (await relationalLeagueStorage.playerByRecoveryHash(recoveryHash)) {
+          recoveryCode = createRecoveryCode();
+          recoveryHash = hashRecoveryCode(recoveryCode, sessionSecret);
+        }
+        const player = await relationalLeagueStorage.createPlayer({
+          id: crypto.randomUUID(),
+          nickname,
+          nicknameKey: key,
+          recoveryHash,
+          createdAt: new Date().toISOString()
+        });
+        return sendJson(response, 201, {
+          recoveryCode,
+          league: await leagueState(request, null, player.id)
+        }, { "Set-Cookie": leagueCookieHeader(player.id) });
+      }
       const { store, result } = await mutateLeagueStore((leagueStore) => {
         const key = nicknameKey(nickname);
         if (nicknameIsTaken(leagueStore.players, nickname)) {
@@ -1187,10 +1339,14 @@ async function handleRequest(request, response) {
     } catch (error) {
       return sendJson(response, 400, { error: error.message });
     }
-    const store = await readLeagueStore();
-    const player = store.players.find((item) => safeRecoveryMatch(item, recoveryHash));
+    const content = await readContent();
+    const relationalReady = await ensureRelationalLeagueStorage(content);
+    const store = relationalReady ? null : await readLeagueStore();
+    const player = relationalReady
+      ? await relationalLeagueStorage.playerByRecoveryHash(recoveryHash)
+      : store.players.find((item) => safeRecoveryMatch(item, recoveryHash));
     if (!player) return sendJson(response, 404, { error: "Не открихме участие с този код за възстановяване." });
-    return sendJson(response, 200, { league: await leagueState(request, store, player.id) }, {
+    return sendJson(response, 200, { league: await leagueState(request, relationalReady ? null : store, player.id) }, {
       "Set-Cookie": leagueCookieHeader(player.id)
     });
   }
@@ -1202,6 +1358,22 @@ async function handleRequest(request, response) {
       return sendJson(response, 429, { error: "Твърде много опити. Опитай отново по-късно." });
     }
     try {
+      const content = await readContent();
+      if (await ensureRelationalLeagueStorage(content)) {
+        const player = await relationalLeagueStorage.player(playerId);
+        if (!player) throw new Error("Участието в Лигата на прогнозите не е намерено.");
+        let recoveryCode = createRecoveryCode();
+        let recoveryHash = hashRecoveryCode(recoveryCode, sessionSecret);
+        while (await relationalLeagueStorage.playerByRecoveryHash(recoveryHash)) {
+          recoveryCode = createRecoveryCode();
+          recoveryHash = hashRecoveryCode(recoveryCode, sessionSecret);
+        }
+        await relationalLeagueStorage.updatePlayer(playerId, { recoveryHash });
+        return sendJson(response, 200, {
+          recoveryCode,
+          league: await leagueState(request, null, playerId)
+        }, { "Set-Cookie": leagueCookieHeader(playerId) });
+      }
       const { store, result } = await mutateLeagueStore((leagueStore) => rotatePlayerRecoveryCode(leagueStore, playerId, sessionSecret));
       return sendJson(response, 200, {
         recoveryCode: result.recoveryCode,
@@ -1222,6 +1394,18 @@ async function handleRequest(request, response) {
       return sendJson(response, 400, { error: error.message });
     }
     try {
+      const content = await readContent();
+      if (await ensureRelationalLeagueStorage(content)) {
+        const player = await relationalLeagueStorage.player(playerId);
+        if (!player) throw new Error("Участието в Лигата на прогнозите не е намерено.");
+        const key = nicknameKey(nickname);
+        const duplicate = await relationalLeagueStorage.playerByNicknameKey(key);
+        if (duplicate && duplicate.id !== playerId) throw new Error("Този прякор или негов вариант вече участва.");
+        await relationalLeagueStorage.updatePlayer(playerId, { nickname, nicknameKey: key });
+        return sendJson(response, 200, { league: await leagueState(request, null, playerId) }, {
+          "Set-Cookie": leagueCookieHeader(playerId)
+        });
+      }
       const { store } = await mutateLeagueStore((leagueStore) => {
         const player = leagueStore.players.find((item) => item.id === playerId);
         if (!player) throw new Error("Участието в Лигата на прогнозите не е намерено.");
@@ -1262,6 +1446,24 @@ async function handleRequest(request, response) {
       return sendJson(response, 400, { error: error.message });
     }
     try {
+      if (await ensureRelationalLeagueStorage(content)) {
+        if (!await relationalLeagueStorage.player(playerId)) {
+          throw new Error("Участието в Лигата на прогнозите не е намерено.");
+        }
+        const now = new Date().toISOString();
+        await relationalLeagueStorage.upsertPrediction({
+          id: crypto.randomUUID(),
+          playerId,
+          leagueId: leagueConfig.id,
+          matchId,
+          ...prediction,
+          submittedAt: now,
+          updatedAt: now
+        });
+        return sendJson(response, 200, { league: await leagueState(request, null, playerId, leagueConfig.id) }, {
+          "Set-Cookie": leagueCookieHeader(playerId)
+        });
+      }
       const { store } = await mutateLeagueStore((leagueStore) => {
         if (!leagueStore.players.some((player) => player.id === playerId)) throw new Error("Участието в Лигата на прогнозите не е намерено.");
         const now = new Date().toISOString();
