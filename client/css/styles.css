@@ -5424,6 +5424,26 @@ html.pwa-refreshing body {
 .league-player-tooltip-heading strong { font-size: 1.1rem; }
 .league-player-tooltip-heading small { color: var(--muted); font-size: 0.66rem; }
 
+.league-player-tooltip-trophy {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(244, 212, 77, 0.16);
+  border-radius: 9px;
+  background: rgba(244, 212, 77, 0.035);
+  padding: 8px 10px;
+}
+
+.league-player-tooltip-trophy .league-badge {
+  flex: 0 0 auto;
+}
+
+.league-player-tooltip-trophy > small {
+  color: var(--muted);
+  font-size: 0.61rem;
+  line-height: 1.35;
+}
+
 .league-player-tooltip-ranks {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -7448,6 +7468,14 @@ html.pwa-refreshing body {
   .league-entry-card,
   .league-profile-card,
   .league-table-card { min-height: 0; }
+  .league-table-row {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 4px;
+    padding-inline: 7px;
+  }
+  .league-table-row .league-level.is-compact {
+    margin-inline: 0 2px;
+  }
   .league-recovery-modal { padding: 12px; }
   .league-recovery-dialog { border-radius: 17px; padding: 22px 16px 18px; }
   .league-recovery-dialog-icon { width: 46px; height: 46px; margin-top: 11px; border-radius: 14px; font-size: 1.35rem; }

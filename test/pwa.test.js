@@ -241,6 +241,9 @@ test("league leaderboard exports a story card with rank, points, and the latest 
   assert.match(styles, /\.league-level-ornaments/);
   assert.match(publicScript, /leagueLevelSvgMarkup/);
   assert.match(publicScript, /leagueLevelFramePaths/);
+  assert.match(publicScript, /leagueBadgeDisplayMarkup/);
+  assert.match(publicScript, /league-player-tooltip-trophy/);
+  assert.doesNotMatch(publicScript, /\$\{row\.badges\?\.length \? leagueBadgeMarkup/);
   assert.match(styles, /\.league-level-svg/);
   assert.match(styles, /@keyframes league-level-sheen/);
   assert.match(styles, /@keyframes league-level-living-aura/);
@@ -252,8 +255,11 @@ test("league leaderboard exports a story card with rank, points, and the latest 
   assert.match(publicScript, /level-svg-training-ball/);
   assert.match(styles, /\.league-level\.tier-gold/);
   assert.match(styles, /\.league-level-up-share/);
-  assert.match(fanZone, /styles\.css\?v=20260723-12/);
-  assert.match(fanZone, /script\.js\?v=20260723-12/);
+  assert.match(publicScript, /const sectionRevealTargets = document\.querySelectorAll\("\.section"\)/);
+  assert.match(publicScript, /rootMargin: "0px 0px 96px 0px"/);
+  assert.match(styles, /grid-template-columns: 22px minmax\(0, 1fr\) auto/);
+  assert.match(fanZone, /styles\.css\?v=20260723-14/);
+  assert.match(fanZone, /script\.js\?v=20260723-14/);
 });
 
 test("every news card exports a story-ready image with the article photo and a branded fallback", () => {

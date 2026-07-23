@@ -511,6 +511,12 @@ function leagueBadgeMarkup(badge = {}, compact = false) {
   return `<span class="league-badge tier-${tier} ${compact ? "is-compact" : ""}" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false" data-league-trophy data-trophy-label="${escapeAttribute(label)}" data-trophy-description="${escapeAttribute(description)}" data-trophy-tier="${escapeAttribute(tierLabel)}" aria-label="${escapeAttribute(`${label}. ${description} Ниво: ${tierLabel}.`)}"><i aria-hidden="true"></i><span>${escapeHTML(label)}</span></span>`;
 }
 
+function leagueBadgeDisplayMarkup(badge = {}) {
+  const tier = leagueTrophyTierOrder[badge.tier] ? badge.tier : "bronze";
+  const label = badge.label || "Трофей";
+  return `<span class="league-badge tier-${tier}" aria-label="${escapeAttribute(label)}"><i aria-hidden="true"></i><span>${escapeHTML(label)}</span></span>`;
+}
+
 const leagueLevelTierStarts = Object.freeze({ starter: 1, bronze: 5, silver: 10, gold: 20, platinum: 30, diamond: 40, legendary: 50 });
 const leagueLevelColors = Object.freeze({
   starter: "#6fcf8b",
@@ -654,6 +660,7 @@ function showLeaguePlayerTooltip(trigger, { pinned = false } = {}) {
       ${leagueLevelMarkup({ value: data.level, name: data.levelName, tier: data.levelTier, tierLabel: data.levelTierLabel })}
       <div><span>Ниво ${escapeHTML(data.level)}</span><strong>${escapeHTML(data.nickname)}</strong><small>${escapeHTML(data.levelName || data.levelTierLabel)}</small>${data.isHost === "true" ? leagueHostBadgeMarkup(true) : ""}</div>
     </div>
+    ${data.trophyLabel ? `<div class="league-player-tooltip-trophy">${leagueBadgeDisplayMarkup({ label: data.trophyLabel, tier: data.trophyTier })}<small>${escapeHTML(data.trophyDescription)}</small></div>` : ""}
     <div class="league-player-tooltip-ranks">
       <span><b>${escapeHTML(leagueRankLabel(Number(data.rankWeek) || null))}</b>седмица</span>
       <span><b>${escapeHTML(leagueRankLabel(Number(data.rankMonth) || null))}</b>месец</span>
@@ -1025,7 +1032,9 @@ function leagueLeaderboardMarkup(state) {
         ${Object.entries(labels).map(([key, label]) => `<button class="${period === key ? "is-active" : ""}" type="button" data-league-period="${key}" role="tab" aria-selected="${period === key}">${label}</button>`).join("")}
       </div>
       <div class="league-table">
-        ${rows.length ? rows.slice(0, 50).map((row) => `
+        ${rows.length ? rows.slice(0, 50).map((row) => {
+          const trophy = leaguePrimaryBadge(row.badges || []);
+          return `
           <div class="league-table-row ${state.me?.nickname === row.nickname ? "is-me" : ""}">
             <strong>${row.rank}</strong>
             <span>
@@ -1047,13 +1056,16 @@ function leagueLeaderboardMarkup(state) {
                 data-correct-outcomes="${row.totalCorrectOutcomes}"
                 data-global-matches="${row.globalCompletedPredictions}"
                 data-league-matches="${row.leagueCompletedPredictions}"
+                data-trophy-label="${escapeAttribute(trophy?.label || "")}"
+                data-trophy-description="${escapeAttribute(trophy?.description || "")}"
+                data-trophy-tier="${escapeAttribute(trophy?.tier || "")}"
                 aria-label="${escapeAttribute(`${row.nickname}, ниво ${row.level.value}. Покажи статистика.`)}">
                 ${leagueLevelMarkup(row.level, true)}<b class="${row.isHost ? "is-host" : ""}">${escapeHTML(row.nickname)}</b>${row.isHost ? leagueHostBadgeMarkup(true) : ""}
               </span>
-              ${row.badges?.length ? leagueBadgeMarkup(leaguePrimaryBadge(row.badges), true) : ""}
             </span>
             <em>${row.points} т.</em>
-          </div>`).join("") : `<div class="league-table-empty">Класацията чака първите прогнози.</div>`}
+          </div>`;
+        }).join("") : `<div class="league-table-empty">Класацията чака първите прогнози.</div>`}
       </div>
       ${state.me ? `<button class="button secondary league-leaderboard-share" type="button" data-league-share-achievement ${myRank ? "" : "disabled"}>${myRank ? "Сподели позицията и точките" : "Позиция след първия резултат"}</button>` : ""}
     </article>`;
@@ -3539,10 +3551,19 @@ function bindPressNewsReveal() {
 }
 
 function bindMotion() {
-  const revealTargets = document.querySelectorAll(
-    ".section, .format-card, .social-card, .stat-card, .ad-card, .package-card, .marquee-ad-card, .youtube-player, .discovery-card, .host-card, .prediction-card, .poll-card, .league-entry-card, .league-profile-card, .league-table-card, .league-match-card"
+  const sectionRevealTargets = document.querySelectorAll(".section");
+  const sectionRevealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) entry.target.classList.add("is-visible");
+      });
+    },
+    { threshold: 0, rootMargin: "0px 0px 96px 0px" }
   );
-  const revealObserver = new IntersectionObserver(
+  const cardRevealTargets = document.querySelectorAll(
+    ".format-card, .social-card, .stat-card, .ad-card, .package-card, .marquee-ad-card, .youtube-player, .discovery-card, .host-card, .prediction-card, .poll-card, .league-entry-card, .league-profile-card, .league-table-card, .league-match-card"
+  );
+  const cardRevealObserver = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
         if (entry.isIntersecting) entry.target.classList.add("is-visible");
@@ -3550,11 +3571,17 @@ function bindMotion() {
     },
     { threshold: 0.12 }
   );
-  revealTargets.forEach((target) => {
+  sectionRevealTargets.forEach((target) => {
     if (target.dataset.revealBound === "true") return;
     target.dataset.revealBound = "true";
     target.classList.add("reveal");
-    revealObserver.observe(target);
+    sectionRevealObserver.observe(target);
+  });
+  cardRevealTargets.forEach((target) => {
+    if (target.dataset.revealBound === "true") return;
+    target.dataset.revealBound = "true";
+    target.classList.add("reveal");
+    cardRevealObserver.observe(target);
   });
 
   const countObserver = new IntersectionObserver(
