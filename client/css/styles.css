@@ -419,6 +419,46 @@ h3 {
   background: rgba(255, 255, 255, 0.08);
 }
 
+button.is-loading {
+  --button-loader-color: #f7f8fb;
+  position: relative;
+  color: transparent !important;
+  cursor: wait;
+  pointer-events: none;
+}
+
+button.is-loading > * {
+  visibility: hidden;
+}
+
+.button.is-loading::before {
+  opacity: 0;
+  animation: none;
+}
+
+button.is-loading::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border: 2px solid color-mix(in srgb, var(--button-loader-color) 28%, transparent);
+  border-top-color: var(--button-loader-color);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+  animation: button-loading-spin 680ms linear infinite;
+}
+
+.button.primary.is-loading {
+  --button-loader-color: #051008;
+}
+
+@keyframes button-loading-spin {
+  to { transform: rotate(360deg); }
+}
+
 .hero-stack {
   position: absolute;
   top: 27%;

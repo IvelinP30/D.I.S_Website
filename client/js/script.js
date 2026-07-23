@@ -15,6 +15,29 @@ const newsReactionChoices = [
 ];
 let predictionLeagueSelectedId = new URLSearchParams(window.location.search).get("league") || localStorage.getItem("dis-selected-league") || "";
 const leagueRecoveryCloseDelay = 3;
+const buttonLoadingStates = new WeakMap();
+
+function setButtonLoading(button, isLoading) {
+  if (!button) return;
+  if (isLoading) {
+    if (buttonLoadingStates.has(button)) return;
+    buttonLoadingStates.set(button, {
+      disabled: button.disabled,
+      ariaBusy: button.getAttribute("aria-busy")
+    });
+    button.disabled = true;
+    button.classList.add("is-loading");
+    button.setAttribute("aria-busy", "true");
+    return;
+  }
+
+  const previous = buttonLoadingStates.get(button);
+  button.classList.remove("is-loading");
+  if (previous?.ariaBusy === null) button.removeAttribute("aria-busy");
+  else if (previous) button.setAttribute("aria-busy", previous.ariaBusy);
+  button.disabled = previous?.disabled ?? false;
+  buttonLoadingStates.delete(button);
+}
 
 function bindMainNavigation(mainNav) {
   const topbar = mainNav.closest(".topbar");
@@ -980,15 +1003,18 @@ function closeLeagueLevelUp() {
 async function shareLeagueLevelUp(state, button) {
   const originalLabel = button?.innerHTML;
   try {
-    if (button) {
-      button.disabled = true;
-      button.textContent = "Създавам картинката…";
-    }
+    setButtonLoading(button, true);
     const result = await shareLeagueLevelUpImage(state);
+    setButtonLoading(button, false);
+    if (button) button.disabled = true;
     if (button && result === "shared") button.textContent = "Споделено ✓";
     if (button && result === "downloaded") button.textContent = "Картинката е свалена ✓";
   } catch (error) {
-    if (button) button.textContent = "Опитай отново";
+    setButtonLoading(button, false);
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Опитай отново";
+    }
   }
   if (button) window.setTimeout(() => {
     button.innerHTML = originalLabel;
@@ -1289,7 +1315,7 @@ function bindPredictionLeagueActions() {
     event.preventDefault();
     const form = event.currentTarget;
     const button = form.querySelector("button");
-    button.disabled = true;
+    setButtonLoading(button, true);
     try {
       const payload = await leagueApi(leagueApiUrl("/api/league/register"), { method: "POST", body: JSON.stringify({ nickname: form.nickname.value }) });
       predictionLeagueState = payload.league;
@@ -1298,14 +1324,14 @@ function bindPredictionLeagueActions() {
       renderPredictionLeagueApp();
     } catch (error) {
       leagueFormError(form, error);
-      button.disabled = false;
+      setButtonLoading(button, false);
     }
   });
   app.querySelector("[data-league-recover]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
     const button = form.querySelector("button");
-    button.disabled = true;
+    setButtonLoading(button, true);
     try {
       const payload = await leagueApi(leagueApiUrl("/api/league/recover"), { method: "POST", body: JSON.stringify({ recoveryCode: form.recoveryCode.value }) });
       predictionLeagueState = payload.league;
@@ -1314,12 +1340,14 @@ function bindPredictionLeagueActions() {
       renderPredictionLeagueApp();
     } catch (error) {
       leagueFormError(form, error);
-      button.disabled = false;
+      setButtonLoading(button, false);
     }
   });
   app.querySelector("[data-league-profile]")?.addEventListener("submit", async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const button = form.querySelector("button");
+    setButtonLoading(button, true);
     try {
       const payload = await leagueApi(leagueApiUrl("/api/league/profile"), { method: "PATCH", body: JSON.stringify({ nickname: form.nickname.value }) });
       predictionLeagueState = payload.league;
@@ -1327,13 +1355,13 @@ function bindPredictionLeagueActions() {
       renderPredictionLeagueApp();
     } catch (error) {
       leagueFormError(form, error);
+      setButtonLoading(button, false);
     }
   });
   app.querySelector("[data-league-rotate-recovery]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const container = button.closest(".league-recovery-reset");
-    button.disabled = true;
-    button.textContent = "Генериране…";
+    setButtonLoading(button, true);
     try {
       const payload = await leagueApi(leagueApiUrl("/api/league/recovery-code"), { method: "POST" });
       predictionLeagueState = payload.league;
@@ -1342,15 +1370,14 @@ function bindPredictionLeagueActions() {
       renderPredictionLeagueApp();
     } catch (error) {
       leagueFormError(container, error);
-      button.disabled = false;
-      button.textContent = "Генерирай нов код";
+      setButtonLoading(button, false);
     }
   });
   app.querySelectorAll("[data-league-prediction]").forEach((form) => {
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const button = form.querySelector("button");
-      button.disabled = true;
+      setButtonLoading(button, true);
       try {
         const payload = await leagueApi(`/api/league/${encodeURIComponent(predictionLeagueState.selectedLeagueId)}/predictions/${encodeURIComponent(form.dataset.leaguePrediction)}`, {
           method: "PUT",
@@ -1362,7 +1389,7 @@ function bindPredictionLeagueActions() {
         renderPredictionLeagueApp();
       } catch (error) {
         leagueFormError(form, error);
-        button.disabled = false;
+        setButtonLoading(button, false);
       }
     });
   });
@@ -1376,7 +1403,7 @@ function bindPredictionLeagueActions() {
     button.addEventListener("click", async () => {
       const leagueId = button.dataset.leagueSelect;
       if (!leagueId || leagueId === predictionLeagueState.selectedLeagueId) return;
-      button.disabled = true;
+      setButtonLoading(button, true);
       try {
         predictionLeagueState = await leagueApi(leagueApiUrl("/api/league", leagueId));
         predictionLeagueSelectedId = predictionLeagueState.selectedLeagueId;
@@ -1388,7 +1415,7 @@ function bindPredictionLeagueActions() {
         predictionLeagueNotice = "";
         renderPredictionLeagueApp();
       } catch (error) {
-        button.disabled = false;
+        setButtonLoading(button, false);
       }
     });
   });
@@ -1397,12 +1424,15 @@ function bindPredictionLeagueActions() {
       const match = predictionLeagueState.matches.find((item) => item.id === button.dataset.leagueShare);
       if (!match) return;
       const originalLabel = button.textContent;
-      button.disabled = true;
-      button.textContent = "Подготвям…";
+      setButtonLoading(button, true);
       try {
         const outcome = await shareLeagueResult(match, predictionLeagueState, predictionLeaguePeriod);
+        setButtonLoading(button, false);
+        button.disabled = true;
         button.textContent = outcome === "downloaded" ? "Картата е свалена ✓" : originalLabel;
       } catch (error) {
+        setButtonLoading(button, false);
+        button.disabled = true;
         button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
       }
       window.setTimeout(() => { button.textContent = originalLabel; button.disabled = false; }, 1600);
@@ -1411,13 +1441,16 @@ function bindPredictionLeagueActions() {
   app.querySelectorAll("[data-league-share-achievement]").forEach((button) => {
     button.addEventListener("click", async () => {
       const originalLabel = button.textContent;
-      button.disabled = true;
-      button.textContent = "Подготвям…";
+      setButtonLoading(button, true);
       try {
         const outcome = await shareLeagueAchievement(predictionLeagueState, predictionLeaguePeriod);
+        setButtonLoading(button, false);
+        button.disabled = true;
         if (outcome === "downloaded") button.textContent = "Картата е свалена ✓";
         else button.textContent = originalLabel;
       } catch (error) {
+        setButtonLoading(button, false);
+        button.disabled = true;
         button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
       }
       window.setTimeout(() => {
@@ -1429,12 +1462,15 @@ function bindPredictionLeagueActions() {
   app.querySelector("[data-league-share-profile]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const originalLabel = button.textContent;
-    button.disabled = true;
-    button.textContent = "Подготвям…";
+    setButtonLoading(button, true);
     try {
       const outcome = await shareLeagueProfile(predictionLeagueState);
+      setButtonLoading(button, false);
+      button.disabled = true;
       button.textContent = outcome === "downloaded" ? "Профилът е свален ✓" : originalLabel;
     } catch (error) {
+      setButtonLoading(button, false);
+      button.disabled = true;
       button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
     }
     window.setTimeout(() => {
@@ -2359,6 +2395,7 @@ async function renderFanVoting() {
       const card = button.closest("[data-poll-id]");
       card.classList.add("is-voting");
       card.querySelectorAll("button").forEach((control) => { control.disabled = true; });
+      setButtonLoading(button, true);
       try {
         const response = await fetch(`/api/votes/${encodeURIComponent(card.dataset.pollId)}`, {
           method: "POST",
@@ -2375,6 +2412,7 @@ async function renderFanVoting() {
       } catch (error) {
         card.classList.remove("is-voting");
         card.querySelectorAll("button").forEach((control) => { control.disabled = false; });
+        setButtonLoading(button, false);
         const feedback = card.querySelector(".poll-feedback");
         if (feedback) feedback.textContent = error.message;
       }
@@ -2637,7 +2675,7 @@ function bindGiveawayForm() {
     data.requirementsConfirmed = form.elements.requirementsConfirmed.checked;
     data.ageConfirmed = form.elements.ageConfirmed.checked;
     data.rulesAccepted = form.elements.rulesAccepted.checked;
-    button.disabled = true;
+    setButtonLoading(button, true);
     feedback.textContent = "Записване...";
     feedback.classList.remove("is-error", "is-success");
     try {
@@ -2658,7 +2696,7 @@ function bindGiveawayForm() {
       feedback.textContent = error.message;
       feedback.classList.add("is-error");
     } finally {
-      button.disabled = false;
+      setButtonLoading(button, false);
     }
   });
 }
@@ -2701,6 +2739,7 @@ function bindPredictionVotes(scope) {
       const item = (config.predictions || []).find((prediction) => String(prediction.id || "") === id);
       if (!card || !grid || !item || button.disabled) return;
       card.querySelectorAll("[data-prediction-choice]").forEach((control) => { control.disabled = true; });
+      setButtonLoading(button, true);
       const feedback = card.querySelector(".engagement-feedback");
       if (feedback) feedback.textContent = "Записваме гласа…";
       try {
@@ -2717,6 +2756,7 @@ function bindPredictionVotes(scope) {
         if (nextCard) bindPredictionVotes(nextCard);
       } catch (error) {
         card.querySelectorAll("[data-prediction-choice]").forEach((control) => { control.disabled = false; });
+        setButtonLoading(button, false);
         if (feedback) feedback.textContent = error.message || "Гласът не беше записан. Опитай отново.";
       }
     });
@@ -2793,7 +2833,7 @@ function bindMessageForms() {
       const feedback = form.querySelector(".form-feedback");
       const data = Object.fromEntries(new FormData(form).entries());
       data.type = form.dataset.messageType || data.type || "general";
-      button.disabled = true;
+      setButtonLoading(button, true);
       feedback.textContent = "Изпращане...";
       feedback.classList.remove("is-error", "is-success");
       try {
@@ -2812,7 +2852,7 @@ function bindMessageForms() {
         feedback.textContent = error.message;
         feedback.classList.add("is-error");
       } finally {
-        button.disabled = false;
+        setButtonLoading(button, false);
       }
     });
   });
@@ -3099,13 +3139,16 @@ function bindNewsShareActions(newsGrid, newsItems) {
       const item = newsItems[index];
       if (!item) return;
       const originalMarkup = button.innerHTML;
-      button.disabled = true;
-      button.textContent = "Споделяне…";
+      setButtonLoading(button, true);
       try {
         const outcome = await shareNewsItem(item);
+        setButtonLoading(button, false);
+        button.disabled = true;
         if (outcome === "downloaded") button.textContent = "Story картата е свалена ✓";
         else button.innerHTML = originalMarkup;
       } catch (error) {
+        setButtonLoading(button, false);
+        button.disabled = true;
         button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
       }
       window.setTimeout(() => {
@@ -3185,6 +3228,7 @@ function bindNewsCardReactions(newsGrid) {
     const newsId = card?.dataset.newsCard || "";
     if (!card || !reactionBar || !newsId) return;
     reactionBar.querySelectorAll("[data-news-card-reaction]").forEach((control) => { control.disabled = true; });
+    setButtonLoading(button, true);
     const feedback = reactionBar.querySelector(".news-card-reaction-feedback");
     if (feedback) feedback.textContent = "Записваме…";
     try {
@@ -3199,6 +3243,7 @@ function bindNewsCardReactions(newsGrid) {
       reactionBar.outerHTML = renderNewsCardReactions(newsId, engagementState.news?.[newsId]);
     } catch (error) {
       reactionBar.querySelectorAll("[data-news-card-reaction]").forEach((control) => { control.disabled = false; });
+      setButtonLoading(button, false);
       if (feedback) feedback.textContent = error.message || "Опитай отново.";
     }
   });
@@ -3321,12 +3366,15 @@ function renderNewsDetail(container) {
   container.querySelector("[data-news-detail-share]")?.addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const originalLabel = button.textContent;
-    button.disabled = true;
-    button.textContent = "Подготвям…";
+    setButtonLoading(button, true);
     try {
       const outcome = await shareNewsItem(item);
+      setButtonLoading(button, false);
+      button.disabled = true;
       button.textContent = outcome === "downloaded" ? "Story картата е свалена ✓" : originalLabel;
     } catch (error) {
+      setButtonLoading(button, false);
+      button.disabled = true;
       button.textContent = error.message?.includes("QR") ? "QR не се зареди — обнови" : "Неуспешно споделяне";
     }
     window.setTimeout(() => { button.textContent = originalLabel; button.disabled = false; }, 1600);
@@ -3358,6 +3406,7 @@ function bindNewsReactions(container, newsId) {
     button.addEventListener("click", async () => {
       if (button.disabled) return;
       section.querySelectorAll("[data-news-reaction]").forEach((control) => { control.disabled = true; });
+      setButtonLoading(button, true);
       const feedback = section.querySelector(".engagement-feedback");
       if (feedback) feedback.textContent = "Записваме реакцията…";
       try {
@@ -3373,6 +3422,7 @@ function bindNewsReactions(container, newsId) {
         bindNewsReactions(container, newsId);
       } catch (error) {
         section.querySelectorAll("[data-news-reaction]").forEach((control) => { control.disabled = false; });
+        setButtonLoading(button, false);
         if (feedback) feedback.textContent = error.message || "Реакцията не беше записана. Опитай отново.";
       }
     });
