@@ -50,7 +50,7 @@ const TROPHY_TIERS = Object.freeze({
 
 const TROPHY_CONDITIONS = Object.freeze({
   exact: "Познал си точния резултат в поне един мач.",
-  voice: "Участвал си с прогноза в поне 10 мача.",
+  voice: "Участвал си с прогноза в поне 10 завършили мача.",
   derby: "Познал си победителя или равенството в 3 дербита.",
   streak: "Направил си 5 правилни прогнози поред.",
   monthlyChampion: "Завършил си на първо място в месечната класация."
@@ -492,10 +492,10 @@ function scoreEvents(config, store) {
 
     const totalPredictions = (predictionsByPlayer.get(player.id) || []).length;
     const completedPredictions = predictions.length;
-    const trophyStats = { exactScores, derbyCorrect, maxStreak, totalPredictions };
+    const trophyStats = { exactScores, derbyCorrect, maxStreak, completedPredictions };
     const badges = config.trophies.filter((trophy) => {
       if (trophy.condition === "exact") return trophyStats.exactScores >= 1;
-      if (trophy.condition === "voice") return trophyStats.totalPredictions >= 10;
+      if (trophy.condition === "voice") return trophyStats.completedPredictions >= 10;
       if (trophy.condition === "derby") return trophyStats.derbyCorrect >= 3;
       if (trophy.condition === "streak") return trophyStats.maxStreak >= 5;
       return false;
@@ -670,7 +670,7 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
 function trophiesForAggregate(config, aggregate = {}) {
   return config.trophies.filter((trophy) => {
     if (trophy.condition === "exact") return Number(aggregate.totalExactScores) >= 1;
-    if (trophy.condition === "voice") return Number(aggregate.totalPredictions) >= 10;
+    if (trophy.condition === "voice") return Number(aggregate.completedPredictions) >= 10;
     if (trophy.condition === "derby") return Number(aggregate.derbyCorrect) >= 3;
     if (trophy.condition === "streak") return Number(aggregate.maxStreak) >= 5;
     return false;

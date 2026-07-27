@@ -1,7 +1,7 @@
 let config = window.DIS_SITE_CONFIG || {};
 let giveawayCountdownTimer = null;
 let predictionLeagueState = null;
-let predictionLeaguePeriod = "week";
+let predictionLeaguePeriod = "season";
 let predictionLeagueRecoveryCode = "";
 let predictionLeagueNotice = "";
 let predictionLeagueFlashMatchId = "";
@@ -16,6 +16,63 @@ const newsReactionChoices = [
 let predictionLeagueSelectedId = new URLSearchParams(window.location.search).get("league") || localStorage.getItem("dis-selected-league") || "";
 const leagueRecoveryCloseDelay = 3;
 const buttonLoadingStates = new WeakMap();
+
+function loadingLinesMarkup(count = 3, className = "") {
+  return `<div class="content-skeleton-lines ${className}" aria-hidden="true">${Array.from({ length: count }, (_, index) => `<i class="skeleton-line skeleton-line-${index + 1}"></i>`).join("")}</div>`;
+}
+
+function contentCardSkeletonMarkup(count = 3, className = "") {
+  return Array.from({ length: count }, () => `<article class="content-skeleton-card ${className}" aria-hidden="true"><i class="skeleton-block skeleton-media"></i>${loadingLinesMarkup(3)}</article>`).join("");
+}
+
+function leagueSkeletonMarkup() {
+  return `<div class="league-loading-skeleton" aria-label="Зареждаме Лигата на прогнозите">
+    <div class="league-skeleton-tabs"><i></i><i></i><i></i></div>
+    <div class="league-skeleton-dashboard"><article>${loadingLinesMarkup(4)}</article><article>${loadingLinesMarkup(6)}</article></div>
+    <div class="league-skeleton-matches">${contentCardSkeletonMarkup(3, "is-league-match")}</div>
+  </div>`;
+}
+
+function renderLoadingSkeletons() {
+  const leagueSection = document.querySelector("#prediction-league");
+  const leagueApp = document.querySelector("#prediction-league-app");
+  if (leagueSection && leagueApp) {
+    leagueSection.hidden = false;
+    leagueApp.setAttribute("aria-busy", "true");
+    leagueApp.innerHTML = leagueSkeletonMarkup();
+  }
+
+  const gridSkeletons = [
+    ["#social-grid", "social-grid", 4],
+    ["#youtube-player", "youtube-player", 1],
+    ["#format-grid", "format-grid", 3],
+    ["#home-discovery-grid", "home-discovery-grid", 4],
+    ["#hosts-grid", "hosts-grid", 2],
+    ["#prediction-grid", "prediction-grid", 2],
+    ["#poll-grid", "poll-grid", 2],
+    ["#news-grid", "news-grid", 3],
+    ["#press-news-grid", "press-news-grid", 4],
+    ["#ad-slots", "ad-slots", 3],
+    ["#sponsor-packages", "sponsor-packages", 3],
+    ["#stat-grid", "stat-grid", 4]
+  ];
+  gridSkeletons.forEach(([selector, className, count]) => {
+    const grid = document.querySelector(selector);
+    if (!grid) return;
+    grid.setAttribute("aria-busy", "true");
+    grid.innerHTML = contentCardSkeletonMarkup(count, `is-${className}`);
+  });
+
+  const contactActions = document.querySelector("#contact-actions");
+  if (contactActions) contactActions.innerHTML = loadingLinesMarkup(3, "is-contact-actions");
+
+  const newsDetail = document.querySelector("#news-detail");
+  if (newsDetail) newsDetail.innerHTML = `<article class="news-detail-skeleton" aria-busy="true"><i class="skeleton-block skeleton-media"></i>${loadingLinesMarkup(4, "is-hero")}</article>`;
+}
+
+function finishPageLoading() {
+  document.documentElement.classList.add("content-ready");
+}
 
 function setButtonLoading(button, isLoading) {
   if (!button) return;
@@ -129,10 +186,8 @@ async function loadContent({ allowFallback = true } = {}) {
 
   renderPage();
   bindPressNewsReveal();
-  await renderPressNews();
-  document.documentElement.classList.add("content-ready");
-  await renderPredictionLeague();
-  await renderFanVoting();
+  finishPageLoading();
+  await Promise.all([renderPressNews(), renderPredictionLeague(), renderFanVoting()]);
   bindGiveawayForm();
   bindGiveawayRulesLinks();
   bindMessageForms();
@@ -510,6 +565,13 @@ function leagueApiUrl(path, leagueId = predictionLeagueState?.selectedLeagueId |
 }
 
 const leagueTrophyTierOrder = Object.freeze({ bronze: 1, silver: 2, gold: 3, platinum: 4, legendary: 5 });
+const leagueTrophyVisuals = Object.freeze({
+  exact: { id: "exact", label: "Точен мерник" },
+  voice: { id: "voice", label: "Гласът на трибуните" },
+  derby: { id: "derby", label: "Дерби експерт" },
+  streak: { id: "streak", label: "Без загуба" },
+  monthlyChampion: { id: "monthlyChampion", label: "Шампион на месеца" }
+});
 let leagueTrophyTooltip = null;
 let leagueTrophyGlobalEventsBound = false;
 let leagueTrophyActiveTrigger = null;
@@ -522,8 +584,21 @@ let leaguePlayerPinnedTrigger = null;
 let leaguePlayerHoverTimer = null;
 const leagueTooltipHoverDelay = 280;
 
-function leaguePrimaryBadge(badges = []) {
-  return [...badges].sort((left, right) => (leagueTrophyTierOrder[right.tier] || 0) - (leagueTrophyTierOrder[left.tier] || 0))[0];
+function leagueTrophyVisual(badge = {}) {
+  return leagueTrophyVisuals[badge.condition] || leagueTrophyVisuals[badge.id] || { id: "default", label: "Трофей" };
+}
+
+function leagueTrophyIconMarkup(badge = {}) {
+  const icon = leagueTrophyVisual(badge).id;
+  const paths = {
+    exact: `<circle class="trophy-ring" cx="12" cy="12" r="7.4"></circle><circle class="trophy-fill" cx="12" cy="12" r="4.2"></circle><circle class="trophy-solid" cx="12" cy="12" r="1.55"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path>`,
+    voice: `<path class="trophy-fill" d="M4.7 10.2h4L15.5 6v12l-6.8-4.2h-4z"></path><path d="M4.7 10.2h4L15.5 6v12l-6.8-4.2h-4zM8.8 13.8l1.1 4.2h2.3l-1.2-4.7M17.7 9.1c1.05.75 1.6 1.72 1.6 2.9s-.55 2.15-1.6 2.9M19.8 6.6c1.8 1.35 2.7 3.15 2.7 5.4s-.9 4.05-2.7 5.4"></path>`,
+    derby: `<path class="trophy-fill" d="M12 3.3 19 6v5.7c0 4.2-2.7 7.5-7 9-4.3-1.5-7-4.8-7-9V6z"></path><path d="M12 3.3 19 6v5.7c0 4.2-2.7 7.5-7 9-4.3-1.5-7-4.8-7-9V6zM8.1 9.1h7.8M8.1 13h7.8M12 7v8"></path><path class="trophy-solid" d="m12 8.4.85 1.8 1.95.28-1.4 1.37.33 1.93L12 12.83l-1.73.97.33-1.93-1.4-1.37 1.95-.28z"></path>`,
+    streak: `<path class="trophy-fill" d="M13.9 2.7c.4 3.1-1 4.75-2.65 6.1.1-1.86-.76-3.43-2.2-4.47.08 3.1-3.9 4.86-3.9 9.1 0 4.1 3 7.1 6.85 7.1s6.85-3 6.85-7.1c0-3.15-1.67-5.66-4.95-10.8Z"></path><path d="M13.9 2.7c.4 3.1-1 4.75-2.65 6.1.1-1.86-.76-3.43-2.2-4.47.08 3.1-3.9 4.86-3.9 9.1 0 4.1 3 7.1 6.85 7.1s6.85-3 6.85-7.1c0-3.15-1.67-5.66-4.95-10.8Z"></path><path class="trophy-solid" d="m13.1 10.3-3.75 4.55h2.55l-.85 3.95 3.6-4.8h-2.4z"></path>`,
+    monthlyChampion: `<path class="trophy-fill" d="m4.7 6 3.45 2.45L12 3.5l3.85 4.95L19.3 6l-1.75 9.4H6.45z"></path><path d="m4.7 6 3.45 2.45L12 3.5l3.85 4.95L19.3 6l-1.75 9.4H6.45zM7.2 16.7h9.6M9 20h6"></path><path class="trophy-solid" d="m12 7.1.82 1.77 1.93.28-1.4 1.35.33 1.92-1.68-.94-1.68.94.33-1.92-1.4-1.35 1.93-.28z"></path>`,
+    default: `<path class="trophy-fill" d="M6 4h12v8.2c0 3.5-2.6 6.3-6 6.3s-6-2.8-6-6.3z"></path><path d="M6 4h12v8.2c0 3.5-2.6 6.3-6 6.3s-6-2.8-6-6.3zM8.2 20h7.6M12 18.5V20"></path>`
+  };
+  return `<svg class="league-trophy-icon is-${icon}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[icon] || paths.default}</svg>`;
 }
 
 function leagueBadgeMarkup(badge = {}, compact = false) {
@@ -531,13 +606,33 @@ function leagueBadgeMarkup(badge = {}, compact = false) {
   const label = badge.label || "Трофей";
   const description = badge.description || "Спечелен трофей в Лигата на прогнозите.";
   const tierLabel = badge.tierLabel || "Бронзово";
-  return `<span class="league-badge tier-${tier} ${compact ? "is-compact" : ""}" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false" data-league-trophy data-trophy-label="${escapeAttribute(label)}" data-trophy-description="${escapeAttribute(description)}" data-trophy-tier="${escapeAttribute(tierLabel)}" aria-label="${escapeAttribute(`${label}. ${description} Ниво: ${tierLabel}.`)}"><i aria-hidden="true"></i><span>${escapeHTML(label)}</span></span>`;
+  return `<span class="league-badge tier-${tier} ${compact ? "is-compact" : ""}" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false" data-league-trophy data-trophy-label="${escapeAttribute(label)}" data-trophy-description="${escapeAttribute(description)}" data-trophy-tier="${escapeAttribute(tierLabel)}" data-trophy-tier-id="${tier}" data-trophy-condition="${escapeAttribute(badge.condition || "")}" aria-label="${escapeAttribute(`${label}. ${description} Ниво: ${tierLabel}.`)}"><i aria-hidden="true">${leagueTrophyIconMarkup(badge)}</i><span>${escapeHTML(label)}</span></span>`;
 }
 
 function leagueBadgeDisplayMarkup(badge = {}) {
   const tier = leagueTrophyTierOrder[badge.tier] ? badge.tier : "bronze";
   const label = badge.label || "Трофей";
-  return `<span class="league-badge tier-${tier}" aria-label="${escapeAttribute(label)}"><i aria-hidden="true"></i><span>${escapeHTML(label)}</span></span>`;
+  return `<span class="league-badge tier-${tier}" aria-label="${escapeAttribute(label)}"><i aria-hidden="true">${leagueTrophyIconMarkup(badge)}</i><span>${escapeHTML(label)}</span></span>`;
+}
+
+function leagueCompactBadgesMarkup(badges = []) {
+  if (!badges.length) return "";
+  return `<span class="league-compact-badges" aria-label="Спечелени значки">${badges.map((badge) => {
+    const tier = leagueTrophyTierOrder[badge.tier] ? badge.tier : "bronze";
+    const label = badge.label || "Трофей";
+    const description = badge.description || "Спечелен трофей в Лигата на прогнозите.";
+    const tierLabel = badge.tierLabel || "Бронзово";
+    return `<button class="league-badge-icon tier-${tier}" type="button" aria-haspopup="true" aria-expanded="false" data-league-trophy data-trophy-label="${escapeAttribute(label)}" data-trophy-description="${escapeAttribute(description)}" data-trophy-tier="${escapeAttribute(tierLabel)}" data-trophy-tier-id="${tier}" data-trophy-condition="${escapeAttribute(badge.condition || "")}" aria-label="${escapeAttribute(`${label}. Покажи описание.`)}"><span aria-hidden="true">${leagueTrophyIconMarkup(badge)}</span></button>`;
+  }).join("")}</span>`;
+}
+
+function leagueBadgeDetailsMarkup(badges = []) {
+  if (!badges.length) return "";
+  return `<div class="league-player-tooltip-trophies">${badges.map((badge) => `
+    <div class="league-player-tooltip-trophy">
+      ${leagueBadgeDisplayMarkup(badge)}
+      <small>${escapeHTML(badge.description || "Спечелен трофей в Лигата на прогнозите.")}</small>
+    </div>`).join("")}</div>`;
 }
 
 const leagueLevelTierStarts = Object.freeze({ starter: 1, bronze: 5, silver: 10, gold: 20, platinum: 30, diamond: 40, legendary: 50 });
@@ -705,7 +800,7 @@ function showLeaguePlayerTooltip(trigger, { pinned = false } = {}) {
         <small>${escapeHTML(data.levelName || data.levelTierLabel)}</small>
       </div>
     </div>
-    ${data.trophyLabel ? `<div class="league-player-tooltip-trophy">${leagueBadgeDisplayMarkup({ label: data.trophyLabel, tier: data.trophyTier })}<small>${escapeHTML(data.trophyDescription)}</small></div>` : ""}
+    ${leagueBadgeDetailsMarkup(JSON.parse(data.trophies || "[]"))}
     <div class="league-player-tooltip-ranks">
       <span><b>${escapeHTML(leagueRankLabel(Number(data.rankWeek) || null))}</b>седмица</span>
       <span><b>${escapeHTML(leagueRankLabel(Number(data.rankMonth) || null))}</b>месец</span>
@@ -800,7 +895,7 @@ function showLeagueTrophyTooltip(trigger, { pinned = false } = {}) {
     leagueTrophyTooltip.setAttribute("role", "tooltip");
     document.body.appendChild(leagueTrophyTooltip);
   }
-  leagueTrophyTooltip.innerHTML = `<span>${escapeHTML(trigger.dataset.trophyTier)} ниво</span><strong>${escapeHTML(trigger.dataset.trophyLabel)}</strong><small>${escapeHTML(trigger.dataset.trophyDescription)}</small>`;
+  leagueTrophyTooltip.innerHTML = `<div class="league-trophy-tooltip-badge">${leagueBadgeDisplayMarkup({ label: trigger.dataset.trophyLabel, tier: trigger.dataset.trophyTierId, condition: trigger.dataset.trophyCondition })}</div><span>${escapeHTML(trigger.dataset.trophyTier)} ниво</span><strong>${escapeHTML(trigger.dataset.trophyLabel)}</strong><small>${escapeHTML(trigger.dataset.trophyDescription)}</small>`;
   leagueTrophyTooltip.setAttribute("aria-hidden", "false");
   leagueTrophyTooltip.style.left = "0px";
   leagueTrophyTooltip.style.top = "0px";
@@ -1082,12 +1177,12 @@ function leagueLeaderboardMarkup(state) {
       </div>
       <div class="league-table">
         ${rows.length ? rows.slice(0, 100).map((row) => {
-          const trophy = leaguePrimaryBadge(row.badges || []);
+          const trophies = row.badges || [];
           const specialStyle = leagueSpecialPlayerStyle(row.specialStyle);
           return `
           <div class="league-table-row ${state.me?.nickname === row.nickname ? "is-me" : ""} ${specialStyle ? `has-special-${specialStyle}` : (row.isHost ? "has-host-player" : "")}">
             <strong>${row.rank}</strong>
-            <span>
+            <span class="league-player-summary-wrap">
               <span class="league-player-summary ${specialStyle ? `is-special-${specialStyle}` : (row.isHost ? "is-host-player" : "")}" tabindex="0" role="button" aria-haspopup="true" aria-expanded="false"
                 data-league-player
                 data-nickname="${escapeAttribute(row.nickname)}"
@@ -1107,12 +1202,10 @@ function leagueLeaderboardMarkup(state) {
                 data-correct-outcomes="${row.totalCorrectOutcomes}"
                 data-global-matches="${row.globalCompletedPredictions}"
                 data-league-matches="${row.leagueCompletedPredictions}"
-                data-trophy-label="${escapeAttribute(trophy?.label || "")}"
-                data-trophy-description="${escapeAttribute(trophy?.description || "")}"
-                data-trophy-tier="${escapeAttribute(trophy?.tier || "")}"
+                data-trophies="${escapeAttribute(JSON.stringify(trophies))}"
                 aria-label="${escapeAttribute(`${row.nickname}, ниво ${row.level.value}. Покажи статистика.`)}">
                 ${leagueLevelMarkup(row.level, true)}<b class="${row.isHost ? "is-host" : ""} ${specialStyle ? `is-special-${specialStyle}` : ""}">${escapeHTML(row.nickname)}</b>${specialStyle ? leagueSpecialBadgeMarkup(specialStyle, true) : (row.isHost ? leagueHostBadgeMarkup(true) : "")}
-              </span>
+              </span>${leagueCompactBadgesMarkup(trophies)}
             </span>
             <em>${row.points} т.</em>
           </div>`;
@@ -1488,9 +1581,11 @@ async function renderPredictionLeague() {
     predictionLeagueSelectedId = predictionLeagueState.selectedLeagueId || "";
     if (predictionLeagueSelectedId) localStorage.setItem("dis-selected-league", predictionLeagueSelectedId);
     renderPredictionLeagueApp();
+    document.querySelector("#prediction-league-app")?.setAttribute("aria-busy", "false");
   } catch (error) {
     section.hidden = false;
     document.querySelector("#prediction-league-app").innerHTML = `<article class="empty-state">${escapeHTML(error.message)}</article>`;
+    document.querySelector("#prediction-league-app")?.setAttribute("aria-busy", "false");
   }
 }
 
@@ -2389,6 +2484,7 @@ async function renderFanVoting() {
   pollGrid.innerHTML = polls.length
     ? polls.map((poll) => renderPollCard(poll, voteStates.find((item) => item.id === poll.id))).join("")
     : `<article class="empty-state">В момента няма активно фенско гласуване.</article>`;
+  pollGrid.setAttribute("aria-busy", "false");
 
   pollGrid.querySelectorAll("[data-vote-option]").forEach((button) => {
     button.addEventListener("click", async () => {
@@ -3799,5 +3895,9 @@ if (window.location.hash && !window.location.hash.startsWith("#news-") && perfor
   window.scrollTo(0, 0);
 }
 
-window.DIS_PWA_REFRESH = () => loadContent({ allowFallback: false });
+renderLoadingSkeletons();
+window.DIS_PWA_REFRESH = () => {
+  renderLoadingSkeletons();
+  return loadContent({ allowFallback: false });
+};
 loadContent();

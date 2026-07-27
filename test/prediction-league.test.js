@@ -128,9 +128,28 @@ test("normalizes trophy ids and rejects unsupported list values", () => {
   assert.deepEqual(trophies.map((trophy) => trophy.id), ["same", "same-2"]);
   assert.equal(trophies[0].condition, "exact");
   assert.equal(trophies[0].tier, "bronze");
-  assert.equal(trophies[1].description, "Участвал си с прогноза в поне 10 мача.");
+  assert.equal(trophies[1].description, "Участвал си с прогноза в поне 10 завършили мача.");
   assert.equal(normalizeLeagueConfig({ trophies: [] }).trophies.length, 0);
   assert.equal(normalizeLeagueConfig({}).trophies.length, 5);
+});
+
+test("awards the voice trophy only after ten completed predictions", () => {
+  const matches = Array.from({ length: 10 }, (_, index) => ({
+    id: `voice-${index}`,
+    homeTeam: "A",
+    awayTeam: "B",
+    kickoffAt: `2026-07-${String(index + 1).padStart(2, "0")}T18:00:00.000Z`
+  }));
+  const config = { ...sampleConfig(), matches };
+  const store = {
+    players: [{ id: "p1", nickname: "IVAN1892" }],
+    predictions: matches.map((match) => ({ playerId: "p1", matchId: match.id, homeScore: 1, awayScore: 0 }))
+  };
+
+  assert.equal(buildLeagueState(config, store, "p1", now).me.badges.some((badge) => badge.id === "voice"), false);
+
+  config.matches.forEach((match) => { match.result = { homeScore: 1, awayScore: 0 }; });
+  assert.equal(buildLeagueState(config, store, "p1", now).me.badges.some((badge) => badge.id === "voice"), true);
 });
 
 test("migrates the existing single league to the general league without losing legacy predictions", () => {
