@@ -61,6 +61,7 @@ if (fs.existsSync(envFile)) {
 }
 
 const dataFile = path.join(root, "data", "content.json");
+const contentSeedFile = path.join(root, "data", "content.seed.json");
 const votesFile = path.join(root, "data", "votes.json");
 const messagesFile = path.join(root, "data", "messages.json");
 const giveawayEntriesFile = path.join(root, "data", "giveaway-entries.json");
@@ -181,7 +182,12 @@ const relationalGiveawayStorage = createGiveawayRelationalStorage({
 });
 
 async function readContent() {
-  return readJsonFile(dataFile, {}, "content");
+  const seedContent = readLocalJson(contentSeedFile, {});
+  if (!cloudStorageEnabled && !fs.existsSync(dataFile)) {
+    fs.writeFileSync(dataFile, `${JSON.stringify(seedContent, null, 2)}\n`);
+    return seedContent;
+  }
+  return readJsonFile(dataFile, seedContent, "content");
 }
 
 async function writeContent(content) {

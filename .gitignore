@@ -10,5 +10,7 @@ data/giveaway-entries.json
 data/prediction-league.json
 data/team-media-cache*.json
 data/press-news-cache.json
+data/content.json
+league-ui-demo.html
 backups/
 npm-debug.log*
