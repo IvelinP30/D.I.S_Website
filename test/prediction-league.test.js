@@ -97,8 +97,61 @@ test("scores exact results as outcome plus exact-score points", () => {
   assert.equal(state.matches.find((match) => match.id === "m1").myPrediction.scoring.points, 10);
   assert.ok(state.me.badges.some((badge) => badge.id === "exact"));
   assert.equal(state.me.badges.find((badge) => badge.id === "exact")?.tier, "bronze");
-  assert.equal(state.me.badges.find((badge) => badge.id === "oracle")?.label, "Шампион на месеца");
-  assert.equal(state.me.badges.find((badge) => badge.id === "oracle")?.tier, "legendary");
+  assert.equal(state.me.badges.some((badge) => badge.id === "oracle"), false);
+});
+
+test("awards the monthly champion only after the month has ended", () => {
+  const config = {
+    ...sampleConfig(),
+    matches: [
+      { id: "june-1", homeTeam: "A", awayTeam: "B", kickoffAt: "2026-06-28T18:00:00.000Z", result: { homeScore: 2, awayScore: 1 } },
+      { id: "july-1", homeTeam: "C", awayTeam: "D", kickoffAt: "2026-07-05T18:00:00.000Z", result: { homeScore: 1, awayScore: 0 } },
+      { id: "august-1", homeTeam: "E", awayTeam: "F", kickoffAt: "2026-08-05T18:00:00.000Z", result: { homeScore: 3, awayScore: 0 } }
+    ]
+  };
+  const store = {
+    players: [{ id: "p1", nickname: "IVAN1892" }, { id: "p2", nickname: "DANI" }],
+    predictions: [
+      { playerId: "p1", matchId: "june-1", homeScore: 2, awayScore: 1 },
+      { playerId: "p2", matchId: "june-1", homeScore: 0, awayScore: 1 },
+      { playerId: "p2", matchId: "july-1", homeScore: 1, awayScore: 0 },
+      { playerId: "p1", matchId: "august-1", homeScore: 3, awayScore: 0 }
+    ]
+  };
+
+  const duringJune = buildLeagueState(config, store, "p1", Date.parse("2026-06-30T20:00:00.000Z"));
+  const afterJune = buildLeagueState(config, store, "p1", Date.parse("2026-07-01T00:00:00.000Z"));
+  const julyLeader = buildLeagueState(config, store, "p2", now);
+  const afterAnotherWin = buildLeagueState(config, store, "p1", Date.parse("2026-09-01T00:00:00.000Z"));
+
+  assert.equal(duringJune.me.badges.some((badge) => badge.id === "oracle"), false);
+  assert.equal(afterJune.me.badges.some((badge) => badge.id === "oracle"), true);
+  assert.equal(julyLeader.me.badges.some((badge) => badge.id === "oracle"), false);
+  assert.equal(afterAnotherWin.me.badges.filter((badge) => badge.id === "oracle").length, 1);
+});
+
+test("shows the weekly champion badge only during the following week", () => {
+  const config = {
+    ...sampleConfig(),
+    matches: [
+      { id: "last-week", homeTeam: "A", awayTeam: "B", kickoffAt: "2026-07-08T18:00:00.000Z", result: { homeScore: 2, awayScore: 1 } }
+    ]
+  };
+  const store = {
+    players: [{ id: "p1", nickname: "IVAN1892" }, { id: "p2", nickname: "DANI" }],
+    predictions: [
+      { playerId: "p1", matchId: "last-week", homeScore: 2, awayScore: 1 },
+      { playerId: "p2", matchId: "last-week", homeScore: 0, awayScore: 1 }
+    ]
+  };
+
+  const activeWeek = buildLeagueState(config, store, "p1", now);
+  const nextWeek = buildLeagueState(config, store, "p1", Date.parse("2026-07-20T00:00:00.000Z"));
+  const badge = activeWeek.me.badges.find((item) => item.id === "weekly-winner");
+
+  assert.equal(badge?.label, "Победител на седмицата");
+  assert.match(badge?.description || "", /Временна значка/);
+  assert.equal(nextWeek.me.badges.some((item) => item.id === "weekly-winner"), false);
 });
 
 test("uses editable trophy names, conditions, and fixed difficulty tiers", () => {
@@ -109,7 +162,7 @@ test("uses editable trophy names, conditions, and fixed difficulty tiers", () =>
   ];
 
   const state = buildLeagueState(config, sampleStore(), "p1", now);
-  assert.deepEqual(state.me.badges.map((badge) => badge.id), ["custom-exact", "custom-champion"]);
+  assert.deepEqual(state.me.badges.map((badge) => badge.id), ["custom-exact"]);
   assert.equal(state.me.badges[0].label, "Моят мерник");
   assert.equal(state.me.badges[0].tierLabel, "Легендарно");
   assert.equal(state.me.totalPoints, 13);
@@ -130,7 +183,14 @@ test("normalizes trophy ids and rejects unsupported list values", () => {
   assert.equal(trophies[0].tier, "bronze");
   assert.equal(trophies[1].description, "Участвал си с прогноза в поне 10 завършили мача.");
   assert.equal(normalizeLeagueConfig({ trophies: [] }).trophies.length, 0);
-  assert.equal(normalizeLeagueConfig({}).trophies.length, 5);
+  assert.equal(normalizeLeagueConfig({}).trophies.length, 6);
+  assert.equal(normalizeLeagueConfig({ trophies: [
+    { id: "exact", condition: "exact" },
+    { id: "voice", condition: "voice" },
+    { id: "derby", condition: "derby" },
+    { id: "streak", condition: "streak" },
+    { id: "oracle", condition: "monthlyChampion" }
+  ] }).trophies.some((trophy) => trophy.condition === "weeklyChampion"), true);
 });
 
 test("awards the voice trophy only after ten completed predictions", () => {
@@ -312,7 +372,7 @@ test("keeps unique ranks and rewards equal league results achieved in fewer comp
   assert.equal(state.leaderboards.season[0].leagueCompletedPredictions, 1);
   assert.equal(state.leaderboards.season[1].leagueCompletedPredictions, 2);
   assert.deepEqual(state.leaderboards.season[0].ranks, { week: 1, month: 1, season: 1 });
-  assert.ok(state.leaderboards.month[0].badges.some((badge) => badge.id === "oracle"));
+  assert.equal(state.leaderboards.month[0].badges.some((badge) => badge.id === "oracle"), false);
   assert.equal(state.leaderboards.month[1].badges.some((badge) => badge.id === "oracle"), false);
 });
 
