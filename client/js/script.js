@@ -3732,7 +3732,7 @@ function bindMotion() {
     { threshold: 0, rootMargin: "0px 0px 96px 0px" }
   );
   const cardRevealTargets = document.querySelectorAll(
-    ".format-card, .social-card, .stat-card, .ad-card, .package-card, .marquee-ad-card, .youtube-player, .discovery-card, .host-card, .prediction-card, .poll-card, .league-entry-card, .league-profile-card, .league-table-card, .league-match-card"
+    ".format-card, .social-card, .stat-card, .ad-card, .package-card, .marquee-ad-card, .youtube-player, .discovery-card, .host-card, .prediction-card, .poll-card, .league-entry-card, .league-profile-card, .league-match-card"
   );
   const cardRevealObserver = new IntersectionObserver(
     (entries) => {
