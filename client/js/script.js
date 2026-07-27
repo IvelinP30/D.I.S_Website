@@ -1271,7 +1271,12 @@ function renderPredictionLeagueApp() {
   const section = document.querySelector("#prediction-league");
   const app = document.querySelector("#prediction-league-app");
   const state = predictionLeagueState;
+  // The recovery dialog must live outside the page shell. Safari treats a fixed
+  // descendant of a transformed PWA container as locally positioned.
+  document.querySelectorAll("[data-league-recovery-modal]").forEach((modal) => modal.remove());
   if (!section || !app || !state?.enabled) {
+    if (predictionLeagueRecoveryTimer) window.clearInterval(predictionLeagueRecoveryTimer);
+    predictionLeagueRecoveryTimer = null;
     if (section) section.hidden = true;
     return;
   }
@@ -1282,7 +1287,6 @@ function renderPredictionLeagueApp() {
   hideLeagueTrophyTooltip();
   app.innerHTML = `
     ${predictionLeagueNotice ? `<div class="league-notice">${escapeHTML(predictionLeagueNotice)}</div>` : ""}
-    ${predictionLeagueRecoveryCode ? leagueRecoveryModalMarkup(predictionLeagueRecoveryCode) : ""}
     ${leagueSelectorMarkup(state)}
     <div class="league-dashboard-grid">
       ${state.me ? leagueProfileMarkup(state) : leagueIdentityMarkup()}
@@ -1298,8 +1302,9 @@ function renderPredictionLeagueApp() {
       <div class="league-match-list-heading"><div><span>Следващи прогнози</span><h3>Прогнозирай преди началото на мача.</h3></div><small>${state.matches.length} ${state.matches.length === 1 ? "мач" : "мача"}${state.matches.some((match) => match.dataSource === "TheSportsDB") ? " · Данни: TheSportsDB" : ""}</small></div>
       <div class="league-match-grid">${state.matches.length ? state.matches.map((match) => leagueMatchMarkup(match, state)).join("") : `<article class="empty-state">Следващият кръг в Лигата на прогнозите скоро ще бъде добавен.</article>`}</div>
     </div>`;
+  if (predictionLeagueRecoveryCode) document.body.insertAdjacentHTML("beforeend", leagueRecoveryModalMarkup(predictionLeagueRecoveryCode));
   bindPredictionLeagueActions();
-  bindLeagueRecoveryModal(app);
+  bindLeagueRecoveryModal(document);
   bindLeagueTrophyTooltips(app);
   bindLeaguePlayerTooltips(app);
   detectLeagueLevelUp(state);

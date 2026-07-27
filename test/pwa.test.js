@@ -169,6 +169,7 @@ test("new prediction league recovery codes use a timed one-time modal", () => {
   assert.match(publicScript, /navigator\.clipboard\.writeText\(predictionLeagueRecoveryCode\)/);
   assert.match(publicScript, /data-close-recovery-backdrop/);
   assert.match(publicScript, /closeButtons\.forEach\(\(button\) => \{ button\.disabled = false; \}\)/);
+  assert.match(publicScript, /document\.body\.insertAdjacentHTML\("beforeend", leagueRecoveryModalMarkup/);
   assert.doesNotMatch(styles, /body\.league-recovery-modal-open/);
   assert.match(styles, /\.league-recovery-close:disabled/);
   assert.match(styles, /\.league-recovery-dismiss/);
