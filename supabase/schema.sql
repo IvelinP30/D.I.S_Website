@@ -257,7 +257,9 @@ returns table (
   current_streak integer,
   max_streak integer,
   completed_predictions bigint,
-  global_completed_predictions bigint
+  global_completed_predictions bigint,
+  weekly_champion boolean,
+  monthly_champion boolean
 )
 language sql
 stable
@@ -308,6 +310,56 @@ as $$
     join public.league_scoring_versions v on v.id = e.version_id
     where v.status = 'active'
     group by player_id
+  ),
+  completed_month_scores as (
+    select
+      e.player_id,
+      date_trunc('month', e.kickoff_at) as month_start,
+      sum(e.points) as points,
+      count(*) filter (where e.exact_score) as exact_scores,
+      count(*) filter (where e.correct_outcome) as correct_outcomes
+    from active_scores e
+    where e.kickoff_at < p_month_start
+    group by e.player_id, date_trunc('month', e.kickoff_at)
+  ),
+  completed_month_rankings as (
+    select
+      cms.player_id,
+      row_number() over (
+        partition by cms.month_start
+        order by cms.points desc, cms.exact_scores desc, cms.correct_outcomes desc,
+          coalesce(st.completed_predictions, 0) desc, p.nickname
+      ) as rank
+    from completed_month_scores cms
+    join public.league_players p on p.id = cms.player_id
+    left join score_totals st on st.player_id = cms.player_id
+    where cms.points > 0
+  ),
+  monthly_champions as (
+    select distinct player_id
+    from completed_month_rankings
+    where rank = 1
+  ),
+  previous_week_scores as (
+    select
+      e.player_id,
+      sum(e.points) as points,
+      count(*) filter (where e.exact_score) as exact_scores,
+      count(*) filter (where e.correct_outcome) as correct_outcomes
+    from active_scores e
+    where e.kickoff_at >= p_week_start - interval '7 days'
+      and e.kickoff_at < p_week_start
+    group by e.player_id
+  ),
+  previous_week_champion as (
+    select pws.player_id
+    from previous_week_scores pws
+    join public.league_players p on p.id = pws.player_id
+    left join score_totals st on st.player_id = pws.player_id
+    where pws.points > 0
+    order by pws.points desc, pws.exact_scores desc, pws.correct_outcomes desc,
+      coalesce(st.completed_predictions, 0) desc, p.nickname
+    limit 1
   )
   select
     p.id as player_id,
@@ -328,12 +380,16 @@ as $$
     coalesce(st.current_streak, 0)::integer,
     coalesce(st.max_streak, 0)::integer,
     coalesce(st.completed_predictions, 0)::bigint,
-    (coalesce(gs.completed_predictions, 0) + coalesce(cr.completed_predictions, 0))::bigint
+    (coalesce(gs.completed_predictions, 0) + coalesce(cr.completed_predictions, 0))::bigint,
+    (pwc.player_id is not null),
+    (mc.player_id is not null)
   from public.league_players p
   left join prediction_totals pt on pt.player_id = p.id
   left join score_totals st on st.player_id = p.id
   left join global_scores gs on gs.player_id = p.id
-  left join public.league_career_rollups cr on cr.player_id = p.id;
+  left join public.league_career_rollups cr on cr.player_id = p.id
+  left join previous_week_champion pwc on pwc.player_id = p.id
+  left join monthly_champions mc on mc.player_id = p.id;
 $$;
 
 create or replace function public.league_database_usage()

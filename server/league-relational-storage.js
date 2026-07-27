@@ -570,7 +570,9 @@ function createLeagueRelationalStorage(options = {}) {
         currentStreak: row.current_streak,
         maxStreak: row.max_streak,
         completedPredictions: row.completed_predictions,
-        globalCompletedPredictions: row.global_completed_predictions
+        globalCompletedPredictions: row.global_completed_predictions,
+        weeklyChampion: row.weekly_champion,
+        monthlyChampion: row.monthly_champion
       })),
       predictions: predictionRows.map(camelPrediction),
       scoreEvents: scoreRows.map((row) => ({

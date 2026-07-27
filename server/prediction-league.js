@@ -53,6 +53,7 @@ const TROPHY_CONDITIONS = Object.freeze({
   voice: "Участвал си с прогноза в поне 10 завършили мача.",
   derby: "Познал си победителя или равенството в 3 дербита.",
   streak: "Направил си 5 правилни прогнози поред.",
+  weeklyChampion: "Временна значка: завършил си на първо място в седмичната класация. Важи до края на текущата седмица.",
   monthlyChampion: "Завършил си на първо място в месечната класация."
 });
 
@@ -61,6 +62,7 @@ const DEFAULT_TROPHY_DEFINITIONS = Object.freeze([
   { id: "voice", condition: "voice", label: "Гласът на трибуните", tier: "silver" },
   { id: "derby", condition: "derby", label: "Дерби експерт", tier: "gold" },
   { id: "streak", condition: "streak", label: "Без загуба", tier: "platinum" },
+  { id: "weekly-winner", condition: "weeklyChampion", label: "Победител на седмицата", tier: "gold" },
   { id: "oracle", condition: "monthlyChampion", label: "Шампион на месеца", tier: "legendary" }
 ]);
 
@@ -552,6 +554,40 @@ function buildLeaderboard(period, config, store, scoring, globalParticipation, n
   return rows.map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
+function completedMonthlyChampionIds(config, store, scoring, globalParticipation, now) {
+  const currentMonthStart = periodRanges(now).month[0];
+  const months = new Set();
+  config.matches.forEach((match) => {
+    const timestamp = matchTimestamp(match);
+    if (!Number.isFinite(timestamp) || timestamp >= currentMonthStart) return;
+    const date = new Date(timestamp);
+    months.add(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  });
+
+  const champions = new Set();
+  months.forEach((monthStart) => {
+    const leaderboard = buildLeaderboard("month", config, store, scoring, globalParticipation, monthStart + 1);
+    if (leaderboard[0]?.points > 0) champions.add(leaderboard[0].playerId);
+  });
+  return champions;
+}
+
+function previousWeeklyChampionIds(config, store, scoring, globalParticipation, now) {
+  const currentWeekStart = periodRanges(now).week[0];
+  const leaderboard = buildLeaderboard("week", config, store, scoring, globalParticipation, currentWeekStart - 1);
+  return leaderboard[0]?.points > 0 ? new Set([leaderboard[0].playerId]) : new Set();
+}
+
+function addMonthlyChampionTrophies(rows, trophies, championIds) {
+  if (!trophies.length || !championIds.size) return;
+  rows.forEach((row) => {
+    if (!championIds.has(row.playerId)) return;
+    trophies.forEach((trophy) => {
+      if (!row.badges.some((badge) => badge.id === trophy.id)) row.badges = [...row.badges, trophy];
+    });
+  });
+}
+
 function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), options = {}) {
   const config = normalizeLeagueConfig(rawConfig);
   const store = normalizeLeagueStore(rawStore);
@@ -578,17 +614,23 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
     });
   });
   const monthlyChampionTrophies = config.trophies.filter((trophy) => trophy.condition === "monthlyChampion");
-  if (leaderboards.month[0]?.points > 0 && monthlyChampionTrophies.length) {
-    const championId = leaderboards.month[0].playerId;
+  const weeklyChampionTrophies = config.trophies.filter((trophy) => trophy.condition === "weeklyChampion");
+  const weeklyChampionIds = previousWeeklyChampionIds(scoringConfig, store, scoring, globalParticipation, now);
+  weeklyChampionIds.forEach((championId) => {
+    const stats = scoring.stats.get(championId);
+    weeklyChampionTrophies.forEach((trophy) => {
+      if (stats && !stats.badges.some((badge) => badge.id === trophy.id)) stats.badges.push(trophy);
+    });
+  });
+  const monthlyChampionIds = completedMonthlyChampionIds(scoringConfig, store, scoring, globalParticipation, now);
+  monthlyChampionIds.forEach((championId) => {
     const stats = scoring.stats.get(championId);
     monthlyChampionTrophies.forEach((trophy) => {
       if (stats && !stats.badges.some((badge) => badge.id === trophy.id)) stats.badges.push(trophy);
-      Object.values(leaderboards).forEach((rows) => {
-        const row = rows.find((item) => item.playerId === championId);
-        if (row && !row.badges.some((badge) => badge.id === trophy.id)) row.badges = [...row.badges, trophy];
-      });
     });
-  }
+  });
+  Object.values(leaderboards).forEach((rows) => addMonthlyChampionTrophies(rows, weeklyChampionTrophies, weeklyChampionIds));
+  Object.values(leaderboards).forEach((rows) => addMonthlyChampionTrophies(rows, monthlyChampionTrophies, monthlyChampionIds));
 
   const player = store.players.find((item) => item.id === playerId);
   const playerPredictions = new Map(store.predictions
@@ -673,6 +715,8 @@ function trophiesForAggregate(config, aggregate = {}) {
     if (trophy.condition === "voice") return Number(aggregate.completedPredictions) >= 10;
     if (trophy.condition === "derby") return Number(aggregate.derbyCorrect) >= 3;
     if (trophy.condition === "streak") return Number(aggregate.maxStreak) >= 5;
+    if (trophy.condition === "weeklyChampion") return Boolean(aggregate.weeklyChampion);
+    if (trophy.condition === "monthlyChampion") return Boolean(aggregate.monthlyChampion);
     return false;
   });
 }
@@ -716,7 +760,9 @@ function buildLeagueStateFromAggregates(rawConfig, aggregateRows = [], playerId 
     currentStreak: Number(row.currentStreak) || 0,
     maxStreak: Number(row.maxStreak) || 0,
     completedPredictions: Number(row.completedPredictions) || 0,
-    globalCompletedPredictions: Number(row.globalCompletedPredictions) || 0
+    globalCompletedPredictions: Number(row.globalCompletedPredictions) || 0,
+    weeklyChampion: Boolean(row.weeklyChampion),
+    monthlyChampion: Boolean(row.monthlyChampion)
   }));
 
   normalizedRows.forEach((row) => {
@@ -769,19 +815,6 @@ function buildLeagueStateFromAggregates(rawConfig, aggregateRows = [], playerId 
       };
     });
   });
-
-  const monthlyChampionTrophies = config.trophies.filter((trophy) => trophy.condition === "monthlyChampion");
-  if (leaderboards.month[0]?.points > 0 && monthlyChampionTrophies.length) {
-    const championId = leaderboards.month[0].playerId;
-    normalizedRows.find((row) => row.playerId === championId)?.badges.push(...monthlyChampionTrophies);
-    Object.values(leaderboards).forEach((rows) => {
-      const row = rows.find((item) => item.playerId === championId);
-      if (!row) return;
-      monthlyChampionTrophies.forEach((trophy) => {
-        if (!row.badges.some((badge) => badge.id === trophy.id)) row.badges = [...row.badges, trophy];
-      });
-    });
-  }
 
   const publicMatches = [...config.matches]
     .sort((left, right) => matchTimestamp(left) - matchTimestamp(right))

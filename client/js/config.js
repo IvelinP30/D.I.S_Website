@@ -273,6 +273,7 @@ window.DIS_SITE_CONFIG = {
       { id: "voice", condition: "voice", label: "Гласът на трибуните", tier: "silver" },
       { id: "derby", condition: "derby", label: "Дерби експерт", tier: "gold" },
       { id: "streak", condition: "streak", label: "Без загуба", tier: "platinum" },
+      { id: "weekly-winner", condition: "weeklyChampion", label: "Победител на седмицата", tier: "gold" },
       { id: "oracle", condition: "monthlyChampion", label: "Шампион на месеца", tier: "legendary" }
     ],
     matches: []

@@ -570,6 +570,7 @@ const leagueTrophyVisuals = Object.freeze({
   voice: { id: "voice", label: "Гласът на трибуните" },
   derby: { id: "derby", label: "Дерби експерт" },
   streak: { id: "streak", label: "Без загуба" },
+  weeklyChampion: { id: "weeklyChampion", label: "Победител на седмицата" },
   monthlyChampion: { id: "monthlyChampion", label: "Шампион на месеца" }
 });
 let leagueTrophyTooltip = null;
@@ -595,6 +596,7 @@ function leagueTrophyIconMarkup(badge = {}) {
     voice: `<path class="trophy-fill" d="M4.7 10.2h4L15.5 6v12l-6.8-4.2h-4z"></path><path d="M4.7 10.2h4L15.5 6v12l-6.8-4.2h-4zM8.8 13.8l1.1 4.2h2.3l-1.2-4.7M17.7 9.1c1.05.75 1.6 1.72 1.6 2.9s-.55 2.15-1.6 2.9M19.8 6.6c1.8 1.35 2.7 3.15 2.7 5.4s-.9 4.05-2.7 5.4"></path>`,
     derby: `<path class="trophy-fill" d="M12 3.3 19 6v5.7c0 4.2-2.7 7.5-7 9-4.3-1.5-7-4.8-7-9V6z"></path><path d="M12 3.3 19 6v5.7c0 4.2-2.7 7.5-7 9-4.3-1.5-7-4.8-7-9V6zM8.1 9.1h7.8M8.1 13h7.8M12 7v8"></path><path class="trophy-solid" d="m12 8.4.85 1.8 1.95.28-1.4 1.37.33 1.93L12 12.83l-1.73.97.33-1.93-1.4-1.37 1.95-.28z"></path>`,
     streak: `<path class="trophy-fill" d="M13.9 2.7c.4 3.1-1 4.75-2.65 6.1.1-1.86-.76-3.43-2.2-4.47.08 3.1-3.9 4.86-3.9 9.1 0 4.1 3 7.1 6.85 7.1s6.85-3 6.85-7.1c0-3.15-1.67-5.66-4.95-10.8Z"></path><path d="M13.9 2.7c.4 3.1-1 4.75-2.65 6.1.1-1.86-.76-3.43-2.2-4.47.08 3.1-3.9 4.86-3.9 9.1 0 4.1 3 7.1 6.85 7.1s6.85-3 6.85-7.1c0-3.15-1.67-5.66-4.95-10.8Z"></path><path class="trophy-solid" d="m13.1 10.3-3.75 4.55h2.55l-.85 3.95 3.6-4.8h-2.4z"></path>`,
+    weeklyChampion: `<path class="trophy-fill" d="M12 2.8 14.1 8l5.6.4-4.3 3.6 1.35 5.35L12 14.3l-4.75 3.05L8.6 12 4.3 8.4 9.9 8z"></path><path d="M12 2.8 14.1 8l5.6.4-4.3 3.6 1.35 5.35L12 14.3l-4.75 3.05L8.6 12 4.3 8.4 9.9 8zM9 20.5h6"></path>`,
     monthlyChampion: `<path class="trophy-fill" d="m4.7 6 3.45 2.45L12 3.5l3.85 4.95L19.3 6l-1.75 9.4H6.45z"></path><path d="m4.7 6 3.45 2.45L12 3.5l3.85 4.95L19.3 6l-1.75 9.4H6.45zM7.2 16.7h9.6M9 20h6"></path><path class="trophy-solid" d="m12 7.1.82 1.77 1.93.28-1.4 1.35.33 1.92-1.68-.94-1.68.94.33-1.92-1.4-1.35 1.93-.28z"></path>`,
     default: `<path class="trophy-fill" d="M6 4h12v8.2c0 3.5-2.6 6.3-6 6.3s-6-2.8-6-6.3z"></path><path d="M6 4h12v8.2c0 3.5-2.6 6.3-6 6.3s-6-2.8-6-6.3zM8.2 20h7.6M12 18.5V20"></path>`
   };
