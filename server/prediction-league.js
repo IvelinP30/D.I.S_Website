@@ -66,6 +66,13 @@ const DEFAULT_TROPHY_DEFINITIONS = Object.freeze([
   { id: "oracle", condition: "monthlyChampion", label: "Шампион на месеца", tier: "legendary" }
 ]);
 
+const DEFAULT_WEEKLY_CHAMPION_TROPHY = Object.freeze({
+  id: "weekly-winner",
+  condition: "weeklyChampion",
+  label: "Победител на седмицата",
+  tier: "gold"
+});
+
 function normalizeTrophyDefinitions(value) {
   const source = value === undefined ? DEFAULT_TROPHY_DEFINITIONS : (Array.isArray(value) ? value : []);
   const usedIds = new Set();
@@ -303,6 +310,13 @@ function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
     ? rawSeason
     : /^\d{4}$/.test(rawSeason) ? `${rawSeason}-${Number(rawSeason) + 1}` : "";
   const currentRound = Number(providerSettings.currentRound || 1);
+  const trophies = normalizeTrophyDefinitions(value.trophies);
+  const legacyDefaultTrophyIds = new Set(["exact", "voice", "derby", "streak", "oracle"]);
+  const usesLegacyDefaultTrophies = trophies.length === legacyDefaultTrophyIds.size &&
+    trophies.every((trophy) => legacyDefaultTrophyIds.has(trophy.id));
+  if (usesLegacyDefaultTrophies && !trophies.some((trophy) => trophy.condition === "weeklyChampion")) {
+    trophies.push(normalizeTrophyDefinitions([DEFAULT_WEEKLY_CHAMPION_TROPHY])[0]);
+  }
   return {
     id: normalizeLeagueId(value.id, fallbackId),
     enabled: value.enabled !== false,
@@ -318,7 +332,7 @@ function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
       lastScheduleSyncAt: String(providerSettings.lastScheduleSyncAt || ""),
       lastResultSyncAt: String(providerSettings.lastResultSyncAt || "")
     },
-    trophies: normalizeTrophyDefinitions(value.trophies),
+    trophies,
     matches: (Array.isArray(value.matches) ? value.matches : [])
       .filter((match) => match && match.enabled !== false && String(match.id || "").trim())
       .map((match) => ({
