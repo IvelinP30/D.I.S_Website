@@ -4154,7 +4154,19 @@ html.pwa-refreshing body {
 .league-champion-field .team-identity { justify-content: flex-start; font-size: .86rem; }
 .league-champion-field .team-identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .league-champion-field .team-identity img { width: 32px; height: 32px; flex-basis: 32px; }
-.league-champion-options { max-height: 290px; overflow-x: hidden; overflow-y: auto; }
+.custom-select-menu.league-champion-options {
+  max-height: min(290px, 48vh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(56, 242, 127, .7) rgba(255, 255, 255, .06);
+  scrollbar-width: thin;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
+.custom-select-menu.league-champion-options::-webkit-scrollbar { width: 8px; }
+.custom-select-menu.league-champion-options::-webkit-scrollbar-track { background: rgba(255, 255, 255, .06); }
+.custom-select-menu.league-champion-options::-webkit-scrollbar-thumb { border-radius: 999px; background: rgba(56, 242, 127, .7); }
 .league-champion-options[hidden] { display: none; }
 .league-champion-options button { display: flex; align-items: center; padding: 8px 42px 8px 12px; }
 .league-champion-form > .button { min-width: 180px; min-height: 56px; }
