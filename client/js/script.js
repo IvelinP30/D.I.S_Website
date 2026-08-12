@@ -571,7 +571,8 @@ const leagueTrophyVisuals = Object.freeze({
   derby: { id: "derby", label: "Дерби експерт" },
   streak: { id: "streak", label: "Без загуба" },
   weeklyChampion: { id: "weeklyChampion", label: "Победител на седмицата" },
-  monthlyChampion: { id: "monthlyChampion", label: "Шампион на месеца" }
+  monthlyChampion: { id: "monthlyChampion", label: "Шампион на месеца" },
+  seasonChampion: { id: "seasonChampion", label: "Познал шампиона" }
 });
 let leagueTrophyTooltip = null;
 let leagueTrophyGlobalEventsBound = false;
@@ -598,6 +599,7 @@ function leagueTrophyIconMarkup(badge = {}) {
     streak: `<path class="trophy-fill" d="M13.9 2.7c.4 3.1-1 4.75-2.65 6.1.1-1.86-.76-3.43-2.2-4.47.08 3.1-3.9 4.86-3.9 9.1 0 4.1 3 7.1 6.85 7.1s6.85-3 6.85-7.1c0-3.15-1.67-5.66-4.95-10.8Z"></path><path d="M13.9 2.7c.4 3.1-1 4.75-2.65 6.1.1-1.86-.76-3.43-2.2-4.47.08 3.1-3.9 4.86-3.9 9.1 0 4.1 3 7.1 6.85 7.1s6.85-3 6.85-7.1c0-3.15-1.67-5.66-4.95-10.8Z"></path><path class="trophy-solid" d="m13.1 10.3-3.75 4.55h2.55l-.85 3.95 3.6-4.8h-2.4z"></path>`,
     weeklyChampion: `<path class="trophy-fill" d="M12 2.8 14.1 8l5.6.4-4.3 3.6 1.35 5.35L12 14.3l-4.75 3.05L8.6 12 4.3 8.4 9.9 8z"></path><path d="M12 2.8 14.1 8l5.6.4-4.3 3.6 1.35 5.35L12 14.3l-4.75 3.05L8.6 12 4.3 8.4 9.9 8zM9 20.5h6"></path>`,
     monthlyChampion: `<path class="trophy-fill" d="m4.7 6 3.45 2.45L12 3.5l3.85 4.95L19.3 6l-1.75 9.4H6.45z"></path><path d="m4.7 6 3.45 2.45L12 3.5l3.85 4.95L19.3 6l-1.75 9.4H6.45zM7.2 16.7h9.6M9 20h6"></path><path class="trophy-solid" d="m12 7.1.82 1.77 1.93.28-1.4 1.35.33 1.92-1.68-.94-1.68.94.33-1.92-1.4-1.35 1.93-.28z"></path>`,
+    seasonChampion: `<path class="trophy-fill" d="M5.2 5.2h13.6v5.2c0 4.2-2.8 7.1-6.8 7.1s-6.8-2.9-6.8-7.1z"></path><path d="M5.2 5.2h13.6v5.2c0 4.2-2.8 7.1-6.8 7.1s-6.8-2.9-6.8-7.1zM5.1 7.2H2.8v2.4c0 2.4 1.7 4.1 4.3 4.1M18.9 7.2h2.3v2.4c0 2.4-1.7 4.1-4.3 4.1M12 17.5V20M8.8 20h6.4"></path><path class="trophy-solid" d="m12 7.1.82 1.77 1.93.28-1.4 1.35.33 1.92-1.68-.94-1.68.94.33-1.92-1.4-1.35 1.93-.28z"></path>`,
     default: `<path class="trophy-fill" d="M6 4h12v8.2c0 3.5-2.6 6.3-6 6.3s-6-2.8-6-6.3z"></path><path d="M6 4h12v8.2c0 3.5-2.6 6.3-6 6.3s-6-2.8-6-6.3zM8.2 20h7.6M12 18.5V20"></path>`
   };
   return `<svg class="league-trophy-icon is-${icon}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${paths[icon] || paths.default}</svg>`;
@@ -1267,6 +1269,19 @@ function leagueMatchMarkup(match, state) {
     </article>`;
 }
 
+function championForecastMarkup(forecast, state) {
+  if (!forecast?.enabled) return "";
+  const close = forecast.closesAt ? formatLocalDate(forecast.closesAt) : "скоро";
+  const status = forecast.status === "open" ? "Приема прогнози" : forecast.status === "upcoming" ? "Очаква начало" : forecast.status === "settled" ? "Шампионът е определен" : "Прогнозата е заключена";
+  const champion = forecast.teams.find((team) => team.name === forecast.winner);
+  const result = forecast.status === "settled" ? `<div class="league-champion-result">🏆 Шампион: <strong>${teamIdentityMarkup(forecast.winner, champion?.media)}</strong>${forecast.correct ? ` · Позна! +${forecast.points} т. и трофей` : ""}${forecast.winnerNames?.length ? `<p><b>Позналите:</b> ${forecast.winnerNames.map(escapeHTML).join(", ")}</p>` : ""}</div>` : "";
+  const action = forecast.status === "open" && state.me
+    ? `<form class="league-champion-form" data-league-champion-prediction><input type="hidden" name="team" value="${escapeAttribute(forecast.myPrediction)}" required /><label>Кой ще стане шампион?<button class="league-champion-picker" type="button" data-champion-picker aria-expanded="false">${forecast.myPrediction ? teamIdentityMarkup(forecast.myPrediction, forecast.teams.find((team) => team.name === forecast.myPrediction)?.media) : "Избери отбор"}<span>⌄</span></button><span class="league-champion-options" data-champion-options hidden>${forecast.teams.map((team) => `<button type="button" data-champion-team="${escapeAttribute(team.name)}">${teamIdentityMarkup(team.name, team.media)}</button>`).join("")}</span></label><button class="button primary" type="submit">${forecast.myPrediction ? "Промени избора" : "Запиши избора"}</button></form>`
+    : !state.me ? `<p class="league-match-locked-note">Избери прякор, за да участваш.</p>`
+      : forecast.myPrediction ? `<p class="league-champion-choice">Твоята прогноза: <strong>${escapeHTML(forecast.myPrediction)}</strong></p>` : "";
+  return `<article class="league-champion-card"><div><span>Сезонна прогноза</span><h3>🏆 Познай шампиона</h3><small>${status} · ${forecast.status === "open" ? `до ${escapeHTML(close)}` : `награда +${forecast.points} т.`}</small></div>${action}${result}</article>`;
+}
+
 function renderPredictionLeagueApp() {
   const section = document.querySelector("#prediction-league");
   const app = document.querySelector("#prediction-league-app");
@@ -1298,6 +1313,7 @@ function renderPredictionLeagueApp() {
       <span><b>+${state.points.streakBonus}</b> бонус на всеки ${state.points.streakEvery} поредни</span>
       <span><b>${state.me?.currentStreak || 0}</b> твоята серия</span>
     </div>
+    ${championForecastMarkup(state.championForecast, state)}
     <div class="league-match-list">
       <div class="league-match-list-heading"><div><span>Следващи прогнози</span><h3>Прогнозирай преди началото на мача.</h3></div><small>${state.matches.length} ${state.matches.length === 1 ? "мач" : "мача"}${state.matches.some((match) => match.dataSource === "TheSportsDB") ? " · Данни: TheSportsDB" : ""}</small></div>
       <div class="league-match-grid">${state.matches.length ? state.matches.map((match) => leagueMatchMarkup(match, state)).join("") : `<article class="empty-state">Следващият кръг в Лигата на прогнозите скоро ще бъде добавен.</article>`}</div>
@@ -1491,6 +1507,32 @@ function bindPredictionLeagueActions() {
         leagueFormError(form, error);
         setButtonLoading(button, false);
       }
+    });
+  });
+  app.querySelectorAll("[data-league-champion-prediction]").forEach((form) => {
+    const picker = form.querySelector("[data-champion-picker]");
+    const options = form.querySelector("[data-champion-options]");
+    picker?.addEventListener("click", () => {
+      const isOpen = picker.getAttribute("aria-expanded") === "true";
+      picker.setAttribute("aria-expanded", String(!isOpen));
+      options.hidden = isOpen;
+    });
+    form.querySelectorAll("[data-champion-team]").forEach((option) => option.addEventListener("click", () => {
+      const team = option.dataset.championTeam;
+      form.team.value = team;
+      picker.innerHTML = option.innerHTML + "<span>⌄</span>";
+      picker.setAttribute("aria-expanded", "false");
+      options.hidden = true;
+    }));
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button");
+      setButtonLoading(button, true);
+      try {
+        const payload = await leagueApi(`/api/league/${encodeURIComponent(predictionLeagueState.selectedLeagueId)}/champion-prediction`, { method: "PUT", body: JSON.stringify({ team: form.team.value }) });
+        predictionLeagueState = payload.league;
+        renderPredictionLeagueApp();
+      } catch (error) { leagueFormError(form, error); setButtonLoading(button, false); }
     });
   });
   app.querySelectorAll("[data-league-period]").forEach((button) => {

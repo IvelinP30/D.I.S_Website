@@ -288,6 +288,17 @@ async function synchronizeFootballContent(content = {}, options = {}) {
         : [settings.currentRound, ...resultRounds, ...postponedRounds];
     const uniqueRounds = [...new Set(rounds)];
     let currentRoundEvents = [];
+    if (league.championForecast?.enabled && scheduleDue) {
+      const seasonResponse = await options.request("eventsseason.php", { id: settings.leagueId, s: settings.season });
+      summary.apiCalls += 1;
+      const seasonEvents = (Array.isArray(seasonResponse.events) ? seasonResponse.events : []).filter((event) => {
+        const eventId = Number(event.idEvent);
+        return !options.archivedEventKeys?.has(`${leagueId}:${eventId}`);
+      });
+      const merged = mergeLeagueSchedule(league, seasonEvents, now, { maxKickoff: Number.POSITIVE_INFINITY });
+      summary.added += merged.added;
+      summary.updated += merged.updated;
+    }
     for (const round of uniqueRounds) {
       const response = await options.request("eventsround.php", { id: settings.leagueId, r: round, s: settings.season });
       summary.apiCalls += 1;

@@ -100,6 +100,39 @@ test("scores exact results as outcome plus exact-score points", () => {
   assert.equal(state.me.badges.some((badge) => badge.id === "oracle"), false);
 });
 
+test("awards the champion forecast automatically after every season fixture is settled", () => {
+  const config = {
+    ...sampleConfig(),
+    championForecast: { enabled: true, opensAt: "2026-07-01T00:00:00.000Z", closesAt: "2026-07-10T00:00:00.000Z", points: 25 },
+    matches: [
+      { id: "a", homeTeam: "Левски", awayTeam: "ЦСКА", kickoffAt: "2026-07-01T18:00:00.000Z", result: { homeScore: 2, awayScore: 0 } },
+      { id: "b", homeTeam: "ЦСКА", awayTeam: "Лудогорец", kickoffAt: "2026-07-02T18:00:00.000Z", result: { homeScore: 1, awayScore: 1 } },
+      { id: "c", homeTeam: "Лудогорец", awayTeam: "Левски", kickoffAt: "2026-07-03T18:00:00.000Z", result: { homeScore: 0, awayScore: 1 } }
+    ]
+  };
+  const store = { players: sampleStore().players, predictions: [{ playerId: "p1", matchId: "a", homeScore: 2, awayScore: 0 }], seasonPredictions: [{ playerId: "p1", leagueId: "general", team: "Левски" }, { playerId: "p2", leagueId: "general", team: "ЦСКА" }] };
+  const state = buildLeagueState(config, store, "p1", Date.parse("2026-07-17T12:00:00.000Z"));
+  assert.equal(state.championForecast.status, "settled");
+  assert.equal(state.championForecast.winner, "Левски");
+  assert.equal(state.championForecast.correct, true);
+  assert.equal(state.me.totalPoints, 35);
+  assert.ok(state.me.badges.some((badge) => badge.id === "season-champion"));
+});
+
+test("opens the champion forecast automatically for five days before the first fixture", () => {
+  const config = {
+    ...sampleConfig(),
+    championForecast: { enabled: true, points: 25, windowDays: 5 },
+    matches: [{ id: "opening", homeTeam: "Левски", awayTeam: "ЦСКА", kickoffAt: "2026-08-10T18:00:00.000Z" }]
+  };
+  const store = { players: sampleStore().players, predictions: [], seasonPredictions: [] };
+  const before = buildLeagueState(config, store, "p1", Date.parse("2026-08-04T18:00:00.000Z"));
+  const open = buildLeagueState(config, store, "p1", Date.parse("2026-08-07T18:00:00.000Z"));
+  assert.equal(before.championForecast.status, "upcoming");
+  assert.equal(open.championForecast.status, "open");
+  assert.equal(open.championForecast.closesAt, "2026-08-10T18:00:00.000Z");
+});
+
 test("awards the monthly champion only after the month has ended", () => {
   const config = {
     ...sampleConfig(),
@@ -183,7 +216,7 @@ test("normalizes trophy ids and rejects unsupported list values", () => {
   assert.equal(trophies[0].tier, "bronze");
   assert.equal(trophies[1].description, "Участвал си с прогноза в поне 10 завършили мача.");
   assert.equal(normalizeLeagueConfig({ trophies: [] }).trophies.length, 0);
-  assert.equal(normalizeLeagueConfig({}).trophies.length, 6);
+  assert.equal(normalizeLeagueConfig({}).trophies.length, 7);
   assert.equal(normalizeLeagueConfig({ trophies: [
     { id: "exact", condition: "exact" },
     { id: "voice", condition: "voice" },
@@ -300,6 +333,13 @@ test("archiving a removed league match preserves only its earned points and leav
   assert.equal(archived.archivedMatches.find((match) => match.id === "b1")?.leagueId, "efbet");
   assert.equal(archived.predictions.length, 2);
   assert.equal(buildPredictionLeagueState(next, archived, "p1", "england", now).me.totalPoints, 10);
+});
+
+test("admin saves preserve champion forecasts for existing leagues", () => {
+  const previous = { enabled: true, leagues: [{ id: "bg", matches: sampleConfig().matches }] };
+  const next = { enabled: true, leagues: [{ id: "bg", matches: sampleConfig().matches }] };
+  const store = { ...sampleStore(), seasonPredictions: [{ playerId: "p1", leagueId: "bg", team: "A" }] };
+  assert.deepEqual(archiveDeletedLeagueMatches(previous, next, store).seasonPredictions, store.seasonPredictions);
 });
 
 test("locks matches at kickoff and keeps future matches open", () => {

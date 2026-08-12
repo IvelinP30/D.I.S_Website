@@ -39,6 +39,7 @@ const {
   normalizeLeagueCollection,
   normalizeLeagueId,
   normalizeLeagueStore,
+  normalizeChampionPrediction,
   normalizeNickname,
   normalizePrediction,
   periodLabels,
@@ -199,6 +200,7 @@ async function writeContent(content) {
       const archivedStore = archiveDeletedLeagueMatches(previousContent.predictionLeague, content.predictionLeague, leagueStore);
       leagueStore.players = archivedStore.players;
       leagueStore.predictions = archivedStore.predictions;
+      leagueStore.seasonPredictions = archivedStore.seasonPredictions;
       leagueStore.archivedMatches = archivedStore.archivedMatches;
     });
   } else {
@@ -773,7 +775,9 @@ async function leagueState(request, storeOverride = null, playerIdOverride = nul
       data.aggregates,
       playerId,
       data.predictions,
-      data.scoreEvents
+      data.scoreEvents,
+      Date.now(),
+      { seasonPredictions: data.seasonPredictions, seasonMatches: data.seasonMatches }
     );
     return {
       ...state,
@@ -1516,6 +1520,53 @@ async function handleRequest(request, response) {
       return sendJson(response, 200, { league: await leagueState(request, store, playerId, leagueConfig.id) }, {
         "Set-Cookie": leagueCookieHeader(playerId)
       });
+    } catch (error) {
+      return sendJson(response, 409, { error: error.message });
+    }
+  }
+
+  const championPredictionMatch = url.pathname.match(/^\/api\/league\/([^/]+)\/champion-prediction$/);
+  if (championPredictionMatch && request.method === "PUT") {
+    const playerId = getLeaguePlayerId(request);
+    if (!playerId) return sendJson(response, 401, { error: "Първо избери прякор за Лигата на прогнозите." });
+    const content = await readContent();
+    const collection = normalizeLeagueCollection(content.predictionLeague);
+    const leagueId = normalizeLeagueId(decodeURIComponent(championPredictionMatch[1]));
+    const leagueConfig = collection.leagues.find((league) => league.id === leagueId);
+    if (!collection.enabled || !leagueConfig?.enabled || !leagueConfig.championForecast.enabled) return sendJson(response, 409, { error: "Прогнозата за шампион не е активна." });
+    const now = Date.now();
+    const configuredOpensAt = Date.parse(leagueConfig.championForecast.opensAt || "");
+    const configuredClosesAt = Date.parse(leagueConfig.championForecast.closesAt || "");
+    const firstKickoff = Math.min(...leagueConfig.matches.map((match) => Date.parse(match.kickoffAt || "")).filter(Number.isFinite));
+    const closesAt = Number.isFinite(configuredClosesAt) ? configuredClosesAt : firstKickoff;
+    const opensAt = Number.isFinite(configuredOpensAt) ? configuredOpensAt : Number.isFinite(closesAt)
+      ? closesAt - leagueConfig.championForecast.windowDays * 86_400_000
+      : NaN;
+    if (!Number.isFinite(opensAt) || !Number.isFinite(closesAt) || now < opensAt || now >= closesAt) return sendJson(response, 409, { error: "Прогнозата за шампион не приема избори в момента." });
+    let team;
+    try {
+      const candidateStore = await readLeagueStore();
+      const candidateMatches = [...leagueConfig.matches, ...candidateStore.archivedMatches.filter((match) => normalizeLeagueId(match.leagueId) === leagueId)];
+      team = normalizeChampionPrediction(JSON.parse(await readBody(request)), [...new Set(candidateMatches.flatMap((match) => [match.homeTeam, match.awayTeam]))]);
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message });
+    }
+    try {
+      if (await ensureRelationalLeagueStorage(content)) {
+        if (!await relationalLeagueStorage.player(playerId)) throw new Error("Участието в Лигата на прогнозите не е намерено.");
+        const submittedAt = new Date().toISOString();
+        await relationalLeagueStorage.upsertSeasonPrediction({ playerId, leagueId, team, submittedAt, updatedAt: submittedAt });
+        return sendJson(response, 200, { league: await leagueState(request, null, playerId, leagueId) }, { "Set-Cookie": leagueCookieHeader(playerId) });
+      }
+      const { store } = await mutateLeagueStore((leagueStore) => {
+        if (!leagueStore.players.some((player) => player.id === playerId)) throw new Error("Участието в Лигата на прогнозите не е намерено.");
+        leagueStore.seasonPredictions ||= [];
+        const existing = leagueStore.seasonPredictions.find((prediction) => prediction.playerId === playerId && normalizeLeagueId(prediction.leagueId) === leagueId);
+        const submittedAt = new Date().toISOString();
+        if (existing) { existing.team = team; existing.updatedAt = submittedAt; }
+        else leagueStore.seasonPredictions.push({ id: crypto.randomUUID(), playerId, leagueId, team, submittedAt, updatedAt: submittedAt });
+      });
+      return sendJson(response, 200, { league: await leagueState(request, store, playerId, leagueId) }, { "Set-Cookie": leagueCookieHeader(playerId) });
     } catch (error) {
       return sendJson(response, 409, { error: error.message });
     }

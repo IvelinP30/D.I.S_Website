@@ -62,7 +62,8 @@ const leagueTrophyConditions = Object.freeze([
   ["derby", "3 правилни дерби прогнози", "Познал си победителя или равенството в 3 дербита."],
   ["streak", "5 правилни прогнози поред", "Направил си 5 правилни прогнози поред."],
   ["weeklyChampion", "№1 за седмицата (временна)", "Временна значка: завършил си на първо място в седмичната класация. Важи до края на текущата седмица."],
-  ["monthlyChampion", "№1 за месеца", "Завършил си на първо място в месечната класация."]
+  ["monthlyChampion", "№1 за месеца", "Завършил си на първо място в месечната класация."],
+  ["seasonChampion", "Познал шампиона", "Позна шампиона на първенството."]
 ]);
 const leagueTrophyTiers = Object.freeze([
   ["bronze", "Бронзово · кафяво-оранжево"],
@@ -127,12 +128,23 @@ function normalizeAdminLeagueCollection(value = {}) {
     const providerSeason = /^\d{4}-\d{4}$/.test(rawSeason)
       ? rawSeason
       : /^\d{4}$/.test(rawSeason) ? `${rawSeason}-${Number(rawSeason) + 1}` : "";
+    const trophies = Array.isArray(item?.trophies) ? [...item.trophies] : [];
+    if (item?.championForecast?.enabled === true && !trophies.some((trophy) => trophy?.condition === "seasonChampion")) {
+      trophies.push({ id: "season-champion", label: "Познал шампиона", condition: "seasonChampion", tier: "legendary" });
+    }
     return {
       id,
       enabled: item?.enabled !== false,
       title: String(item?.title || `Лига ${index + 1}`),
       description: String(item?.description || "Прогнозирай резултата и се изкачи в класацията."),
       seasonLabel: String(item?.seasonLabel || "D.I.S Сезон"),
+      championForecast: {
+        enabled: item?.championForecast?.enabled === true,
+        opensAt: String(item?.championForecast?.opensAt || ""),
+        closesAt: String(item?.championForecast?.closesAt || ""),
+        points: Math.max(1, Math.min(100, Number(item?.championForecast?.points) || 25)),
+        windowDays: Math.max(1, Math.min(14, Number(item?.championForecast?.windowDays) || 5))
+      },
       theSportsDb: {
         enabled: hasTheSportsDbSettings && providerSettings.enabled === true,
         leagueId: hasTheSportsDbSettings && Number.isInteger(providerLeagueId) && providerLeagueId > 0 ? providerLeagueId : null,
@@ -142,7 +154,7 @@ function normalizeAdminLeagueCollection(value = {}) {
         lastScheduleSyncAt: String(providerSettings.lastScheduleSyncAt || ""),
         lastResultSyncAt: String(providerSettings.lastResultSyncAt || "")
       },
-      trophies: Array.isArray(item?.trophies) ? item.trophies : [],
+      trophies,
       matches: Array.isArray(item?.matches) ? item.matches : []
     };
   });
@@ -950,6 +962,14 @@ function renderEditors() {
       ${field("Име на лигата", "title", selectedLeague.title)}
       ${textarea("Кратко описание", "description", selectedLeague.description || "", 3)}
       ${field("Име на сезона", "seasonLabel", selectedLeague.seasonLabel || "D.I.S Сезон 2026/27")}
+      <hr />
+      <h4>Прогноза за шампион</h4>
+      ${checkboxField("Покажи прогнозата за шампион", "championForecastEnabled", selectedLeague.championForecast?.enabled === true)}
+      ${field("Отваря на", "championForecastOpensAt", dateTimeLocalValue(selectedLeague.championForecast?.opensAt), "datetime-local")}
+      ${field("Затваря на", "championForecastClosesAt", dateTimeLocalValue(selectedLeague.championForecast?.closesAt), "datetime-local")}
+      ${field("Автоматичен прозорец преди първия мач (дни)", "championForecastWindowDays", selectedLeague.championForecast?.windowDays || 5, "number")}
+      ${field("Бонус точки", "championForecastPoints", selectedLeague.championForecast?.points || 25, "number")}
+      <small>Остави датите празни за автоматичен прозорец непосредствено преди първия мач. За текущия сезон можеш да зададеш ръчно петдневен извънреден прозорец. Шампионът и точките се определят автоматично.</small>
       ${readonlyInfo("Точкуване", "Победител или равенство: 3 т. · Точен резултат: още 7 т. · Всеки 3 поредни правилни: +2 т.")}
       ${footballAutomationMarkup}
     </article>` : ""}`;
@@ -1582,6 +1602,13 @@ function collectConfig() {
       title: value(leagueSettingsCard, "title") || previousLeague.title,
       description: value(leagueSettingsCard, "description"),
       seasonLabel: value(leagueSettingsCard, "seasonLabel") || "D.I.S Сезон",
+      championForecast: {
+        enabled: Boolean(leagueSettingsCard.querySelector('[name="championForecastEnabled"]')?.checked),
+        opensAt: value(leagueSettingsCard, "championForecastOpensAt").trim() ? new Date(value(leagueSettingsCard, "championForecastOpensAt")).toISOString() : "",
+        closesAt: value(leagueSettingsCard, "championForecastClosesAt").trim() ? new Date(value(leagueSettingsCard, "championForecastClosesAt")).toISOString() : "",
+        points: Math.max(1, Math.min(100, Number(value(leagueSettingsCard, "championForecastPoints")) || 25)),
+        windowDays: Math.max(1, Math.min(14, Number(value(leagueSettingsCard, "championForecastWindowDays")) || 5))
+      },
       theSportsDb: footballFixtureSyncEnabled ? {
           enabled: Boolean(leagueSettingsCard.querySelector('[name="theSportsDbEnabled"]')?.checked),
           leagueId: Number(value(leagueSettingsCard, "theSportsDbLeagueId")) || null,

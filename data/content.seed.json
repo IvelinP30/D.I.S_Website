@@ -457,6 +457,13 @@
     "title": "D.I.S Лига на прогнозите",
     "description": "Познай кой ще спечели или дали мачът ще завърши наравно. Допълнителни точки носи и точният резултат.",
     "seasonLabel": "D.I.S Сезон 2026/27",
+    "championForecast": {
+      "enabled": true,
+      "opensAt": "2026-08-12T09:00:00.000Z",
+      "closesAt": "2026-08-17T20:59:59.000Z",
+      "points": 25,
+      "windowDays": 5
+    },
     "trophies": [
       {
         "id": "exact",
@@ -487,9 +494,32 @@
         "label": "Шампион на месеца",
         "condition": "monthlyChampion",
         "tier": "legendary"
+      },
+      {
+        "id": "season-champion",
+        "label": "Познал шампиона",
+        "condition": "seasonChampion",
+        "tier": "legendary"
       }
     ],
-    "matches": []
+    "matches": [
+      {
+        "id": "demo-levski-ludogorets",
+        "enabled": true,
+        "competition": "Демо · efbet Лига",
+        "homeTeam": "Левски",
+        "awayTeam": "Лудогорец",
+        "kickoffAt": "2026-08-20T17:00:00.000Z"
+      },
+      {
+        "id": "demo-cska-botev",
+        "enabled": true,
+        "competition": "Демо · efbet Лига",
+        "homeTeam": "ЦСКА",
+        "awayTeam": "Ботев Пловдив",
+        "kickoffAt": "2026-08-21T17:00:00.000Z"
+      }
+    ]
   },
   "giveaway": {
     "id": "giveaway-1784063751960",

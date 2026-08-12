@@ -63,6 +63,26 @@ function camelPrediction(prediction = {}) {
   };
 }
 
+function snakeSeasonPrediction(prediction = {}) {
+  return {
+    player_id: String(prediction.playerId),
+    league_id: normalizeLeagueId(prediction.leagueId),
+    team: String(prediction.team || "").trim(),
+    submitted_at: prediction.submittedAt || new Date().toISOString(),
+    updated_at: prediction.updatedAt || prediction.submittedAt || new Date().toISOString()
+  };
+}
+
+function camelSeasonPrediction(prediction = {}) {
+  return {
+    playerId: String(prediction.player_id),
+    leagueId: String(prediction.league_id),
+    team: String(prediction.team || ""),
+    submittedAt: String(prediction.submitted_at || ""),
+    updatedAt: String(prediction.updated_at || "")
+  };
+}
+
 function matchRow(match, archived = false) {
   const result = resultForMatch(match);
   return {
@@ -161,8 +181,11 @@ function createLeagueRelationalStorage(options = {}) {
     if (!enabled) return false;
     if (availability !== undefined) return availability;
     try {
-      const result = await request("league_storage_meta?select=key&limit=1", { allowMissing: true });
-      availability = !result.missing;
+      const [metaResult, seasonResult] = await Promise.all([
+        request("league_storage_meta?select=key&limit=1", { allowMissing: true }),
+        request("league_season_predictions?select=league_id&limit=1", { allowMissing: true })
+      ]);
+      availability = !metaResult.missing && !seasonResult.missing;
     } catch (error) {
       logger.warn(`Relational Prediction League storage unavailable: ${error.message}`);
       availability = false;
@@ -315,6 +338,8 @@ function createLeagueRelationalStorage(options = {}) {
     if (playerRows.length) await writeBatches("league_players", playerRows, "id");
     const predictionRows = store.predictions.map(snakePrediction);
     if (predictionRows.length) await writeBatches("league_predictions", predictionRows, "player_id,league_id,match_id");
+    const seasonPredictionRows = store.seasonPredictions.map(snakeSeasonPrediction);
+    if (seasonPredictionRows.length) await writeBatches("league_season_predictions", seasonPredictionRows, "player_id,league_id");
 
     const [storedPlayerRows, storedPredictionRows, playerCount, predictionCount] = await Promise.all([
       selectAll("league_players?select=id,nickname,nickname_key,recovery_hash"),
@@ -433,6 +458,19 @@ function createLeagueRelationalStorage(options = {}) {
     return camelPrediction(Array.isArray(result.rows) ? result.rows[0] : result.rows);
   }
 
+  async function upsertSeasonPrediction(prediction) {
+    const result = await request("rpc/league_save_season_prediction", {
+      method: "POST",
+      body: {
+        p_player_id: String(prediction.playerId),
+        p_league_id: normalizeLeagueId(prediction.leagueId),
+        p_team: String(prediction.team || "").trim(),
+        p_now: prediction.updatedAt || new Date().toISOString()
+      }
+    });
+    return camelSeasonPrediction(Array.isArray(result.rows) ? result.rows[0] : result.rows);
+  }
+
   function scoringConfigFor(content, leagueId, archivedMatches) {
     const collection = normalizeLeagueCollection(content?.predictionLeague || {});
     const league = collection.leagues.find((item) => item.id === leagueId);
@@ -544,11 +582,15 @@ function createLeagueRelationalStorage(options = {}) {
     const participationPromise = playerId
       ? request("rpc/league_player_participation", { method: "POST", body: { p_player_id: playerId } })
       : Promise.resolve({ rows: [] });
-    const [aggregateResult, predictionRows, scoreRows, participationResult] = await Promise.all([
+    const seasonPredictionPromise = selectAll(`league_season_predictions?league_id=eq.${encodeURIComponent(leagueId)}&select=*`);
+    const seasonMatchPromise = selectAll(`league_matches?league_id=eq.${encodeURIComponent(leagueId)}&select=payload`);
+    const [aggregateResult, predictionRows, scoreRows, participationResult, seasonPredictionRows, seasonMatchRows] = await Promise.all([
       aggregatePromise,
       predictionPromise,
       scoresPromise,
-      participationPromise
+      participationPromise,
+      seasonPredictionPromise,
+      seasonMatchPromise
     ]);
     return {
       aggregates: aggregateResult.rows.map((row) => ({
@@ -585,6 +627,8 @@ function createLeagueRelationalStorage(options = {}) {
         exactScore: row.exact_score,
         streakAfter: row.streak_after
       })),
+      seasonPredictions: seasonPredictionRows.map(camelSeasonPrediction),
+      seasonMatches: seasonMatchRows.map((row) => row.payload),
       participation: Object.fromEntries(participationResult.rows.map((row) => [row.league_id, Number(row.prediction_count) || 0]))
     };
   }
@@ -625,6 +669,7 @@ function createLeagueRelationalStorage(options = {}) {
     syncMatches,
     updatePlayer,
     upsertPrediction,
+    upsertSeasonPrediction,
     usage
   };
 }

@@ -81,6 +81,16 @@ create table if not exists public.league_predictions (
   constraint league_predictions_away_score check (away_score between 0 and 30)
 );
 
+create table if not exists public.league_season_predictions (
+  player_id uuid not null references public.league_players(id) on delete restrict,
+  league_id text not null references public.league_definitions(id) on update cascade on delete restrict,
+  team text not null,
+  submitted_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (player_id, league_id),
+  constraint league_season_predictions_team_length check (char_length(team) between 1 and 120)
+);
+
 create table if not exists public.league_scoring_versions (
   id uuid primary key default gen_random_uuid(),
   league_id text not null,
@@ -135,6 +145,8 @@ create index if not exists league_predictions_league_player
   on public.league_predictions (league_id, player_id);
 create index if not exists league_predictions_league_match
   on public.league_predictions (league_id, match_id);
+create index if not exists league_season_predictions_league_team
+  on public.league_season_predictions (league_id, team);
 create index if not exists league_matches_league_kickoff
   on public.league_matches (league_id, kickoff_at);
 create index if not exists league_score_events_player
@@ -147,6 +159,7 @@ alter table public.league_definitions enable row level security;
 alter table public.league_players enable row level security;
 alter table public.league_matches enable row level security;
 alter table public.league_predictions enable row level security;
+alter table public.league_season_predictions enable row level security;
 alter table public.league_scoring_versions enable row level security;
 alter table public.league_score_events enable row level security;
 alter table public.league_career_rollups enable row level security;
@@ -156,6 +169,7 @@ revoke all on table public.league_definitions from anon, authenticated;
 revoke all on table public.league_players from anon, authenticated;
 revoke all on table public.league_matches from anon, authenticated;
 revoke all on table public.league_predictions from anon, authenticated;
+revoke all on table public.league_season_predictions from anon, authenticated;
 revoke all on table public.league_scoring_versions from anon, authenticated;
 revoke all on table public.league_score_events from anon, authenticated;
 revoke all on table public.league_career_rollups from anon, authenticated;
@@ -165,6 +179,7 @@ grant select, insert, update, delete on table public.league_definitions to servi
 grant select, insert, update, delete on table public.league_players to service_role;
 grant select, insert, update, delete on table public.league_matches to service_role;
 grant select, insert, update, delete on table public.league_predictions to service_role;
+grant select, insert, update, delete on table public.league_season_predictions to service_role;
 grant select, insert, update, delete on table public.league_scoring_versions to service_role;
 grant select, insert, update, delete on table public.league_score_events to service_role;
 grant select, insert, update, delete on table public.league_career_rollups to service_role;
@@ -226,6 +241,65 @@ begin
     home_score = excluded.home_score,
     away_score = excluded.away_score,
     updated_at = excluded.updated_at
+  returning * into saved;
+  return saved;
+end;
+$$;
+
+create or replace function public.league_save_season_prediction(
+  p_player_id uuid,
+  p_league_id text,
+  p_team text,
+  p_now timestamptz default now()
+)
+returns public.league_season_predictions
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  league_payload jsonb;
+  opens_at timestamptz;
+  closes_at timestamptz;
+  saved public.league_season_predictions;
+begin
+  select d.payload into league_payload
+  from public.league_definitions d
+  where d.id = p_league_id and d.enabled = true and d.deleted_at is null;
+
+  if league_payload is null or coalesce((league_payload #>> '{championForecast,enabled}')::boolean, false) = false then
+    raise exception 'Champion prediction is not active';
+  end if;
+
+  opens_at := nullif(league_payload #>> '{championForecast,opensAt}', '')::timestamptz;
+  closes_at := nullif(league_payload #>> '{championForecast,closesAt}', '')::timestamptz;
+  if closes_at is null then
+    select min(m.kickoff_at) into closes_at
+    from public.league_matches m
+    where m.league_id = p_league_id and m.archived = false;
+  end if;
+  if opens_at is null and closes_at is not null then
+    opens_at := closes_at - make_interval(days => greatest(1, least(14, coalesce(nullif(league_payload #>> '{championForecast,windowDays}', '')::integer, 5))));
+  end if;
+  if opens_at is null or closes_at is null or p_now < opens_at or p_now >= closes_at then
+    raise exception 'Champion prediction window is closed';
+  end if;
+
+  if not exists (
+    select 1 from public.league_matches m
+    where m.league_id = p_league_id
+      and (m.payload->>'homeTeam' = p_team or m.payload->>'awayTeam' = p_team)
+  ) then
+    raise exception 'Champion prediction team is invalid';
+  end if;
+
+  insert into public.league_season_predictions (
+    player_id, league_id, team, submitted_at, updated_at
+  ) values (
+    p_player_id, p_league_id, p_team, p_now, p_now
+  )
+  on conflict (player_id, league_id) do update
+  set team = excluded.team, updated_at = excluded.updated_at
   returning * into saved;
   return saved;
 end;
@@ -412,6 +486,7 @@ as $$
       pg_total_relation_size('public.league_players') +
       pg_total_relation_size('public.league_matches') +
       pg_total_relation_size('public.league_predictions') +
+      pg_total_relation_size('public.league_season_predictions') +
       pg_total_relation_size('public.league_scoring_versions') +
       pg_total_relation_size('public.league_score_events') +
       pg_total_relation_size('public.league_career_rollups')
@@ -427,10 +502,19 @@ stable
 security definer
 set search_path = public
 as $$
-  select p.league_id, count(*)::bigint
-  from public.league_predictions p
-  where p.player_id = p_player_id
-  group by p.league_id;
+  select participation.league_id, sum(participation.prediction_count)::bigint
+  from (
+    select p.league_id, count(*)::bigint as prediction_count
+    from public.league_predictions p
+    where p.player_id = p_player_id
+    group by p.league_id
+    union all
+    select sp.league_id, count(*)::bigint as prediction_count
+    from public.league_season_predictions sp
+    where sp.player_id = p_player_id
+    group by sp.league_id
+  ) participation
+  group by participation.league_id;
 $$;
 
 create or replace function public.league_ids_for_scoring()
@@ -447,12 +531,14 @@ $$;
 
 revoke all on function public.league_activate_scoring_version(uuid) from public, anon, authenticated;
 revoke all on function public.league_save_prediction(uuid, text, text, integer, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public.league_save_season_prediction(uuid, text, text, timestamptz) from public, anon, authenticated;
 revoke all on function public.league_leaderboard_rows(text, timestamptz, timestamptz, timestamptz, timestamptz) from public, anon, authenticated;
 revoke all on function public.league_database_usage() from public, anon, authenticated;
 revoke all on function public.league_player_participation(uuid) from public, anon, authenticated;
 revoke all on function public.league_ids_for_scoring() from public, anon, authenticated;
 grant execute on function public.league_activate_scoring_version(uuid) to service_role;
 grant execute on function public.league_save_prediction(uuid, text, text, integer, integer, timestamptz) to service_role;
+grant execute on function public.league_save_season_prediction(uuid, text, text, timestamptz) to service_role;
 grant execute on function public.league_leaderboard_rows(text, timestamptz, timestamptz, timestamptz, timestamptz) to service_role;
 grant execute on function public.league_database_usage() to service_role;
 grant execute on function public.league_player_participation(uuid) to service_role;

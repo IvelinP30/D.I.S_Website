@@ -54,7 +54,8 @@ const TROPHY_CONDITIONS = Object.freeze({
   derby: "Познал си победителя или равенството в 3 дербита.",
   streak: "Направил си 5 правилни прогнози поред.",
   weeklyChampion: "Временна значка: завършил си на първо място в седмичната класация. Важи до края на текущата седмица.",
-  monthlyChampion: "Завършил си на първо място в месечната класация."
+  monthlyChampion: "Завършил си на първо място в месечната класация.",
+  seasonChampion: "Позна шампиона на първенството."
 });
 
 const DEFAULT_TROPHY_DEFINITIONS = Object.freeze([
@@ -63,7 +64,8 @@ const DEFAULT_TROPHY_DEFINITIONS = Object.freeze([
   { id: "derby", condition: "derby", label: "Дерби експерт", tier: "gold" },
   { id: "streak", condition: "streak", label: "Без загуба", tier: "platinum" },
   { id: "weekly-winner", condition: "weeklyChampion", label: "Победител на седмицата", tier: "gold" },
-  { id: "oracle", condition: "monthlyChampion", label: "Шампион на месеца", tier: "legendary" }
+  { id: "oracle", condition: "monthlyChampion", label: "Шампион на месеца", tier: "legendary" },
+  { id: "season-champion", condition: "seasonChampion", label: "Познал шампиона", tier: "legendary" }
 ]);
 
 const DEFAULT_WEEKLY_CHAMPION_TROPHY = Object.freeze({
@@ -71,6 +73,13 @@ const DEFAULT_WEEKLY_CHAMPION_TROPHY = Object.freeze({
   condition: "weeklyChampion",
   label: "Победител на седмицата",
   tier: "gold"
+});
+
+const DEFAULT_SEASON_CHAMPION_TROPHY = Object.freeze({
+  id: "season-champion",
+  condition: "seasonChampion",
+  label: "Познал шампиона",
+  tier: "legendary"
 });
 
 function normalizeTrophyDefinitions(value) {
@@ -171,6 +180,7 @@ function normalizeLeagueStore(value = {}) {
   return {
     players: Array.isArray(value.players) ? value.players : [],
     predictions: Array.isArray(value.predictions) ? value.predictions : [],
+    seasonPredictions: Array.isArray(value.seasonPredictions) ? value.seasonPredictions : [],
     archivedMatches: Array.isArray(value.archivedMatches) ? value.archivedMatches : []
   };
 }
@@ -211,6 +221,12 @@ function normalizePrediction(payload = {}) {
   const awayScore = scoreValue(payload.awayScore);
   if (homeScore === null || awayScore === null) throw new Error("Въведи валиден резултат между 0 и 30.");
   return { homeScore, awayScore };
+}
+
+function normalizeChampionPrediction(payload = {}, teams = []) {
+  const team = String(payload.team || "").trim();
+  if (!teams.includes(team)) throw new Error("Избери валиден отбор за шампион.");
+  return team;
 }
 
 function resultForMatch(match = {}) {
@@ -272,6 +288,63 @@ function matchTimestamp(match = {}) {
   return Number.isFinite(timestamp) ? timestamp : Number.MAX_SAFE_INTEGER;
 }
 
+function championForecastState(config, matches, predictions, players = [], now = Date.now()) {
+  const forecast = config.championForecast || {};
+  if (!forecast.enabled) return null;
+  const configuredOpensAt = Date.parse(forecast.opensAt || "");
+  const configuredClosesAt = Date.parse(forecast.closesAt || "");
+  const firstKickoff = Math.min(...(matches || []).map((match) => Date.parse(match.kickoffAt || "")).filter(Number.isFinite));
+  const closesAt = Number.isFinite(configuredClosesAt) ? configuredClosesAt : firstKickoff;
+  const opensAt = Number.isFinite(configuredOpensAt) ? configuredOpensAt : Number.isFinite(closesAt) ? closesAt - forecast.windowDays * 86_400_000 : NaN;
+  const teamMedia = new Map();
+  (matches || []).forEach((match) => {
+    [[match.homeTeam, match.homeTeamMedia], [match.awayTeam, match.awayTeamMedia]].forEach(([name, media]) => {
+      const team = String(name || "").trim();
+      if (team && !teamMedia.has(team)) teamMedia.set(team, media || null);
+    });
+  });
+  const teams = [...teamMedia.keys()].sort((a, b) => a.localeCompare(b, "bg-BG"));
+  const settledMatches = (matches || []).filter((match) => resultForMatch(match));
+  const allFixturesFinished = (matches || []).length > 0 && (matches || []).every((match) => {
+    const status = matchStatus(match, now);
+    return status === "settled" || status === "cancelled";
+  });
+  const table = new Map(teams.map((team) => [team, { team, points: 0, goalDifference: 0, goalsFor: 0 }]));
+  settledMatches.forEach((match) => {
+    const result = resultForMatch(match);
+    const home = table.get(match.homeTeam);
+    const away = table.get(match.awayTeam);
+    if (!home || !away || !result) return;
+    home.goalsFor += result.homeScore;
+    away.goalsFor += result.awayScore;
+    home.goalDifference += result.homeScore - result.awayScore;
+    away.goalDifference += result.awayScore - result.homeScore;
+    if (result.homeScore > result.awayScore) home.points += 3;
+    else if (result.homeScore < result.awayScore) away.points += 3;
+    else { home.points += 1; away.points += 1; }
+  });
+  const finalTable = [...table.values()].sort((a, b) =>
+    b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.team.localeCompare(b.team, "bg-BG")
+  );
+  const tiedAtTop = finalTable.length > 1 && finalTable[0].points === finalTable[1].points
+    && finalTable[0].goalDifference === finalTable[1].goalDifference && finalTable[0].goalsFor === finalTable[1].goalsFor;
+  const winner = allFixturesFinished && !tiedAtTop ? finalTable[0]?.team || "" : "";
+  const status = Number.isFinite(opensAt) && now < opensAt ? "upcoming"
+    : Number.isFinite(closesAt) && now < closesAt ? "open"
+      : winner ? "settled" : "locked";
+  return {
+    enabled: true,
+    opensAt: Number.isFinite(opensAt) ? new Date(opensAt).toISOString() : "",
+    closesAt: Number.isFinite(closesAt) ? new Date(closesAt).toISOString() : "",
+    points: forecast.points,
+    teams: teams.map((name) => ({ name, media: teamMedia.get(name) })),
+    winner,
+    status,
+    predictions: Array.isArray(predictions) ? predictions : [],
+    winnerNames: []
+  };
+}
+
 function startOfUtcWeek(now) {
   const date = new Date(now);
   const day = date.getUTCDay() || 7;
@@ -317,12 +390,22 @@ function normalizeLeagueConfig(value = {}, fallbackId = DEFAULT_LEAGUE_ID) {
   if (usesLegacyDefaultTrophies && !trophies.some((trophy) => trophy.condition === "weeklyChampion")) {
     trophies.push(normalizeTrophyDefinitions([DEFAULT_WEEKLY_CHAMPION_TROPHY])[0]);
   }
+  if (value.championForecast?.enabled === true && !trophies.some((trophy) => trophy.condition === "seasonChampion")) {
+    trophies.push(normalizeTrophyDefinitions([DEFAULT_SEASON_CHAMPION_TROPHY])[0]);
+  }
   return {
     id: normalizeLeagueId(value.id, fallbackId),
     enabled: value.enabled !== false,
     title: String(value.title || "D.I.S Лига на прогнозите").trim(),
     description: String(value.description || "Прогнозирай резултата, печели точки и се изкачи в седмичната класация.").trim(),
     seasonLabel: String(value.seasonLabel || "D.I.S Сезон 2026/27").trim(),
+    championForecast: {
+      enabled: value.championForecast?.enabled === true,
+      opensAt: String(value.championForecast?.opensAt || ""),
+      closesAt: String(value.championForecast?.closesAt || ""),
+      points: Math.max(1, Math.min(100, Number(value.championForecast?.points) || 25)),
+      windowDays: Math.max(1, Math.min(14, Number(value.championForecast?.windowDays) || 5))
+    },
     theSportsDb: {
       enabled: hasTheSportsDbSettings && providerSettings.enabled === true,
       leagueId: hasTheSportsDbSettings && Number.isInteger(providerLeagueId) && providerLeagueId > 0 ? providerLeagueId : null,
@@ -451,6 +534,9 @@ function archiveDeletedLeagueMatches(rawPreviousConfig, rawNextConfig, rawStore)
     predictions: store.predictions.filter((prediction) => prediction.leagueId
       ? preservedMatchKeys.has(`${normalizeLeagueId(prediction.leagueId)}:${prediction.matchId}`)
       : preservedLegacyMatchIds.has(prediction.matchId)),
+    seasonPredictions: store.seasonPredictions.filter((prediction) =>
+      normalizeLeagueCollection(rawNextConfig).leagues.some((league) => league.id === normalizeLeagueId(prediction.leagueId))
+    ),
     archivedMatches
   };
 }
@@ -613,11 +699,50 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
   }).filter((match) => !activeMatchIds.has(match.id));
   const scoringConfig = { ...config, matches: [...normalizeAllLeagueMatches(rawConfig), ...archivedMatches] };
   const scoring = scoreEvents(scoringConfig, store);
+  const forecast = championForecastState(config, scoringConfig.matches, store.seasonPredictions, store.players, now);
+  const forecastWinners = new Set((forecast?.predictions || []).filter((prediction) => forecast.winner && prediction.team === forecast.winner).map((prediction) => prediction.playerId));
+  if (forecast) forecast.winnerNames = store.players.filter((player) => forecastWinners.has(player.id)).map((player) => player.nickname).sort((a, b) => a.localeCompare(b, "bg-BG"));
   const leaderboards = {
     week: buildLeaderboard("week", scoringConfig, store, scoring, globalParticipation, now),
     month: buildLeaderboard("month", scoringConfig, store, scoring, globalParticipation, now),
     season: buildLeaderboard("season", scoringConfig, store, scoring, globalParticipation, now)
   };
+  if (forecast?.status === "settled") {
+    const seasonRows = leaderboards.season;
+    const rowsByPlayer = new Map(seasonRows.map((row) => [row.playerId, row]));
+    forecastWinners.forEach((winnerId) => {
+      let row = rowsByPlayer.get(winnerId);
+      if (!row) {
+        const winner = store.players.find((player) => player.id === winnerId);
+        const playerStats = scoring.stats.get(winnerId) || {};
+        const globalStats = globalParticipation.get(winnerId) || { completedMatches: 0, level: levelProgress(0) };
+        if (winner) {
+          row = {
+            playerId: winner.id,
+            nickname: winner.nickname,
+            isHost: isHostPlayer(winner),
+            specialStyle: specialPlayerStyle(winner),
+            points: 0,
+            exactScores: 0,
+            correctOutcomes: 0,
+            predictions: 0,
+            currentStreak: playerStats.currentStreak || 0,
+            totalExactScores: playerStats.exactScores || 0,
+            totalCorrectOutcomes: playerStats.correctOutcomes || 0,
+            leagueCompletedPredictions: playerStats.completedPredictions || 0,
+            globalCompletedPredictions: globalStats.completedMatches,
+            level: globalStats.level,
+            badges: playerStats.badges || []
+          };
+          seasonRows.push(row);
+          rowsByPlayer.set(winnerId, row);
+        }
+      }
+      if (row) row.points += forecast.points;
+    });
+    seasonRows.sort((left, right) => right.points - left.points || right.exactScores - left.exactScores || right.correctOutcomes - left.correctOutcomes || left.nickname.localeCompare(right.nickname, "bg-BG"));
+    seasonRows.forEach((row, index) => { row.rank = index + 1; });
+  }
   Object.values(leaderboards).forEach((rows) => {
     rows.forEach((row) => {
       row.ranks = {
@@ -645,6 +770,10 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
   });
   Object.values(leaderboards).forEach((rows) => addMonthlyChampionTrophies(rows, weeklyChampionTrophies, weeklyChampionIds));
   Object.values(leaderboards).forEach((rows) => addMonthlyChampionTrophies(rows, monthlyChampionTrophies, monthlyChampionIds));
+  if (forecast?.status === "settled") {
+    const forecastTrophies = config.trophies.filter((trophy) => trophy.condition === "seasonChampion");
+    Object.values(leaderboards).forEach((rows) => addMonthlyChampionTrophies(rows, forecastTrophies, forecastWinners));
+  }
 
   const player = store.players.find((item) => item.id === playerId);
   const playerPredictions = new Map(store.predictions
@@ -688,7 +817,7 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
       nickname: player.nickname,
       isHost: isHostPlayer(player),
       specialStyle: specialPlayerStyle(player),
-      totalPoints: stats.points,
+      totalPoints: leaderboards.season.find((row) => row.playerId === player.id)?.points || stats.points,
       weeklyPoints: pointsFor("week"),
       monthlyPoints: pointsFor("month"),
       ranks: { week: rankFor("week"), month: rankFor("month"), season: rankFor("season") },
@@ -700,7 +829,9 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
       level: globalStats.level,
       correctOutcomes: stats.correctOutcomes,
       exactScores: stats.exactScores,
-      badges: stats.badges
+      badges: forecast?.status === "settled" && forecastWinners.has(player.id)
+        ? [...stats.badges, ...config.trophies.filter((trophy) => trophy.condition === "seasonChampion" && !stats.badges.some((badge) => badge.id === trophy.id))]
+        : stats.badges
     };
   }
 
@@ -714,6 +845,12 @@ function buildLeagueState(rawConfig, rawStore, playerId = "", now = Date.now(), 
     points: POINTS,
     periods: periodLabels(now),
     matches: publicMatches,
+    championForecast: forecast ? {
+      ...forecast,
+      predictions: undefined,
+      myPrediction: forecast.predictions.find((prediction) => prediction.playerId === playerId)?.team || "",
+      correct: forecast.status === "settled" && forecastWinners.has(playerId)
+    } : null,
     me,
     leaderboards: {
       week: safeLeaderboard(leaderboards.week),
@@ -735,8 +872,20 @@ function trophiesForAggregate(config, aggregate = {}) {
   });
 }
 
-function buildLeagueStateFromAggregates(rawConfig, aggregateRows = [], playerId = "", playerPredictions = [], playerScoreEvents = [], now = Date.now()) {
+function buildLeagueStateFromAggregates(rawConfig, aggregateRows = [], playerId = "", playerPredictions = [], playerScoreEvents = [], now = Date.now(), options = {}) {
   const config = normalizeLeagueConfig(rawConfig);
+  const seasonPredictions = Array.isArray(options.seasonPredictions) ? options.seasonPredictions : [];
+  const configuredMatches = normalizeAllLeagueMatches(rawConfig);
+  const seasonMatchMap = new Map(configuredMatches.map((match) => [match.id, match]));
+  (Array.isArray(options.seasonMatches) ? options.seasonMatches : []).forEach((match) => {
+    const normalized = normalizeAllLeagueMatches({ ...config, matches: [match] })[0];
+    if (normalized) seasonMatchMap.set(normalized.id, normalized);
+  });
+  const seasonMatches = [...seasonMatchMap.values()];
+  const forecastPlayers = (Array.isArray(aggregateRows) ? aggregateRows : []).map((row) => ({ id: String(row.playerId || ""), nickname: String(row.nickname || "") }));
+  const forecast = championForecastState(config, seasonMatches, seasonPredictions, forecastPlayers, now);
+  const forecastWinners = new Set((forecast?.predictions || []).filter((prediction) => forecast.winner && prediction.team === forecast.winner).map((prediction) => prediction.playerId));
+  if (forecast) forecast.winnerNames = forecastPlayers.filter((player) => forecastWinners.has(player.id)).map((player) => player.nickname).sort((a, b) => a.localeCompare(b, "bg-BG"));
   const scoreByMatch = new Map((Array.isArray(playerScoreEvents) ? playerScoreEvents : []).map((event) => [
     String(event.matchId),
     {
@@ -776,18 +925,25 @@ function buildLeagueStateFromAggregates(rawConfig, aggregateRows = [], playerId 
     completedPredictions: Number(row.completedPredictions) || 0,
     globalCompletedPredictions: Number(row.globalCompletedPredictions) || 0,
     weeklyChampion: Boolean(row.weeklyChampion),
-    monthlyChampion: Boolean(row.monthlyChampion)
+    monthlyChampion: Boolean(row.monthlyChampion),
+    championForecastWinner: forecast?.status === "settled" && forecastWinners.has(String(row.playerId || ""))
   }));
 
   normalizedRows.forEach((row) => {
     row.badges = trophiesForAggregate(config, row);
+    if (row.championForecastWinner) {
+      row.totalPoints += forecast.points;
+      config.trophies.filter((trophy) => trophy.condition === "seasonChampion").forEach((trophy) => {
+        if (!row.badges.some((badge) => badge.id === trophy.id)) row.badges.push(trophy);
+      });
+    }
     row.level = levelProgress(row.globalCompletedPredictions);
   });
 
   const periodRows = (period) => {
     const prefix = period === "season" ? "total" : period;
     const rows = normalizedRows
-      .filter((row) => row[`${prefix}Predictions`] > 0)
+      .filter((row) => row[`${prefix}Predictions`] > 0 || (period === "season" && row.championForecastWinner))
       .map((row) => ({
         playerId: row.playerId,
         nickname: row.nickname,
@@ -890,6 +1046,12 @@ function buildLeagueStateFromAggregates(rawConfig, aggregateRows = [], playerId 
     points: POINTS,
     periods: periodLabels(now),
     matches: publicMatches,
+    championForecast: forecast ? {
+      ...forecast,
+      predictions: undefined,
+      myPrediction: forecast.predictions.find((prediction) => prediction.playerId === playerId)?.team || "",
+      correct: forecast.status === "settled" && forecastWinners.has(playerId)
+    } : null,
     me,
     leaderboards: {
       week: safeLeaderboard(leaderboards.week),
@@ -954,7 +1116,7 @@ function buildPredictionLeagueState(rawCollection, rawStore, playerId = "", requ
       seasonLabel: league.seasonLabel,
       matchCount: league.matches.length,
       openMatchCount: league.matches.filter((match) => matchStatus(match, now) === "open").length,
-      participating: predictions.length > 0
+      participating: predictions.length > 0 || store.seasonPredictions.some((prediction) => prediction.playerId === playerId && itemBelongsToLeague(prediction, league.id))
     };
   });
 
@@ -1011,6 +1173,7 @@ module.exports = {
   normalizeLeagueStore,
   normalizeNickname,
   normalizePrediction,
+  normalizeChampionPrediction,
   normalizeRecoveryCode,
   normalizeTrophyDefinitions,
   periodLabels,

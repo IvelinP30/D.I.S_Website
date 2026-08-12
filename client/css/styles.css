@@ -4112,6 +4112,30 @@ html.pwa-refreshing body {
 .league-entry-card,
 .league-profile-card,
 .league-table-card,
+.league-champion-card {
+  display: grid;
+  gap: 14px;
+  margin: 18px 0;
+  padding: 22px;
+  border: 1px solid rgba(244, 212, 77, .4);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(244, 212, 77, .14), rgba(15, 22, 42, .5));
+}
+
+.league-champion-card > div > span,
+.league-champion-card small { color: var(--muted); }
+.league-champion-card h3 { margin: 4px 0; }
+.league-champion-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.league-champion-form label { display: grid; gap: 6px; flex: 1 1 220px; position: relative; }
+.league-champion-picker, .league-champion-options button { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; background: #111a20; padding: 9px 11px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.league-champion-picker > span:last-child { margin-left: auto; color: var(--accent); }
+.league-champion-picker .team-identity, .league-champion-options .team-identity { gap: 9px; }
+.league-champion-picker .team-identity img, .league-champion-options .team-identity img { width: 27px; height: 27px; object-fit: contain; }
+.league-champion-options { position: absolute; z-index: 8; top: calc(100% + 6px); display: grid; gap: 4px; max-height: 250px; width: 100%; overflow: auto; border: 1px solid rgba(255,255,255,.14); border-radius: 11px; background: #0a1116; padding: 6px; box-shadow: 0 16px 35px rgba(0,0,0,.38); }
+.league-champion-options[hidden] { display: none; }
+.league-champion-options button:hover, .league-champion-options button:focus-visible { border-color: rgba(56,242,127,.7); background: rgba(56,242,127,.1); outline: none; }
+.league-champion-choice, .league-champion-result { margin: 0; }
+
 .league-match-card {
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.12);

@@ -22,6 +22,7 @@ test("relational league data is private, constrained, and protected from cascadi
     "league_players",
     "league_matches",
     "league_predictions",
+    "league_season_predictions",
     "league_scoring_versions",
     "league_score_events",
     "league_career_rollups"
@@ -39,7 +40,10 @@ test("scoring cutover is versioned and prediction writes are atomic", () => {
   assert.match(schema, /league_scoring_versions_one_active/);
   assert.match(schema, /create or replace function public\.league_activate_scoring_version/);
   assert.match(schema, /create or replace function public\.league_save_prediction/);
+  assert.match(schema, /create or replace function public\.league_save_season_prediction/);
   assert.match(schema, /on conflict \(player_id, league_id, match_id\) do update/);
+  assert.match(schema, /on conflict \(player_id, league_id\) do update/);
+  assert.match(schema, /Champion prediction window is closed/);
   assert.match(schema, /set search_path = public/g);
 });
 
