@@ -298,6 +298,9 @@ function championForecastState(config, matches, predictions, players = [], now =
   const opensAt = Number.isFinite(configuredOpensAt) ? configuredOpensAt : Number.isFinite(closesAt) ? closesAt - forecast.windowDays * 86_400_000 : NaN;
   const teamsByKey = new Map();
   const teamChoiceKeys = new Map();
+  const hasTheSportsDbTeams = (matches || []).some((match) =>
+    [match.homeTeamMedia, match.awayTeamMedia].some((media) => media?.source === "TheSportsDB" && media?.name)
+  );
   const choiceKey = (value) => String(value || "").normalize("NFKC").trim().toLocaleLowerCase("bg-BG");
   const teamKey = (name, media) => Number.isInteger(Number(media?.id)) && Number(media.id) > 0
     ? `api:${Number(media.id)}`
@@ -306,6 +309,7 @@ function championForecastState(config, matches, predictions, players = [], now =
     [[match.homeTeam, match.homeTeamMedia], [match.awayTeam, match.awayTeamMedia]].forEach(([name, media]) => {
       const rawName = String(name || "").trim();
       if (!rawName) return;
+      if (hasTheSportsDbTeams && media?.source !== "TheSportsDB") return;
       const key = teamKey(rawName, media);
       const apiName = media?.source === "TheSportsDB" ? String(media.name || "").trim() : "";
       const displayName = apiName || rawName;

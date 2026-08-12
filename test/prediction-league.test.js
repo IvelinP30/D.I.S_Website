@@ -148,6 +148,33 @@ test("deduplicates translated team names by API id and prefers the API name", ()
   assert.equal(state.championForecast.teams.find((team) => team.media?.id === lokomotivMedia.id)?.name, "Lokomotiv Sofia");
 });
 
+test("uses only TheSportsDB teams when legacy translated teams are also stored", () => {
+  const config = {
+    ...sampleConfig(),
+    championForecast: { enabled: true, opensAt: "2026-08-01T00:00:00.000Z", closesAt: "2026-08-20T00:00:00.000Z", points: 25 },
+    matches: [
+      {
+        id: "legacy-translated",
+        homeTeam: "БОТЕВ ПЛОВДИВ",
+        homeTeamMedia: { id: 901, name: "БОТЕВ ПЛОВДИВ", source: "API-Football", logo: "https://media.api-sports.io/football/teams/901.png" },
+        awayTeam: "ЛОКОМОТИВ СОФИЯ",
+        awayTeamMedia: { id: 902, name: "ЛОКОМОТИВ СОФИЯ", source: "API-Football", logo: "https://media.api-sports.io/football/teams/902.png" },
+        kickoffAt: "2026-08-25T18:00:00.000Z"
+      },
+      {
+        id: "thesportsdb",
+        homeTeam: "Botev Plovdiv",
+        homeTeamMedia: { id: 134343, name: "Botev Plovdiv", source: "TheSportsDB", logo: "https://www.thesportsdb.com/images/media/team/badge/botev.png" },
+        awayTeam: "Lokomotiv Sofia",
+        awayTeamMedia: { id: 140769, name: "Lokomotiv Sofia", source: "TheSportsDB", logo: "https://www.thesportsdb.com/images/media/team/badge/lokomotiv.png" },
+        kickoffAt: "2026-09-01T18:00:00.000Z"
+      }
+    ]
+  };
+  const state = buildLeagueState(config, { players: sampleStore().players, predictions: [], seasonPredictions: [] }, "p1", Date.parse("2026-08-12T12:00:00.000Z"));
+  assert.deepEqual(state.championForecast.teams.map((team) => team.name), ["Botev Plovdiv", "Lokomotiv Sofia"]);
+});
+
 test("awards the monthly champion only after the month has ended", () => {
   const config = {
     ...sampleConfig(),
