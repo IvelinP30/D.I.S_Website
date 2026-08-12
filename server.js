@@ -1547,7 +1547,12 @@ async function handleRequest(request, response) {
     try {
       const candidateStore = await readLeagueStore();
       const candidateMatches = [...leagueConfig.matches, ...candidateStore.archivedMatches.filter((match) => normalizeLeagueId(match.leagueId) === leagueId)];
-      team = normalizeChampionPrediction(JSON.parse(await readBody(request)), [...new Set(candidateMatches.flatMap((match) => [match.homeTeam, match.awayTeam]))]);
+      team = normalizeChampionPrediction(JSON.parse(await readBody(request)), [...new Set(candidateMatches.flatMap((match) => [
+        match.homeTeam,
+        match.awayTeam,
+        match.homeTeamMedia?.name,
+        match.awayTeamMedia?.name
+      ]).filter(Boolean))]);
     } catch (error) {
       return sendJson(response, 400, { error: error.message });
     }

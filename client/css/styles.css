@@ -4111,8 +4111,7 @@ html.pwa-refreshing body {
 
 .league-entry-card,
 .league-profile-card,
-.league-table-card,
-.league-champion-card {
+.league-table-card {
   display: grid;
   gap: 14px;
   margin: 18px 0;
@@ -4122,19 +4121,50 @@ html.pwa-refreshing body {
   background: linear-gradient(135deg, rgba(244, 212, 77, .14), rgba(15, 22, 42, .5));
 }
 
-.league-champion-card > div > span,
-.league-champion-card small { color: var(--muted); }
-.league-champion-card h3 { margin: 4px 0; }
-.league-champion-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
-.league-champion-form label { display: grid; gap: 6px; flex: 1 1 220px; position: relative; }
-.league-champion-picker, .league-champion-options button { display: flex; align-items: center; gap: 10px; width: 100%; border: 1px solid rgba(255,255,255,.15); border-radius: 10px; background: #111a20; padding: 9px 11px; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.league-champion-picker > span:last-child { margin-left: auto; color: var(--accent); }
-.league-champion-picker .team-identity, .league-champion-options .team-identity { gap: 9px; }
-.league-champion-picker .team-identity img, .league-champion-options .team-identity img { width: 27px; height: 27px; object-fit: contain; }
-.league-champion-options { position: absolute; z-index: 8; top: calc(100% + 6px); display: grid; gap: 4px; max-height: 250px; width: 100%; overflow: auto; border: 1px solid rgba(255,255,255,.14); border-radius: 11px; background: #0a1116; padding: 6px; box-shadow: 0 16px 35px rgba(0,0,0,.38); }
+.league-champion-card {
+  position: relative;
+  display: grid;
+  gap: 13px;
+  overflow: visible;
+  margin: 18px 0;
+  border: 1px solid rgba(244, 212, 77, .28);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 0 0, rgba(244, 212, 77, .12), transparent 34%),
+    linear-gradient(145deg, rgba(16, 19, 15, .98), rgba(9, 13, 18, .98) 52%, rgba(13, 14, 18, .98));
+  box-shadow: 0 18px 56px rgba(0, 0, 0, .22);
+  padding: clamp(18px, 2.4vw, 24px);
+}
+
+.league-champion-card.is-just-saved { animation: league-card-confirm 900ms ease both; }
+.league-champion-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
+.league-champion-heading h3 { display: flex; gap: 8px; align-items: center; margin: 7px 0 3px; font-size: clamp(1.22rem, 2.2vw, 1.55rem); }
+.league-champion-heading h3 > span { font-size: .92em; }
+.league-champion-heading > div > small { color: #9aa4b2; font-size: .72rem; }
+.league-champion-heading > strong { display: grid; min-width: 92px; justify-items: end; color: var(--accent-2); }
+.league-champion-heading > strong b { font-size: 1.35rem; line-height: 1; }
+.league-champion-heading > strong small { margin-top: 5px; color: #9aa4b2; font-size: .6rem; font-weight: 850; letter-spacing: .04em; text-transform: uppercase; }
+.league-champion-copy { margin: 0; color: #aeb7c5; font-size: .8rem; line-height: 1.45; }
+.league-champion-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+.league-champion-field { min-width: 0; }
+.league-champion-field > span:first-child { color: #c7ced9; font-size: .64rem; }
+.league-champion-field .custom-select { z-index: 12; }
+.league-champion-field .custom-select-trigger { min-height: 56px; border-radius: 8px; padding-inline: 14px; }
+.league-champion-field .custom-select-trigger > span { min-width: 0; }
+.league-champion-field .team-identity { justify-content: flex-start; font-size: .86rem; }
+.league-champion-field .team-identity > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.league-champion-field .team-identity img { width: 32px; height: 32px; flex-basis: 32px; }
+.league-champion-options { max-height: 290px; overflow-x: hidden; overflow-y: auto; }
 .league-champion-options[hidden] { display: none; }
-.league-champion-options button:hover, .league-champion-options button:focus-visible { border-color: rgba(56,242,127,.7); background: rgba(56,242,127,.1); outline: none; }
-.league-champion-choice, .league-champion-result { margin: 0; }
+.league-champion-options button { display: flex; align-items: center; padding: 8px 42px 8px 12px; }
+.league-champion-form > .button { min-width: 180px; min-height: 56px; }
+.league-champion-form .league-form-feedback { grid-column: 1 / -1; margin: 0; }
+.league-champion-choice, .league-champion-result { margin: 0; border: 1px solid rgba(255,255,255,.1); border-radius: 8px; background: rgba(255,255,255,.035); padding: 13px 14px; }
+.league-champion-choice > span, .league-champion-result > span { display: block; margin-bottom: 7px; color: #8f99a8; font-size: .62rem; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.league-champion-choice .team-identity, .league-champion-result .team-identity { justify-content: flex-start; }
+.league-champion-result em { display: block; margin-top: 10px; color: var(--accent); font-size: .78rem; font-style: normal; font-weight: 850; }
+.league-champion-result p { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0 0; color: #aeb7c5; font-size: .72rem; }
+.league-champion-result p > span { border-radius: 999px; background: rgba(56,242,127,.1); padding: 5px 9px; color: #c7f5d6; }
 
 .league-match-card {
   position: relative;
@@ -7981,6 +8011,10 @@ html.pwa-refreshing body {
   .league-profile-card,
   .league-table-card,
   .league-match-card { padding: 18px; }
+  .league-champion-card { padding: 18px; }
+  .league-champion-heading > strong { min-width: 74px; }
+  .league-champion-form { grid-template-columns: 1fr; }
+  .league-champion-form > .button { width: 100%; min-width: 0; }
   .prediction-league-section { width: calc(100% - 16px); margin-top: 22px; border-radius: 14px; padding: 46px 14px 54px; }
   .prediction-league-heading h2 { font-size: clamp(2rem, 11vw, 2.7rem); }
   .prediction-league-shell { margin-top: 22px; }

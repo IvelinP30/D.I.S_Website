@@ -296,24 +296,36 @@ function championForecastState(config, matches, predictions, players = [], now =
   const firstKickoff = Math.min(...(matches || []).map((match) => Date.parse(match.kickoffAt || "")).filter(Number.isFinite));
   const closesAt = Number.isFinite(configuredClosesAt) ? configuredClosesAt : firstKickoff;
   const opensAt = Number.isFinite(configuredOpensAt) ? configuredOpensAt : Number.isFinite(closesAt) ? closesAt - forecast.windowDays * 86_400_000 : NaN;
-  const teamMedia = new Map();
+  const teamsByKey = new Map();
+  const teamChoiceKeys = new Map();
+  const choiceKey = (value) => String(value || "").normalize("NFKC").trim().toLocaleLowerCase("bg-BG");
+  const teamKey = (name, media) => Number.isInteger(Number(media?.id)) && Number(media.id) > 0
+    ? `api:${Number(media.id)}`
+    : `name:${choiceKey(name)}`;
   (matches || []).forEach((match) => {
     [[match.homeTeam, match.homeTeamMedia], [match.awayTeam, match.awayTeamMedia]].forEach(([name, media]) => {
-      const team = String(name || "").trim();
-      if (team && !teamMedia.has(team)) teamMedia.set(team, media || null);
+      const rawName = String(name || "").trim();
+      if (!rawName) return;
+      const key = teamKey(rawName, media);
+      const apiName = media?.source === "TheSportsDB" ? String(media.name || "").trim() : "";
+      const displayName = apiName || rawName;
+      const existing = teamsByKey.get(key);
+      if (!existing || (apiName && existing.name !== apiName)) teamsByKey.set(key, { key, name: displayName, media: media || existing?.media || null });
+      teamChoiceKeys.set(choiceKey(rawName), key);
+      if (media?.name) teamChoiceKeys.set(choiceKey(media.name), key);
     });
   });
-  const teams = [...teamMedia.keys()].sort((a, b) => a.localeCompare(b, "bg-BG"));
+  const teams = [...teamsByKey.values()].sort((a, b) => a.name.localeCompare(b.name, "bg-BG"));
   const settledMatches = (matches || []).filter((match) => resultForMatch(match));
   const allFixturesFinished = (matches || []).length > 0 && (matches || []).every((match) => {
     const status = matchStatus(match, now);
     return status === "settled" || status === "cancelled";
   });
-  const table = new Map(teams.map((team) => [team, { team, points: 0, goalDifference: 0, goalsFor: 0 }]));
+  const table = new Map(teams.map((team) => [team.key, { team: team.name, points: 0, goalDifference: 0, goalsFor: 0 }]));
   settledMatches.forEach((match) => {
     const result = resultForMatch(match);
-    const home = table.get(match.homeTeam);
-    const away = table.get(match.awayTeam);
+    const home = table.get(teamKey(match.homeTeam, match.homeTeamMedia));
+    const away = table.get(teamKey(match.awayTeam, match.awayTeamMedia));
     if (!home || !away || !result) return;
     home.goalsFor += result.homeScore;
     away.goalsFor += result.awayScore;
@@ -337,10 +349,13 @@ function championForecastState(config, matches, predictions, players = [], now =
     opensAt: Number.isFinite(opensAt) ? new Date(opensAt).toISOString() : "",
     closesAt: Number.isFinite(closesAt) ? new Date(closesAt).toISOString() : "",
     points: forecast.points,
-    teams: teams.map((name) => ({ name, media: teamMedia.get(name) })),
+    teams: teams.map(({ name, media }) => ({ name, media })),
     winner,
     status,
-    predictions: Array.isArray(predictions) ? predictions : [],
+    predictions: (Array.isArray(predictions) ? predictions : []).map((prediction) => {
+      const key = teamChoiceKeys.get(choiceKey(prediction.team));
+      return key && teamsByKey.has(key) ? { ...prediction, team: teamsByKey.get(key).name } : prediction;
+    }),
     winnerNames: []
   };
 }

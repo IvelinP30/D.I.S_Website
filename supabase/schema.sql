@@ -288,7 +288,12 @@ begin
   if not exists (
     select 1 from public.league_matches m
     where m.league_id = p_league_id
-      and (m.payload->>'homeTeam' = p_team or m.payload->>'awayTeam' = p_team)
+      and (
+        m.payload->>'homeTeam' = p_team
+        or m.payload->>'awayTeam' = p_team
+        or m.payload #>> '{homeTeamMedia,name}' = p_team
+        or m.payload #>> '{awayTeamMedia,name}' = p_team
+      )
   ) then
     raise exception 'Champion prediction team is invalid';
   end if;

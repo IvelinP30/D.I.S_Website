@@ -5,6 +5,7 @@ let predictionLeaguePeriod = "season";
 let predictionLeagueRecoveryCode = "";
 let predictionLeagueNotice = "";
 let predictionLeagueFlashMatchId = "";
+let predictionLeagueFlashChampion = false;
 let predictionLeagueRecoveryTimer = null;
 let engagementState = { news: {}, predictions: {} };
 const newsReactionChoices = [
@@ -1273,13 +1274,16 @@ function championForecastMarkup(forecast, state) {
   if (!forecast?.enabled) return "";
   const close = forecast.closesAt ? formatLocalDate(forecast.closesAt) : "скоро";
   const status = forecast.status === "open" ? "Приема прогнози" : forecast.status === "upcoming" ? "Очаква начало" : forecast.status === "settled" ? "Шампионът е определен" : "Прогнозата е заключена";
+  const statusClass = forecast.status === "open" ? "open" : forecast.status === "settled" ? "settled" : "locked";
+  const selectedTeam = forecast.teams.find((team) => team.name === forecast.myPrediction);
+  const justSaved = predictionLeagueFlashChampion;
   const champion = forecast.teams.find((team) => team.name === forecast.winner);
-  const result = forecast.status === "settled" ? `<div class="league-champion-result">🏆 Шампион: <strong>${teamIdentityMarkup(forecast.winner, champion?.media)}</strong>${forecast.correct ? ` · Позна! +${forecast.points} т. и трофей` : ""}${forecast.winnerNames?.length ? `<p><b>Позналите:</b> ${forecast.winnerNames.map(escapeHTML).join(", ")}</p>` : ""}</div>` : "";
+  const result = forecast.status === "settled" ? `<div class="league-champion-result"><span>Шампион</span><strong>${teamIdentityMarkup(forecast.winner, champion?.media)}</strong>${forecast.correct ? `<em>Позна! +${forecast.points} т. и трофей</em>` : ""}${forecast.winnerNames?.length ? `<p><b>Позналите:</b> ${forecast.winnerNames.map((name) => `<span>${escapeHTML(name)}</span>`).join("")}</p>` : ""}</div>` : "";
   const action = forecast.status === "open" && state.me
-    ? `<form class="league-champion-form" data-league-champion-prediction><input type="hidden" name="team" value="${escapeAttribute(forecast.myPrediction)}" required /><label>Кой ще стане шампион?<button class="league-champion-picker" type="button" data-champion-picker aria-expanded="false">${forecast.myPrediction ? teamIdentityMarkup(forecast.myPrediction, forecast.teams.find((team) => team.name === forecast.myPrediction)?.media) : "Избери отбор"}<span>⌄</span></button><span class="league-champion-options" data-champion-options hidden>${forecast.teams.map((team) => `<button type="button" data-champion-team="${escapeAttribute(team.name)}">${teamIdentityMarkup(team.name, team.media)}</button>`).join("")}</span></label><button class="button primary" type="submit">${forecast.myPrediction ? "Промени избора" : "Запиши избора"}</button></form>`
+    ? `<form class="league-champion-form" data-league-champion-prediction><input type="hidden" name="team" value="${escapeAttribute(forecast.myPrediction)}" /><label class="custom-select-field league-champion-field"><span>Твоят избор</span><span class="custom-select ${justSaved ? "is-confirmed" : ""}" data-champion-select><button class="custom-select-trigger" type="button" data-champion-picker aria-haspopup="listbox" aria-expanded="false"><span data-champion-label>${selectedTeam ? teamIdentityMarkup(selectedTeam.name, selectedTeam.media) : "Избери отбор"}</span><i aria-hidden="true"></i></button><span class="custom-select-menu league-champion-options" data-champion-options role="listbox" hidden>${forecast.teams.map((team) => `<button class="${forecast.myPrediction === team.name ? "is-selected" : ""}" type="button" role="option" aria-selected="${forecast.myPrediction === team.name}" data-champion-team="${escapeAttribute(team.name)}">${teamIdentityMarkup(team.name, team.media)}</button>`).join("")}</span></span></label><button class="button ${forecast.myPrediction ? "league-update-button" : "primary"} ${justSaved ? "is-confirmed" : ""}" type="submit">${justSaved ? "Изборът е записан ✓" : forecast.myPrediction ? "Промени избора" : "Запиши избора"}</button><p class="league-form-feedback" data-league-feedback role="status">${forecast.myPrediction ? `Записан избор: ${escapeHTML(forecast.myPrediction)} · Можеш да го промениш до ${escapeHTML(close)}.` : `Избери шампион до ${escapeHTML(close)}.`}</p></form>`
     : !state.me ? `<p class="league-match-locked-note">Избери прякор, за да участваш.</p>`
-      : forecast.myPrediction ? `<p class="league-champion-choice">Твоята прогноза: <strong>${escapeHTML(forecast.myPrediction)}</strong></p>` : "";
-  return `<article class="league-champion-card"><div><span>Сезонна прогноза</span><h3>🏆 Познай шампиона</h3><small>${status} · ${forecast.status === "open" ? `до ${escapeHTML(close)}` : `награда +${forecast.points} т.`}</small></div>${action}${result}</article>`;
+      : forecast.myPrediction ? `<div class="league-champion-choice"><span>Твоята прогноза</span><strong>${teamIdentityMarkup(forecast.myPrediction, selectedTeam?.media)}</strong></div>` : "";
+  return `<article class="league-champion-card ${justSaved ? "is-just-saved" : ""}"><div class="league-champion-heading"><div><span class="league-match-status status-${statusClass}"><i></i>${status}</span><h3><span aria-hidden="true">🏆</span> Познай шампиона</h3><small>${forecast.status === "open" ? `Край: ${escapeHTML(close)}` : "Сезонна прогноза"}</small></div><strong><b>+${forecast.points}</b><small>бонус точки</small></strong></div><p class="league-champion-copy">Избери отбора, който според теб ще спечели първенството.</p>${action}${result}</article>`;
 }
 
 function renderPredictionLeagueApp() {
@@ -1325,7 +1329,9 @@ function renderPredictionLeagueApp() {
   bindLeaguePlayerTooltips(app);
   detectLeagueLevelUp(state);
   const flashedMatchId = predictionLeagueFlashMatchId;
+  const flashedChampion = predictionLeagueFlashChampion;
   predictionLeagueFlashMatchId = "";
+  predictionLeagueFlashChampion = false;
   if (flashedMatchId) {
     const confirmedForm = [...app.querySelectorAll("[data-league-prediction]")].find((form) => form.dataset.leaguePrediction === flashedMatchId);
     const confirmedButton = confirmedForm?.querySelector("button");
@@ -1333,6 +1339,16 @@ function renderPredictionLeagueApp() {
       window.setTimeout(() => {
         confirmedButton.textContent = "Промени прогнозата";
         confirmedButton.classList.remove("is-confirmed");
+      }, 1400);
+    }
+  }
+  if (flashedChampion) {
+    const championForm = app.querySelector("[data-league-champion-prediction]");
+    const championButton = championForm?.querySelector('button[type="submit"]');
+    if (championButton) {
+      window.setTimeout(() => {
+        championButton.textContent = "Промени избора";
+        championButton.classList.remove("is-confirmed");
       }, 1400);
     }
   }
@@ -1510,27 +1526,53 @@ function bindPredictionLeagueActions() {
     });
   });
   app.querySelectorAll("[data-league-champion-prediction]").forEach((form) => {
+    const select = form.querySelector("[data-champion-select]");
     const picker = form.querySelector("[data-champion-picker]");
     const options = form.querySelector("[data-champion-options]");
+    const label = form.querySelector("[data-champion-label]");
+    const choices = [...form.querySelectorAll("[data-champion-team]")];
+    const close = () => {
+      picker.setAttribute("aria-expanded", "false");
+      select.classList.remove("is-open");
+      options.hidden = true;
+    };
     picker?.addEventListener("click", () => {
-      const isOpen = picker.getAttribute("aria-expanded") === "true";
-      picker.setAttribute("aria-expanded", String(!isOpen));
-      options.hidden = isOpen;
+      const opening = options.hidden;
+      picker.setAttribute("aria-expanded", String(opening));
+      select.classList.toggle("is-open", opening);
+      options.hidden = !opening;
+      if (opening) choices.find((choice) => choice.classList.contains("is-selected"))?.focus();
     });
-    form.querySelectorAll("[data-champion-team]").forEach((option) => option.addEventListener("click", () => {
+    choices.forEach((option) => option.addEventListener("click", () => {
       const team = option.dataset.championTeam;
       form.team.value = team;
-      picker.innerHTML = option.innerHTML + "<span>⌄</span>";
-      picker.setAttribute("aria-expanded", "false");
-      options.hidden = true;
+      label.innerHTML = option.innerHTML;
+      choices.forEach((choice) => {
+        const selected = choice === option;
+        choice.classList.toggle("is-selected", selected);
+        choice.setAttribute("aria-selected", String(selected));
+      });
+      close();
+      picker.focus();
     }));
+    select.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { close(); picker.focus(); }
+      if (!options.hidden && (event.key === "ArrowDown" || event.key === "ArrowUp")) {
+        event.preventDefault();
+        const current = choices.indexOf(document.activeElement);
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        choices[current < 0 ? 0 : (current + direction + choices.length) % choices.length]?.focus();
+      }
+    });
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const button = form.querySelector("button");
+      const button = form.querySelector('button[type="submit"]');
+      if (!form.team.value) return leagueFormError(form, new Error("Първо избери отбор."));
       setButtonLoading(button, true);
       try {
         const payload = await leagueApi(`/api/league/${encodeURIComponent(predictionLeagueState.selectedLeagueId)}/champion-prediction`, { method: "PUT", body: JSON.stringify({ team: form.team.value }) });
         predictionLeagueState = payload.league;
+        predictionLeagueFlashChampion = true;
         renderPredictionLeagueApp();
       } catch (error) { leagueFormError(form, error); setButtonLoading(button, false); }
     });

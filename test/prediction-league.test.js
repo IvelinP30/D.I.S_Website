@@ -133,6 +133,21 @@ test("opens the champion forecast automatically for five days before the first f
   assert.equal(open.championForecast.closesAt, "2026-08-10T18:00:00.000Z");
 });
 
+test("deduplicates translated team names by API id and prefers the API name", () => {
+  const lokomotivMedia = { id: 134899, name: "Lokomotiv Sofia", source: "TheSportsDB", logo: "https://www.thesportsdb.com/images/media/team/badge/example.png" };
+  const config = {
+    ...sampleConfig(),
+    championForecast: { enabled: true, opensAt: "2026-08-01T00:00:00.000Z", closesAt: "2026-08-20T00:00:00.000Z", points: 25 },
+    matches: [
+      { id: "translated", homeTeam: "Локомотив София", homeTeamMedia: lokomotivMedia, awayTeam: "Arda Kardzhali", kickoffAt: "2026-08-25T18:00:00.000Z" },
+      { id: "api", homeTeam: "Lokomotiv Sofia", homeTeamMedia: lokomotivMedia, awayTeam: "Botev Plovdiv", kickoffAt: "2026-09-01T18:00:00.000Z" }
+    ]
+  };
+  const state = buildLeagueState(config, { players: sampleStore().players, predictions: [], seasonPredictions: [] }, "p1", Date.parse("2026-08-12T12:00:00.000Z"));
+  assert.equal(state.championForecast.teams.filter((team) => team.media?.id === lokomotivMedia.id).length, 1);
+  assert.equal(state.championForecast.teams.find((team) => team.media?.id === lokomotivMedia.id)?.name, "Lokomotiv Sofia");
+});
+
 test("awards the monthly champion only after the month has ended", () => {
   const config = {
     ...sampleConfig(),
