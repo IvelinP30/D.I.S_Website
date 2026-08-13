@@ -11,6 +11,7 @@ const {
   synchronizeFootballContent,
   zonedDate
 } = require("../server/football-sync");
+const { requestTheSportsDb } = require("../server/the-sports-db");
 
 const now = Date.parse("2026-08-24T20:00:00Z");
 
@@ -49,6 +50,18 @@ test("normalizes free TheSportsDB league settings and Sofia date windows", () =>
   });
   assert.equal(zonedDate(Date.parse("2026-07-22T22:30:00Z")), "2026-07-23");
   assert.equal(eventKickoff(sportsEvent(1)), "2026-08-25T19:30:00.000Z");
+});
+
+test("allows season event requests used by champion forecasts", async () => {
+  const response = await requestTheSportsDb("eventsseason.php", { id: 4626, s: "2026-2027" }, {
+    fetchImpl: async (url) => {
+      assert.equal(url.searchParams.get("id"), "4626");
+      assert.equal(url.searchParams.get("s"), "2026-2027");
+      return { ok: true, status: 200, json: async () => ({ events: [] }) };
+    }
+  });
+
+  assert.deepEqual(response.events, []);
 });
 
 test("legacy API-Football settings are not contacted as TheSportsDB league IDs", async () => {

@@ -39,7 +39,7 @@ function providerError(message, code, statusCode = 502) {
 
 async function requestTheSportsDb(endpoint, parameters = {}, options = {}) {
   const cleanEndpoint = String(endpoint || "").replace(/^\/+/, "");
-  if (!new Set(["eventsround.php", "lookupevent.php", "lookupteam.php", "searchteams.php"]).has(cleanEndpoint)) {
+  if (!new Set(["eventsround.php", "eventsseason.php", "lookupevent.php", "lookupteam.php", "searchteams.php"]).has(cleanEndpoint)) {
     throw providerError("Невалиден TheSportsDB endpoint.", "THE_SPORTS_DB_INVALID_ENDPOINT", 400);
   }
 
