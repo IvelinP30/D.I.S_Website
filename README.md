@@ -235,6 +235,8 @@ Usage timestamps and the team catalogue are stored under the protected `teamMedi
 
 The Node process checks for due work on startup and every 30 minutes while it is awake; the 20-hour schedule timestamp prevents redundant round downloads. The GitHub Actions workflow `.github/workflows/football-sync.yml` also calls the protected synchronization endpoint at minutes 7 and 37 of every hour, waking a sleeping free Render service. Add a GitHub Actions repository secret named `FOOTBALL_SYNC_SECRET` with exactly the same value as the Render environment variable. Public page visits never call the sports-data API directly and read only saved content.
 
+TheSportsDB requests retry rate limits twice, waiting at least 60 seconds and then 120 seconds (with `Retry-After` considered up to 120 seconds). Each upstream request has a 30-second timeout. Persistent provider failures still fail the sync so they remain visible in Actions. The workflow allows ten minutes for cold starts and rate-limit recovery.
+
 Public cards and share images use the stored badge URL with a text fallback. New badges load from `r2.thesportsdb.com`; legacy API-Football selections remain readable for backward compatibility. TheSportsDB is crowd-sourced and the `eventsround.php` endpoint is not included in its current main reference, so manual match creation, result correction and detail locking remain deliberate fallbacks.
 
 ### Configure a free league

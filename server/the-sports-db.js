@@ -38,6 +38,21 @@ function providerError(message, code, statusCode = 502) {
 }
 
 async function requestTheSportsDb(endpoint, parameters = {}, options = {}) {
+  const sleep = options.sleep || ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await requestTheSportsDbOnce(endpoint, parameters, options);
+    } catch (error) {
+      if (error.statusCode !== 429 || attempt >= 2) throw error;
+      const delay = Math.max(60_000 * (attempt + 1), error.retryAfterMs || 0);
+      await sleep(delay);
+      // Refresh the rolling minute budget after waiting.
+      if (options.now !== undefined) options = { ...options, now: Number(options.now) + delay };
+    }
+  }
+}
+
+async function requestTheSportsDbOnce(endpoint, parameters = {}, options = {}) {
   const cleanEndpoint = String(endpoint || "").replace(/^\/+/, "");
   if (!new Set(["eventsround.php", "eventsseason.php", "lookupevent.php", "lookupteam.php", "searchteams.php"]).has(cleanEndpoint)) {
     throw providerError("Невалиден TheSportsDB endpoint.", "THE_SPORTS_DB_INVALID_ENDPOINT", 400);
@@ -66,17 +81,23 @@ async function requestTheSportsDb(endpoint, parameters = {}, options = {}) {
 
   let response;
   try {
-    response = await (options.fetchImpl || fetch)(url, { headers: { Accept: "application/json" } });
+    response = await (options.fetchImpl || fetch)(url, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(30_000) });
   } catch {
     throw providerError("TheSportsDB временно не е достъпен.", "THE_SPORTS_DB_NETWORK_ERROR");
   }
 
   if (response.status === 429) {
-    throw providerError(
+    await response.body?.cancel();
+    const error = providerError(
       "TheSportsDB ограничи заявките. Изчакай една минута и опитай отново.",
       "THE_SPORTS_DB_RATE_LIMITED",
       429
     );
+    const retryAfter = response.headers?.get("retry-after");
+    const seconds = Number(retryAfter);
+    const delay = retryAfter && Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter || "") - now;
+    error.retryAfterMs = Number.isFinite(delay) ? Math.max(0, Math.min(delay, 120_000)) : 60_000;
+    throw error;
   }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {

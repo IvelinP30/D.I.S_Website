@@ -45,15 +45,36 @@ test("free TheSportsDB client supports one team badge lookup by name", async () 
 test("free TheSportsDB client blocks bursts below the upstream 30 request limit", async () => {
   const now = Date.parse("2026-07-22T08:00:00Z");
   const state = { usage: { day: "2026-07-22", requests: 20, recentRequests: Array.from({ length: THE_SPORTS_DB_MINUTE_BUDGET }, (_, index) => now + index) } };
-  await assert.rejects(
-    requestTheSportsDb("eventsround.php", { id: 4328, r: 1, s: "2026-2027" }, { state, now: now + 100 }),
-    (error) => error.code === "THE_SPORTS_DB_MINUTE_GUARD"
-  );
+  const waits = [];
+  const result = await requestTheSportsDb("eventsround.php", { id: 4328, r: 1, s: "2026-2027" }, {
+    state, now: now + 100, sleep: async (ms) => waits.push(ms), fetchImpl: async () => response()
+  });
+  assert.deepEqual(waits, [60_000]);
+  assert.equal(result.usage.used, 21);
+});
+
+test("rate-limited requests wait for Retry-After and resume the same request", async () => {
+  const waits = [];
+  const urls = [];
+  const state = {};
+  await requestTheSportsDb("eventsround.php", { id: 4328, r: 5 }, {
+    state, now: Date.parse("2026-07-22T08:00:00Z"), sleep: async (ms) => waits.push(ms),
+    fetchImpl: async (url) => {
+      urls.push(String(url));
+      return urls.length === 1
+        ? { ...response({}, 429), headers: new Headers({ "Retry-After": "90" }) }
+        : response();
+    }
+  });
+  assert.deepEqual(waits, [90_000]);
+  assert.equal(urls.length, 2);
+  assert.equal(urls[0], urls[1]);
+  assert.equal(state.usage.requests, 2);
 });
 
 test("free TheSportsDB client exposes a clear 429 error", async () => {
   await assert.rejects(
-    requestTheSportsDb("eventsround.php", { id: 4328, r: 1, s: "2026-2027" }, { state: {}, fetchImpl: async () => response({}, 429) }),
+    requestTheSportsDb("eventsround.php", { id: 4328, r: 1, s: "2026-2027" }, { state: {}, sleep: async () => {}, fetchImpl: async () => response({}, 429) }),
     (error) => error.code === "THE_SPORTS_DB_RATE_LIMITED" && error.statusCode === 429
   );
 });

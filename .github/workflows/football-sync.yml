@@ -15,8 +15,8 @@ permissions:
 jobs:
   sync:
     name: Wake Render and synchronize football
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - name: Start protected synchronization
         env:
@@ -33,8 +33,9 @@ jobs:
             --silent \
             --retry 2 \
             --retry-all-errors \
-            --retry-delay 15 \
-            --max-time 180 \
+            --retry-delay 65 \
+            --retry-max-time 240 \
+            --max-time 240 \
             --request POST \
             --header "Authorization: Bearer $FOOTBALL_SYNC_SECRET" \
             --header "Content-Type: application/json" \
